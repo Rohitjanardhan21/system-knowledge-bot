@@ -5,7 +5,7 @@ WORKDIR /app
 COPY backend backend
 COPY chat chat
 COPY knowledge knowledge
-COPY system_facts system_facts
+COPY system_facts/history system_facts/history
 
 RUN pip install fastapi uvicorn requests
 
