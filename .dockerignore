@@ -1,4 +1,11 @@
-__pycache__/
-venv/
-.git/
-system_facts/history/
+# Ignore everything by default
+*
+
+# Allow app code
+!backend/**
+!chat/**
+!knowledge/**
+!system_facts/**
+!Dockerfile
+!Jenkinsfile
+!requirements.txt
