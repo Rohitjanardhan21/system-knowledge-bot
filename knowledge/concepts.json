@@ -1,0 +1,14 @@
+{
+  "cpu": {
+    "definition": "The CPU (Central Processing Unit) is the main component that executes instructions and processes tasks on your system.",
+    "why_it_matters": "CPU performance affects how fast applications run and how well your system handles multitasking."
+  },
+  "ram": {
+    "definition": "RAM (Random Access Memory) is short-term memory used by running applications and the operating system.",
+    "why_it_matters": "Low available RAM can slow down your system or cause applications to freeze."
+  },
+  "storage": {
+    "definition": "Storage is where your system permanently stores data, applications, and the operating system.",
+    "why_it_matters": "If storage becomes full, your system may fail to write logs, install updates, or even boot properly."
+  }
+}

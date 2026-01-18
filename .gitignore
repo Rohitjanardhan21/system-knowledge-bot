@@ -1,0 +1,4 @@
+venv/
+__pycache__/
+system_facts/history/
+system_facts/current.json
