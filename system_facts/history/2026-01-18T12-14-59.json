@@ -1,0 +1,47 @@
+{
+  "metadata": {
+    "collected_at": "2026-01-18T12:14:59.606445",
+    "ttl_seconds": 300,
+    "collector": "collect_system.py"
+  },
+  "identity": {
+    "machine_id": "a758f911dc3616ab324386a5709c2b6b8d776a2aa5f33498e9f54252d0ae8dba",
+    "cpu_fingerprint": "11th Gen Intel(R) Core(TM) i5-11260H @ 2.60GHz-0-3",
+    "disk_fingerprint": "VBOX HARDDISK VB3df82258-47bd830f|VBOX CD-ROM   VB0-01f003f6"
+  },
+  "cpu": {
+    "model": "11th Gen Intel(R) Core(TM) i5-11260H @ 2.60GHz",
+    "architecture": "x86_64",
+    "logical_cores": 4
+  },
+  "memory": {
+    "total_mb": 5925,
+    "used_mb": 1849,
+    "available_mb": 4076
+  },
+  "storage": {
+    "devices": [
+      {
+        "name": "sda",
+        "size_gb": 50,
+        "model": "VBOX HARDDISK"
+      }
+    ],
+    "filesystems": [
+      {
+        "source": "/dev/sda2",
+        "size_gb": 48,
+        "used_gb": 19,
+        "available_gb": 26,
+        "mount_point": "/"
+      },
+      {
+        "source": "/dev/sr0",
+        "size_gb": 0,
+        "used_gb": 0,
+        "available_gb": 0,
+        "mount_point": "/media/rohit-janardhan/VBox_GAs_7.2.42"
+      }
+    ]
+  }
+}

@@ -1,0 +1,55 @@
+{
+  "metadata": {
+    "collected_at": "2026-01-18T15:32:53.470392",
+    "ttl_seconds": 300,
+    "collector": "collect_system.py"
+  },
+  "identity": {
+    "machine_id": "0e78a4889a1a30b47a76718fbcf0d8ba38bbeec2fdf4af9c50c0484fed7b0054",
+    "cpu_fingerprint": "11th Gen Intel(R) Core(TM) i5-11260H @ 2.60GHz-4",
+    "disk_fingerprint": "VBOX HARDDISK VB3df82258-47bd830f|VBOX CD-ROM   VB0-01f003f6"
+  },
+  "cpu": {
+    "architecture": "x86_64",
+    "logical_cores": 4,
+    "model": "11th Gen Intel(R) Core(TM) i5-11260H @ 2.60GHz"
+  },
+  "memory": {
+    "total_mb": 5925,
+    "used_mb": 2309,
+    "available_mb": 3616
+  },
+  "storage": {
+    "devices": [
+      {
+        "name": "sda",
+        "size_gb": 50,
+        "model": "VBOX HARDDISK"
+      }
+    ],
+    "filesystems": [
+      {
+        "source": "/dev/sda2",
+        "size_gb": 48,
+        "used_gb": 19,
+        "available_gb": 26,
+        "mount_point": "/"
+      },
+      {
+        "source": "/dev/sr0",
+        "size_gb": 0,
+        "used_gb": 0,
+        "available_gb": 0,
+        "mount_point": "/media/rohit-janardhan/VBox_GAs_7.2.42"
+      }
+    ]
+  },
+  "disk_health": {
+    "status": "unknown",
+    "reason": "SMART data not available (VM or permissions)"
+  },
+  "battery": {
+    "status": "not_applicable",
+    "reason": "No battery detected (virtual machine)"
+  }
+}
