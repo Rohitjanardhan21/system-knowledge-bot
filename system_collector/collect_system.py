@@ -3,6 +3,7 @@ import json
 import os
 import hashlib
 from datetime import datetime
+from posture.write_history import write_posture_history
 
 FACTS_DIR = "system_facts"
 HISTORY_DIR = os.path.join(FACTS_DIR, "history")
@@ -114,6 +115,8 @@ def main():
         json.dump(facts, f, indent=2)
 
     print("System facts collected.")
+    
+    write_posture_history(facts)
 
 if __name__ == "__main__":
     main()

@@ -1,0 +1,32 @@
+{
+  "timestamp": "2026-01-19T15:13:33",
+  "facts": {
+    "timestamp": "2026-01-19T15:13:33.261811",
+    "cpu": {
+      "usage_percent": 0.0,
+      "cores": 4
+    },
+    "memory": {
+      "used_mb": 2055,
+      "total_mb": 5925
+    },
+    "disk": {
+      "used_percent": 45.83
+    },
+    "load": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "cpu_usage": 0.0,
+    "cpu_cores": 4,
+    "memory_used_mb": 2055,
+    "memory_total_mb": 5925,
+    "disk_used_percent": 45.83
+  },
+  "judgments": [],
+  "posture": {
+    "posture": "idle-capable",
+    "reasoning": "No significant deviations from baseline."
+  }
+}

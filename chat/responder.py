@@ -5,234 +5,199 @@ from chat.data_resolver import (
     get_cpu,
     get_memory,
     get_storage,
-    get_status,
-    get_full_facts,
-    get_history
+    get_full_facts
 )
 
-from chat.health import (
-    evaluate_memory,
-    evaluate_disk,
-    overall_health
-)
+from chat.health import evaluate_memory, evaluate_disk, overall_health
 from chat.health_responses import summarize_health
-
 from chat.slow_reasoner import analyze_slowness
 from chat.slow_responses import explain_slowness
-
 from chat.degradation import analyze_degradation
 from chat.degradation_responses import explain_degradation
+from chat.sre_policy import enforce_sre_policy
 
-from chat.change_detector import compare_memory, compare_disk
-from chat.confidence import confidence
-from chat.unknowns import report_unknowns
-from chat.recommendations import recommend
-from chat.capability import assess_capability
+# Dimensions 1–7 engines
+from chat.history_loader import load_recent_history
+from chat.trend_metrics import memory_trend, disk_trend
+from chat.baseline_metrics import memory_baseline, disk_baseline
+from chat.severity_engine import classify_severity
+from chat.prioritizer import prioritize
+from chat.impact_engine import assess_impact
+from chat.capability_engine import assess_capabilities
+from chat.observer_engine import generate_observations
+from chat.watch_state import enable_watch
+from chat.decision_gate import should_speak
 
 
-# -------------------------
-# Load static knowledge
-# -------------------------
 with open("knowledge/concepts.json") as f:
     KNOWLEDGE = json.load(f)
 
 
 def answer(question: str) -> str:
-    """
-    Main response function for the System Knowledge Bot.
-    Combines real system facts, reasoning engines,
-    and natural-language explanations.
-    """
-
     intent = detect_intent(question)
+    q = question.lower()
 
-    # --------------------------------------------------
-    # CPU INFO
-    # --------------------------------------------------
-    if intent == "CPU_INFO":
-        cpu = get_cpu()
-        if cpu is None:
-            return "I can’t access CPU information right now."
-
-        return (
-            f"Your system is running on a {cpu['model']} "
-            f"with {cpu['logical_cores']} logical cores."
-        )
-
-    # --------------------------------------------------
-    # MEMORY STATUS
-    # --------------------------------------------------
-    if intent == "MEMORY_STATUS":
-        memory = get_memory()
-        if memory is None:
-            return "I can’t access memory information right now."
-
-        return (
-            f"Your system has {memory['total_mb']} MB of RAM, "
-            f"with {memory['available_mb']} MB currently available."
-        )
-
-    # --------------------------------------------------
-    # STORAGE STATUS
-    # --------------------------------------------------
-    if intent == "STORAGE_STATUS":
-        storage = get_storage()
-        if storage is None:
-            return "I can’t access storage information right now."
-
-        for fs in storage["filesystems"]:
-            if fs["mount_point"] == "/":
-                used_pct = (fs["used_gb"] / fs["size_gb"]) * 100
-                return (
-                    f"Your main disk is {used_pct:.1f}% full "
-                    f"({fs['used_gb']} GB used out of {fs['size_gb']} GB)."
-                )
-
-        return "I couldn’t determine the usage of your main filesystem."
-
-    # --------------------------------------------------
-    # EXPLAIN CPU / RAM
-    # --------------------------------------------------
-    if intent == "EXPLAIN_CPU":
-        return KNOWLEDGE["cpu"]["definition"]
-
-    if intent == "EXPLAIN_RAM":
-        return KNOWLEDGE["ram"]["definition"]
-
-    # --------------------------------------------------
-    # SYSTEM HEALTH (WITH CONFIDENCE + UNKNOWNs)
-    # --------------------------------------------------
+    # ==================================================
+    # SYSTEM HEALTH (SRE ENFORCED)
+    # ==================================================
     if intent == "SYSTEM_STATUS":
-        memory = get_memory()
-        storage = get_storage()
         facts = get_full_facts()
+        if not facts:
+            return "System health cannot be evaluated right now."
 
-        if memory is None or storage is None or facts is None:
-            return (
-                "I can’t evaluate system health right now because "
-                "system data is unavailable."
-            )
+        memory = facts.get("memory")
+        storage = facts.get("storage")
 
         mem_status, mem_pct = evaluate_memory(memory)
         disk_status, disk_pct = evaluate_disk(storage)
-        overall = overall_health(mem_status, disk_status)
+        base = overall_health(mem_status, disk_status)
 
-        response = summarize_health(
+        summary = summarize_health(
             mem_status, mem_pct,
             disk_status, disk_pct,
-            overall
+            base
         )
 
-        response += " " + confidence(
-            "high" if overall == "healthy" else "medium"
+        _, override = enforce_sre_policy(facts, base)
+        return override if override else summary
+
+    # ==================================================
+    # BASELINE VS NORMAL (DIM 2 + DIM 7)
+    # ==================================================
+    if intent == "SYSTEM_BASELINE":
+        history = load_recent_history()
+        if len(history) < 5:
+            return "I don’t have enough history yet to know what’s normal."
+
+        mem_status, _ = memory_baseline(history)
+        disk_status, _ = disk_baseline(history)
+
+        severities = []
+        if mem_status != "normal":
+            severities.append("attention")
+        if disk_status != "normal":
+            severities.append("attention")
+
+        speak = should_speak(
+            severity_levels=severities,
+            observations=[],
+            intent=intent,
+            freshness_ok=True
         )
 
-        unknowns = report_unknowns(facts)
-        if unknowns:
-            response += "\n\nWhat I can’t see:\n- " + "\n- ".join(unknowns)
+        if not speak:
+            return "Nothing stands out as unusual right now."
 
-        action = recommend(memory, storage)
-        if action:
-            response += "\n\nNext best action:\n- " + action
+        msgs = []
+        if mem_status != "normal":
+            msgs.append("Available memory is outside its usual range.")
+        if disk_status != "normal":
+            msgs.append("Disk usage is outside its usual range.")
 
-        return response
+        return "Here’s how things compare to usual behavior:\n- " + "\n- ".join(msgs)
 
-    # --------------------------------------------------
-    # WHY IS SYSTEM SLOW?
-    # --------------------------------------------------
-    if intent == "SYSTEM_SLOW":
-        memory = get_memory()
+    # ==================================================
+    # RAW FACTS
+    # ==================================================
+    if intent == "MEMORY_STATUS":
+        mem = get_memory()
+        return (
+            f"Your system has {mem['total_mb']} MB RAM with "
+            f"{mem['available_mb']} MB available."
+            if mem else
+            "Memory information is unavailable."
+        )
+
+    if intent == "CPU_INFO":
+        cpu = get_cpu()
+        return (
+            f"Your system uses a {cpu['model']} with "
+            f"{cpu['logical_cores']} logical cores."
+            if cpu else
+            "CPU information is unavailable."
+        )
+
+    if intent == "STORAGE_STATUS":
         storage = get_storage()
+        if not storage:
+            return "Storage information is unavailable."
 
-        if memory is None or storage is None:
-            return (
-                "I can’t analyze performance right now because "
-                "system data is unavailable."
-            )
+        for fs in storage["filesystems"]:
+            if fs["mount_point"] == "/":
+                pct = (fs["used_gb"] / fs["size_gb"]) * 100
+                return f"Main disk is {pct:.1f}% full."
 
-        reasons, confidence_levels = analyze_slowness(memory, storage)
-        response = explain_slowness(reasons, confidence_levels)
-        response += "\n\n" + confidence(
-            "high" if "high" in confidence_levels else "medium"
-        )
-
-        action = recommend(memory, storage)
-        if action:
-            response += "\n\nMost impactful improvement:\n- " + action
-
-        return response
-
-    # --------------------------------------------------
+    # ==================================================
     # HARDWARE DEGRADATION
-    # --------------------------------------------------
+    # ==================================================
     if intent == "DEGRADATION_CHECK":
         facts = get_full_facts()
+        if not facts:
+            return "Hardware health data is unavailable."
 
-        if facts is None:
+        disk_health = facts.get("disk_health", {})
+        battery = facts.get("battery", {})
+
+        result = explain_degradation(
+            analyze_degradation(disk_health, battery)
+        )
+
+        notes = []
+        if disk_health.get("status") == "unknown":
+            notes.append("Disk SMART data is unavailable (expected in VMs).")
+        if battery.get("status") == "not_applicable":
+            notes.append("Battery health does not apply to this system.")
+
+        if notes:
+            result += "\n\nNotes:\n- " + "\n- ".join(notes)
+
+        return result
+
+    # ==================================================
+    # DIMENSION 6 + 7: PROACTIVE (RESTRAINED)
+    # ==================================================
+    history = load_recent_history()
+    if len(history) >= 5:
+        mem_tr = memory_trend(history)
+        disk_tr = disk_trend(history)
+        mem_base, _ = memory_baseline(history)
+        disk_base, _ = disk_baseline(history)
+
+        mem_sev, _ = classify_severity(mem_tr[0], mem_tr[1], mem_base, "memory")
+        disk_sev, _ = classify_severity(disk_tr[0], disk_tr[1], disk_base, "disk")
+
+        observations = generate_observations(
+            trends={"memory": mem_tr, "disk": disk_tr},
+            baselines={"memory": mem_base, "disk": disk_base}
+        )
+
+        speak = should_speak(
+            severity_levels=[mem_sev, disk_sev],
+            observations=observations,
+            intent=intent,
+            freshness_ok=True
+        )
+
+        if speak and observations:
             return (
-                "I can’t evaluate hardware health right now because "
-                "system data is unavailable."
+                "One thing I’ve noticed recently:\n- "
+                + "\n- ".join(observations)
+                + "\n\nIf you want, I can keep an eye on this for you."
             )
 
-        findings = analyze_degradation(
-            facts.get("disk_health", {}),
-            facts.get("battery", {})
-        )
+    # ==================================================
+    # WATCH MODE
+    # ==================================================
+    if intent == "ENABLE_WATCH":
+        if "memory" in q:
+            enable_watch("memory")
+            return "Okay, I’ll monitor memory behavior."
+        if "disk" in q:
+            enable_watch("disk")
+            return "Okay, I’ll monitor disk usage."
+        return "Tell me what you want me to monitor."
 
-        response = explain_degradation(findings)
-
-        unknowns = report_unknowns(facts)
-        if unknowns:
-            response += "\n\nWhat I can’t see:\n- " + "\n- ".join(unknowns)
-
-        return response
-
-    # --------------------------------------------------
-    # WHAT CHANGED? (HISTORY-AWARE)
-    # --------------------------------------------------
-    if intent == "SYSTEM_CHANGE":
-        history = get_history()
-        if not history or len(history) < 2:
-            return "I don’t have enough historical data to compare yet."
-
-        prev, curr = history
-        messages = []
-
-        mem_change = compare_memory(prev["memory"], curr["memory"])
-        if mem_change:
-            messages.append(mem_change)
-
-        prev_fs = prev["storage"]["filesystems"][0]
-        curr_fs = curr["storage"]["filesystems"][0]
-        disk_change = compare_disk(prev_fs, curr_fs)
-        if disk_change:
-            messages.append(disk_change)
-
-        if not messages:
-            return "No significant system changes detected recently."
-
-        return (
-            "Here’s what changed recently:\n- "
-            + "\n- ".join(messages)
-        )
-
-    # --------------------------------------------------
-    # CAPABILITY ASSESSMENT
-    # --------------------------------------------------
-    if intent == "CAPABILITY_CHECK":
-        cpu = get_cpu()
-        memory = get_memory()
-
-        if cpu is None or memory is None:
-            return "I can’t assess system capability right now."
-
-        return assess_capability(cpu, memory)
-
-    # --------------------------------------------------
-    # UNKNOWN
-    # --------------------------------------------------
-    return (
-        "I’m not sure how to help with that yet. "
-        "You can ask about system health, performance issues, "
-        "hardware degradation, changes over time, or system capability."
-    )
+    # ==================================================
+    # FALLBACK (REASSURANCE)
+    # ==================================================
+    return "Everything looks normal right now. Let me know if you want to explore something specific."

@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>System Posture Timeline</title>
+  <style>
+    body {
+      font-family: Inter, system-ui, sans-serif;
+      background: #f8f9fa;
+      padding: 2rem;
+      color: #212529;
+    }
+
+    h1 {
+      font-size: 1.4rem;
+      margin-bottom: 1rem;
+    }
+
+    .timeline {
+      display: flex;
+      height: 36px;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+    }
+
+    .segment {
+      height: 100%;
+    }
+
+    .idle { background: #5FB3A2; }
+    .stable { background: #4C6EF5; }
+    .sensitive { background: #F59F00; }
+    .constrained { background: #E8590C; }
+
+    .labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.75rem;
+      margin-top: 0.4rem;
+      color: #495057;
+    }
+
+    .legend {
+      margin-top: 1rem;
+      display: flex;
+      gap: 1rem;
+      font-size: 0.8rem;
+    }
+
+    .legend span {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+  </style>
+</head>
+<body>
+
+<h1>System Posture — Today</h1>
+
+<div class="timeline">
+  <div class="segment idle" style="width: 25%"></div>
+  <div class="segment stable" style="width: 40%"></div>
+  <div class="segment sensitive" style="width: 20%"></div>
+  <div class="segment stable" style="width: 15%"></div>
+</div>
+
+<div class="labels">
+  <span>00:00</span>
+  <span>12:00</span>
+  <span>24:00</span>
+</div>
+
+<div class="legend">
+  <span><i class="dot idle"></i> Idle-capable</span>
+  <span><i class="dot stable"></i> Work-stable</span>
+  <span><i class="dot sensitive"></i> Performance-sensitive</span>
+  <span><i class="dot constrained"></i> Capacity-constrained</span>
+</div>
+
+</body>
+</html>

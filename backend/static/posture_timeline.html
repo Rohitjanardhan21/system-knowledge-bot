@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<title>System Posture — Today</title>
+<style>
+  body{font-family:Inter,system-ui,sans-serif;background:#f8f9fa;padding:2rem;color:#212529}
+  h1{font-size:1.4rem;margin-bottom:1rem}
+  .timeline{display:flex;height:36px;border-radius:8px;overflow:hidden;box-shadow:0 2px 6px rgba(0,0,0,.08)}
+  .seg{height:100%}
+  .idle{background:#5FB3A2}
+  .stable{background:#4C6EF5}
+  .sensitive{background:#F59F00}
+  .constrained{background:#E8590C}
+  .labels{display:flex;justify-content:space-between;font-size:.75rem;margin-top:.4rem;color:#495057}
+  .legend{margin-top:1rem;display:flex;gap:1rem;font-size:.8rem}
+  .dot{width:10px;height:10px;border-radius:50%;display:inline-block}
+</style>
+</head>
+<body>
+
+<h1>System Posture — Today</h1>
+<div id="timeline" class="timeline"></div>
+<div class="labels"><span>00:00</span><span>12:00</span><span>24:00</span></div>
+
+<div class="legend">
+  <span><i class="dot idle"></i> Idle-capable</span>
+  <span><i class="dot stable"></i> Work-stable</span>
+  <span><i class="dot sensitive"></i> Performance-sensitive</span>
+  <span><i class="dot constrained"></i> Capacity-constrained</span>
+</div>
+
+<script>
+async function loadTimeline(){
+  const res = await fetch('/viz/posture-today');
+  const data = await res.json();
+  const total = data.total_seconds || 1;
+  const el = document.getElementById('timeline');
+  el.innerHTML = '';
+
+  const map = {
+    'idle-capable':'idle',
+    'work-stable':'stable',
+    'performance-sensitive':'sensitive',
+    'capacity-constrained':'constrained'
+  };
+
+  data.segments.forEach(s=>{
+    const div = document.createElement('div');
+    div.className = 'seg ' + (map[s.posture] || 'stable');
+    div.style.width = ((s.seconds/total)*100).toFixed(2)+'%';
+    div.title = `${s.posture} • ${(s.seconds/3600).toFixed(2)}h`;
+    el.appendChild(div);
+  });
+}
+loadTimeline();
+</script>
+
+</body>
+</html>

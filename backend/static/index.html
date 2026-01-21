@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>System Knowledge Bot</title>
+
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      margin: 2rem;
+      line-height: 1.5;
+    }
+
+    h1 {
+      margin-bottom: 1rem;
+    }
+
+    .posture {
+      font-size: 1.4rem;
+      margin-bottom: 1.5rem;
+    }
+
+    ul {
+      padding-left: 1.2rem;
+    }
+  </style>
+</head>
+<body>
+
+<h1>System Knowledge Bot</h1>
+
+<div id="current" class="posture">
+  Loading current posture…
+</div>
+
+<h2>Posture Timeline</h2>
+<ul id="timeline"></ul>
+
+<script>
+async function loadGUI() {
+  try {
+    const currentResp = await fetch("/gui/current");
+    const current = await currentResp.json();
+
+    const currentDiv = document.getElementById("current");
+
+    if (!current || current.available !== true) {
+      currentDiv.innerText = "System state not available.";
+      return;
+    }
+
+    const posture = current.state.posture.posture;
+
+    currentDiv.innerHTML =
+      `<strong>Current posture:</strong> ${posture}`;
+
+    const timelineResp = await fetch("/gui/timeline");
+    const timeline = await timelineResp.json();
+
+    const list = document.getElementById("timeline");
+    list.innerHTML = "";
+
+    timeline.forEach(item => {
+      const li = document.createElement("li");
+      li.textContent = `${item.timestamp} — ${item.posture}`;
+      list.appendChild(li);
+    });
+
+  } catch (err) {
+    console.error("GUI error:", err);
+    document.getElementById("current").innerText =
+      "System state not available.";
+  }
+}
+
+loadGUI();
+</script>
+
+</body>
+</html>

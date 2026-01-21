@@ -2,75 +2,76 @@ def detect_intent(question: str) -> str:
     q = question.lower().strip()
 
     # -------------------------
-    # CPU
+    # Explicit baseline checks
     # -------------------------
-    if "cpu" in q and ("what" in q or "which" in q):
-        return "CPU_INFO"
-
-    if "what is cpu" in q or "explain cpu" in q:
-        return "EXPLAIN_CPU"
-
-    # -------------------------
-    # MEMORY
-    # -------------------------
-    if "ram" in q and ("free" in q or "available" in q):
-        return "MEMORY_STATUS"
-
-    if "what is ram" in q or "explain ram" in q:
-        return "EXPLAIN_RAM"
+    if "memory" in q and "normal" in q:
+        return "SYSTEM_BASELINE"
+    if "disk" in q and "normal" in q:
+        return "SYSTEM_BASELINE"
+    if "unusual" in q or "usual" in q or "anomaly" in q:
+        return "SYSTEM_BASELINE"
 
     # -------------------------
-    # STORAGE
+    # Trend / temporal
     # -------------------------
-    if "disk" in q or "storage" in q:
-        return "STORAGE_STATUS"
+    if "trend" in q or "getting worse" in q or "getting better" in q:
+        return "SYSTEM_TREND"
 
     # -------------------------
-    # SYSTEM HEALTH
+    # Priority / severity
     # -------------------------
-    if "health" in q or "system status" in q:
+    if "important" in q or "priority" in q or "matters most" in q:
+        return "SYSTEM_PRIORITY"
+
+    # -------------------------
+    # Impact / tradeoffs
+    # -------------------------
+    if "impact" in q or "tradeoff" in q or "help" in q or "improve" in q:
+        return "SYSTEM_IMPACT"
+
+    # -------------------------
+    # Capability
+    # -------------------------
+    if (
+        "can this system" in q
+        or "handle" in q
+        or "suitable" in q
+        or "good for" in q
+    ):
+        return "SYSTEM_CAPABILITY"
+
+    # -------------------------
+    # Hardware degradation
+    # -------------------------
+    if "degrad" in q or "hardware" in q or "failing" in q:
+        return "DEGRADATION_CHECK"
+
+    # -------------------------
+    # System health
+    # -------------------------
+    if "healthy" in q or "system health" in q or "status" in q:
         return "SYSTEM_STATUS"
 
     # -------------------------
-    # PERFORMANCE / SLOWNESS
+    # Slowness
     # -------------------------
     if "slow" in q or "lag" in q or "performance" in q:
         return "SYSTEM_SLOW"
 
     # -------------------------
-    # HARDWARE DEGRADATION
+    # Watch / monitor
     # -------------------------
-    if (
-        "degrad" in q
-        or "failing" in q
-        or "hardware problem" in q
-        or "hardware issue" in q
-        or "bad hardware" in q
-    ):
-        return "DEGRADATION_CHECK"
+    if "watch" in q or "monitor" in q:
+        return "ENABLE_WATCH"
 
     # -------------------------
-    # CHANGE DETECTION
+    # Raw facts
     # -------------------------
-    if "change" in q or "difference" in q or "recently" in q:
-        return "SYSTEM_CHANGE"
+    if "cpu" in q:
+        return "CPU_INFO"
+    if "ram" in q or "memory" in q:
+        return "MEMORY_STATUS"
+    if "disk" in q or "storage" in q:
+        return "STORAGE_STATUS"
 
-    # -------------------------
-    # CAPABILITY / WORKLOAD
-    # -------------------------
-    if (
-        "workload" in q
-        or "what can this system" in q
-        or "what is this system good for" in q
-        or "what kind of work" in q
-        or "handle docker" in q
-        or "handle kubernetes" in q
-        or "capable of" in q
-        or "good for" in q
-    ):
-        return "CAPABILITY_CHECK"
-
-    # -------------------------
-    # FALLBACK
-    # -------------------------
     return "UNKNOWN"

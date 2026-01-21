@@ -1,51 +1,76 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.staticfiles import StaticFiles
 import json
 import os
 from datetime import datetime, timezone
+from backend.agent_routes import router as agent_router
+app.include_router(agent_router)
 
-app = FastAPI()
+# --------------------------------------------------
+# App initialization (MUST be first)
+# --------------------------------------------------
+app = FastAPI(title="System Knowledge Bot")
 
+# --------------------------------------------------
+# Include routers (AFTER app exists)
+# --------------------------------------------------
+from backend.timeline_routes import router as timeline_router
+from backend.gui_routes import router as gui_router
+
+app.include_router(timeline_router)
+app.include_router(gui_router)
+
+# --------------------------------------------------
+# Static GUI (read-only, mounted at /ui)
+# --------------------------------------------------
+app.mount(
+    "/ui",
+    StaticFiles(directory="backend/static", html=True),
+    name="ui"
+)
+
+# --------------------------------------------------
+# Facts paths (READ FROM system_facts)
+# --------------------------------------------------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 FACTS_PATH = os.path.join(BASE_DIR, "..", "system_facts", "current.json")
 
-
+# --------------------------------------------------
+# Helpers
+# --------------------------------------------------
 def load_facts():
     if not os.path.exists(FACTS_PATH):
-        raise HTTPException(503, "System facts not available")
+        raise HTTPException(status_code=503, detail="System facts not available")
 
     with open(FACTS_PATH) as f:
         return json.load(f)
 
-
+# --------------------------------------------------
+# Core API endpoints
+# --------------------------------------------------
 @app.get("/health")
 def health():
     return {"status": "ok"}
-
 
 @app.get("/facts")
 def facts():
     return load_facts()
 
-
 @app.get("/facts/full")
 def full_facts():
     return load_facts()
-
 
 @app.get("/facts/cpu")
 def cpu():
     return load_facts()["cpu"]
 
-
 @app.get("/facts/memory")
 def memory():
     return load_facts()["memory"]
 
-
 @app.get("/facts/storage")
 def storage():
     return load_facts()["storage"]
-
 
 @app.get("/facts/status")
 def status():

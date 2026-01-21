@@ -1,0 +1,19 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: system-knowledge-bot
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: skb
+  template:
+    metadata:
+      labels:
+        app: skb
+    spec:
+      containers:
+        - name: skb
+          image: system-knowledge-bot:1.0
+          ports:
+            - containerPort: 8000
