@@ -1,0 +1,95 @@
+/* 🔥 ROOT THEME (DARK-FIRST) */
+:root {
+  --bg: #020617;
+  --panel: rgba(30, 41, 59, 0.6);
+  --border: rgba(255, 255, 255, 0.05);
+
+  --text: #cbd5f5;
+  --text-strong: #f1f5f9;
+
+  --green: #22c55e;
+  --orange: #f59e0b;
+  --red: #ef4444;
+
+  --shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+
+  font-family: Inter, system-ui, sans-serif;
+  background: radial-gradient(circle at top, #0f172a, #020617);
+  color: var(--text);
+}
+
+/* 🔥 REMOVE CENTERED LAYOUT */
+#root {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+/* 🔥 BODY RESET */
+body {
+  margin: 0;
+  background: transparent;
+}
+
+/* 🧠 HEADINGS */
+h1 {
+  font-size: 36px;
+  font-weight: 600;
+  color: var(--text-strong);
+  margin-bottom: 10px;
+}
+
+h2 {
+  font-size: 20px;
+  color: var(--text-strong);
+}
+
+/* 📄 TEXT */
+p {
+  color: var(--text);
+  font-size: 14px;
+}
+
+/* 🧊 GLASS CARD */
+.glass {
+  background: var(--panel);
+  backdrop-filter: blur(14px);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+}
+
+/* ✨ HOVER EFFECT */
+.glass:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+/* ⚡ TRANSITIONS */
+* {
+  transition: all 0.25s ease;
+}
+
+/* 🎯 SCROLLBAR (PREMIUM TOUCH) */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 10px;
+}
+
+/* 📊 RANGE SLIDER (for simulation controls) */
+input[type="range"] {
+  width: 100%;
+  accent-color: #6366f1;
+}
+
+/* 🔥 CODE CLEANUP (REMOVE OLD STYLES EFFECT) */
+code {
+  background: #1e293b;
+  padding: 4px 8px;
+  border-radius: 6px;
+}

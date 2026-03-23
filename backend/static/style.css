@@ -1,0 +1,396 @@
+:root {
+  --bg:#0b0f14;
+  --panel:#111827;
+  --panel-border:#1f2933;
+
+  --text-main:#e5e7eb;
+  --text-muted:#9ca3af;
+
+  --green:#22c55e;
+  --blue:#3b82f6;
+  --yellow:#eab308;
+  --red:#ef4444;
+
+  --accent:#6366f1;
+
+  --shadow-soft:0 10px 35px rgba(0,0,0,.5);
+  --radius-lg:18px;
+}
+
+/* ---------- LIGHT MODE ---------- */
+
+body.light {
+  --bg:#f8fafc;
+  --panel:#ffffff;
+  --panel-border:#e5e7eb;
+  --text-main:#111827;
+  --text-muted:#6b7280;
+  --shadow-soft:0 6px 18px rgba(0,0,0,.12);
+}
+
+body {
+  margin:0;
+  background:var(--bg);
+  color:var(--text-main);
+  font-family:system-ui,sans-serif;
+}
+
+/* HEADER */
+
+.app-header {
+  height:56px;
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  padding:0 18px;
+  background:linear-gradient(180deg,#0b0f14,#090c11);
+  border-bottom:1px solid var(--panel-border);
+}
+
+.host-chip {
+  display:flex;
+  align-items:center;
+  gap:8px;
+  background:rgba(255,255,255,.04);
+  padding:6px 12px;
+  border-radius:999px;
+}
+
+.collector-dot {
+  width:8px;
+  height:8px;
+  border-radius:50%;
+}
+.collector-dot.ok{background:var(--green)}
+.collector-dot.warn{background:var(--yellow)}
+.collector-dot.err{background:var(--red)}
+
+.os-pill,.uptime-pill {
+  margin-left:10px;
+  display:flex;
+  align-items:center;
+  gap:6px;
+  padding:6px 12px;
+  border-radius:999px;
+  background:rgba(255,255,255,.04);
+  font-size:12px;
+  color:var(--text-muted);
+}
+
+.refresh-btn,.theme-btn {
+  background:rgba(255,255,255,.05);
+  border:1px solid var(--panel-border);
+  color:var(--text-main);
+  padding:6px 12px;
+  border-radius:10px;
+  cursor:pointer;
+}
+
+.accent-picker input {
+  width:26px;
+  height:26px;
+  border:none;
+  background:transparent;
+  cursor:pointer;
+}
+
+.posture-badge {
+  padding:6px 12px;
+  border-radius:999px;
+  font-size:11px;
+  font-weight:700;
+}
+
+/* ---------- HEALTH ---------- */
+
+.health-banner {
+  height:34px;
+  padding:0 18px;
+  display:flex;
+  align-items:center;
+  font-size:13px;
+  border-bottom:1px solid var(--panel-border);
+}
+
+.health-banner.warn {
+  background:rgba(234,179,8,.15);
+  color:var(--yellow);
+}
+.health-banner.error {
+  background:rgba(239,68,68,.15);
+  color:var(--red);
+}
+
+.hidden{display:none}
+
+/* ---------- ALERTS ---------- */
+
+.alert-center {
+  margin:12px 18px;
+  background:var(--panel);
+  border-radius:var(--radius-lg);
+  padding:14px;
+  border:1px solid var(--panel-border);
+}
+
+.alert-header {
+  display:flex;
+  justify-content:space-between;
+}
+
+.alert-count {
+  background:var(--red);
+  padding:2px 8px;
+  border-radius:999px;
+}
+
+.alert-row {
+  margin-top:8px;
+  padding:10px;
+  border-radius:10px;
+  cursor:pointer;
+}
+
+.alert-row.critical{background:rgba(239,68,68,.15);color:var(--red)}
+.alert-row.warning{background:rgba(234,179,8,.15);color:var(--yellow)}
+.alert-row.info{background:rgba(59,130,246,.15);color:var(--blue)}
+
+/* ---------- DASHBOARD ---------- */
+
+.dashboard {
+  display:grid;
+  grid-template-columns:2.4fr 1fr;
+  gap:18px;
+  padding:18px;
+}
+
+.metrics-grid {
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  gap:18px;
+}
+
+.card {
+  background:var(--panel);
+  border-radius:var(--radius-lg);
+  padding:18px;
+  border:1px solid var(--panel-border);
+  box-shadow:var(--shadow-soft);
+  position:relative;
+}
+
+/* ---------- STALE ---------- */
+
+.stale-overlay {
+  position:absolute;
+  inset:0;
+  background:rgba(0,0,0,.55);
+  display:grid;
+  place-items:center;
+  font-weight:700;
+  color:var(--yellow);
+}
+
+/* ---------- GAUGES ---------- */
+
+.radial {
+  width:140px;
+  height:140px;
+  margin:10px auto;
+}
+
+.radial .bg {
+  stroke:#222;
+  stroke-width:10;
+  fill:none;
+}
+
+.radial .fg {
+  stroke-width:10;
+  fill:none;
+  stroke-linecap:round;
+  transform:rotate(-90deg);
+  transform-origin:50% 50%;
+}
+
+.radial text {
+  fill:var(--text-main);
+  font-size:22px;
+  text-anchor:middle;
+  dominant-baseline:middle;
+}
+
+/* ---------- NETWORK ---------- */
+
+#netChart {width:100%;height:160px}
+
+/* ---------- TRENDS ---------- */
+
+.trend-card {
+  background:var(--panel);
+  border-radius:var(--radius-lg);
+  padding:14px;
+  border:1px solid var(--panel-border);
+}
+
+.trend-main {
+  display:flex;
+  gap:6px;
+  font-size:18px;
+}
+
+.trend-up{color:var(--red)}
+.trend-down{color:var(--green)}
+.trend-flat{color:var(--blue)}
+
+.trend-diff{grid-column:1/-1}
+
+/* ---------- AGENT ---------- */
+
+.agent-panel {
+  background:var(--panel);
+  border-radius:var(--radius-lg);
+  padding:18px;
+  border:1px solid var(--panel-border);
+  display:flex;
+  flex-direction:column;
+}
+
+/* ---------- CONFIDENCE ---------- */
+
+.confidence-track {
+  height:6px;
+  background:#222;
+  border-radius:4px;
+  overflow:hidden;
+}
+#confidenceFill{height:100%;width:0;background:var(--blue)}
+
+/* ---------- TIMELINE ---------- */
+
+.timeline-section{padding:18px}
+
+.timeline-wrapper {
+  background:var(--panel);
+  padding:14px;
+  border-radius:var(--radius-lg);
+}
+/* ---------- DRILLDOWN DRAWER ---------- */
+
+.drill-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  height: 100%;
+  width: 420px;
+  background: var(--panel);
+  border-left: 1px solid var(--panel-border);
+  box-shadow: -12px 0 30px rgba(0,0,0,.4);
+  transform: translateX(100%);
+  transition: transform .3s ease;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+}
+
+.drill-drawer.open {
+  transform: translateX(0);
+}
+
+.drill-header {
+  display: flex;
+  justify-content: space-between;
+  padding: 14px;
+  border-bottom: 1px solid var(--panel-border);
+}
+
+#drillContent {
+  padding: 14px;
+  overflow-y: auto;
+}
+
+.drill-section {
+  margin-bottom: 18px;
+}
+
+.drill-section h4 {
+  margin-bottom: 6px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+/* ---------- HISTORY EXPLORER ---------- */
+
+.history-section {
+  padding: 18px;
+}
+
+.history-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.history-controls input,
+.history-controls button {
+  margin-left: 6px;
+}
+
+.history-wrapper {
+  margin-top: 10px;
+  background: var(--panel);
+  border-radius: var(--radius-lg);
+  padding: 14px;
+  border: 1px solid var(--panel-border);
+}
+/* ---------- ACTION SIMULATOR ---------- */
+
+.simulator-section {
+  padding: 18px;
+}
+
+.sim-grid {
+  display: grid;
+  grid-template-columns: 1fr auto 2fr;
+  gap: 12px;
+  align-items: center;
+}
+
+.sim-result {
+  background: var(--panel);
+  border-radius: var(--radius-lg);
+  padding: 12px;
+  border: 1px solid var(--panel-border);
+}
+/* ---------- WIZARD ---------- */
+
+.wizard-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.7);
+  display: grid;
+  place-items: center;
+  z-index: 200;
+}
+
+.wizard {
+  width: 520px;
+  background: var(--panel);
+  padding: 22px;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-soft);
+}
+
+.wizard-actions {
+  margin-top: 16px;
+  display: flex;
+  justify-content: space-between;
+}
+
+
+/* ---------- PREDICTIVE ---------- */
+
+.predictive-grid {
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  gap:18px;
+}

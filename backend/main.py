@@ -1,105 +1,44 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
-import json
-import os
-from datetime import datetime, timezone
-from backend.agent_routes import router as agent_router
-app.include_router(agent_router)
+from fastapi.middleware.cors import CORSMiddleware
+# -------------------------------------------------
+# CREATE APP FIRST (CRITICAL)
+# -------------------------------------------------
 
-# --------------------------------------------------
-# App initialization (MUST be first)
-# --------------------------------------------------
 app = FastAPI(title="System Knowledge Bot")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # allow all (dev mode)
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+                   )
+# -------------------------------------------------
+# ROUTERS
+# -------------------------------------------------
+from backend.alert_routes import router as alert_router
+from backend.component_routes import router as component_router
+from backend.history_routes import router as history_router
+from backend.simulate_routes import router as simulate_router
+from backend.service_routes import router as service_router
+from backend.agent_routes import router as agent_router
+from backend.system_routes import router as system_router
+from backend.temporal_engine import temporal_analysis
+# register routers
+app.include_router(alert_router)
+app.include_router(component_router)
+app.include_router(history_router)
+app.include_router(simulate_router)
+app.include_router(service_router)
+app.include_router(agent_router)
+app.include_router(system_router)
 
-# --------------------------------------------------
-# Include routers (AFTER app exists)
-# --------------------------------------------------
-from backend.timeline_routes import router as timeline_router
-from backend.gui_routes import router as gui_router
+# -------------------------------------------------
+# STATIC FRONTEND
+# -------------------------------------------------
 
-app.include_router(timeline_router)
-app.include_router(gui_router)
-
-# --------------------------------------------------
-# Static GUI (read-only, mounted at /ui)
-# --------------------------------------------------
 app.mount(
-    "/ui",
+    "/",
     StaticFiles(directory="backend/static", html=True),
-    name="ui"
+    name="static",
 )
-
-# --------------------------------------------------
-# Facts paths (READ FROM system_facts)
-# --------------------------------------------------
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-FACTS_PATH = os.path.join(BASE_DIR, "..", "system_facts", "current.json")
-
-# --------------------------------------------------
-# Helpers
-# --------------------------------------------------
-def load_facts():
-    if not os.path.exists(FACTS_PATH):
-        raise HTTPException(status_code=503, detail="System facts not available")
-
-    with open(FACTS_PATH) as f:
-        return json.load(f)
-
-# --------------------------------------------------
-# Core API endpoints
-# --------------------------------------------------
-@app.get("/health")
-def health():
-    return {"status": "ok"}
-
-@app.get("/facts")
-def facts():
-    return load_facts()
-
-@app.get("/facts/full")
-def full_facts():
-    return load_facts()
-
-@app.get("/facts/cpu")
-def cpu():
-    return load_facts()["cpu"]
-
-@app.get("/facts/memory")
-def memory():
-    return load_facts()["memory"]
-
-@app.get("/facts/storage")
-def storage():
-    return load_facts()["storage"]
-
-@app.get("/facts/status")
-def status():
-    facts = load_facts()
-    collected = datetime.fromisoformat(
-        facts["metadata"]["collected_at"]
-    ).replace(tzinfo=timezone.utc)
-
-    age = (datetime.now(timezone.utc) - collected).total_seconds()
-    ttl = facts["metadata"]["ttl_seconds"]
-
-    return {
-        "stale": age > ttl,
-        "age_seconds": int(age),
-        "ttl_seconds": ttl
-    }
-
-@app.get("/facts/history")
-def history():
-    base = os.path.dirname(FACTS_PATH)
-    hist_dir = os.path.join(base, "history")
-
-    files = sorted(os.listdir(hist_dir))
-    if len(files) < 2:
-        return []
-
-    with open(os.path.join(hist_dir, files[-2])) as f:
-        prev = json.load(f)
-    with open(os.path.join(hist_dir, files[-1])) as f:
-        curr = json.load(f)
-
-    return [prev, curr]

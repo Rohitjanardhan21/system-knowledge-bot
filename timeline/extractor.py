@@ -1,37 +1,52 @@
+import os
 import json
-from pathlib import Path
 
-HISTORY_DIR = Path("system_state/history")
+HISTORY_DIR = os.path.join(
+    os.path.dirname(__file__),
+    "..",
+    "system_state",
+    "history"
+)
 
-def extract_posture_timeline():
-    records = []
+def extract_posture_timeline(day: str | None = None):
+    """
+    Returns List[Tuple[timestamp: str, posture: str]]
+    """
+    if not os.path.isdir(HISTORY_DIR):
+        return []
 
-    for file in sorted(HISTORY_DIR.glob("*.json")):
-        try:
-            if file.stat().st_size == 0:
-                # Skip empty files
-                continue
+    events = []
 
-            with open(file) as f:
-                data = json.load(f)
-
-            records.append(
-                (data["timestamp"], data["posture"]["posture"])
-            )
-
-        except (json.JSONDecodeError, KeyError):
-            # Skip corrupt or incomplete records
+    for fname in sorted(os.listdir(HISTORY_DIR)):
+        if not fname.endswith(".json"):
             continue
 
-    timeline = []
-    last_posture = None
+        path = os.path.join(HISTORY_DIR, fname)
 
-    for timestamp, posture in records:
-        if posture != last_posture:
-            timeline.append({
-                "timestamp": timestamp,
-                "posture": posture
-            })
-            last_posture = posture
+        try:
+            with open(path) as f:
+                data = json.load(f)
+        except Exception:
+            continue
 
-    return timeline
+        ts = data.get("timestamp")
+        posture_obj = data.get("posture")
+
+        if not ts or not posture_obj:
+            continue
+
+        # 🔑 NORMALIZATION HERE
+        if isinstance(posture_obj, dict):
+            posture = posture_obj.get("posture")
+        else:
+            posture = posture_obj
+
+        if not posture:
+            continue
+
+        if day and not ts.startswith(day):
+            continue
+
+        events.append((ts, posture))
+
+    return events

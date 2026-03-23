@@ -1,118 +1,69 @@
-from dataclasses import dataclass
-from enum import Enum
-from typing import List
 from datetime import datetime, timezone
 
-from agent.domain import Domain
-from agent.intent import Intent
+STALE_THRESHOLD = 300
 
 
-class EvidenceStatus(Enum):
-    SUFFICIENT = "sufficient"
-    PARTIAL = "partial"
-    INSUFFICIENT = "insufficient"
+def _refuse(reason: str, message: str):
+    return {
+        "mode": "refuse",
+        "reason": reason,
+        "text": message,
+        "confidence": 0.0,
+        "evidence": "insufficient telemetry",
+    }
 
 
-@dataclass
-class EvidenceResult:
-    status: EvidenceStatus
-    missing: List[str]
-
-
-EVIDENCE_REQUIREMENTS = {
-    # ---- STATUS ----
-    (Domain.SYSTEM_HEALTH, Intent.STATUS): ["posture"],
-    (Domain.CPU, Intent.STATUS): ["cpu"],
-    (Domain.MEMORY, Intent.STATUS): ["memory"],
-    (Domain.STORAGE, Intent.STATUS): ["storage"],
-    (Domain.THERMAL, Intent.STATUS): ["temperature"],
-
-    # ---- EXPLANATION ----
-    (Domain.CPU, Intent.EXPLAIN): ["cpu"],
-    (Domain.MEMORY, Intent.EXPLAIN): ["memory"],
-    (Domain.STORAGE, Intent.EXPLAIN): ["storage"],
-    (Domain.THERMAL, Intent.EXPLAIN): ["temperature"],
-
-    # ---- HISTORY / VISUAL ----
-    (Domain.TRENDS, Intent.HISTORY): ["history"],
-    (Domain.TRENDS, Intent.VISUALIZE): ["history"],
-    (Domain.SYSTEM_HEALTH, Intent.VISUALIZE): ["history"],
-
-    # ---- CAPABILITY ----
-    (Domain.CAPABILITY, Intent.CAPABILITY): ["posture", "baseline"],
-
-    # ---- BOTTLENECK ----
-    (Domain.BOTTLENECK, Intent.STATUS): ["cpu", "memory"],
-}
-
-
-def is_fresh(facts: dict) -> bool:
+def check_evidence(domains, intent, facts: dict):
     """
-    Checks whether collected system facts are still valid.
+    Evidence gate used by agent_core.
+    Signature MUST match agent_core:
+        check_evidence(domains, intent, facts)
     """
-    try:
-        meta = facts.get("metadata", {})
-        collected_at = meta.get("collected_at")
-        ttl = meta.get("ttl_seconds")
 
-        if not collected_at or not ttl:
-            return False
+    # ---------------- Timestamp freshness ----------------
 
-        collected = datetime.fromisoformat(collected_at.replace("Z", ""))
-        if collected.tzinfo is None:
-            collected = collected.replace(tzinfo=timezone.utc)
+    meta = facts.get("metadata", {})
+    ts_raw = meta.get("collected_at")
 
-        now = datetime.now(timezone.utc)
-        age = (now - collected).total_seconds()
+    if ts_raw:
+        ts = datetime.fromisoformat(ts_raw)
+        age = (datetime.now(timezone.utc) - ts).total_seconds()
+        if age > STALE_THRESHOLD:
+            return _refuse("evidence", "telemetry stale")
 
-        return age <= ttl
+    # ---------------- Metrics presence ----------------
 
-    except Exception:
-        return False
+    metrics = facts.get("metrics") or {}
+    probes = facts.get("probes") or {}
 
+    if not metrics:
+        return _refuse("domain", "no metrics present")
 
-def check_evidence(
-    domains: List[Domain],
-    intent: Intent,
-    available_facts: dict
-) -> EvidenceResult:
-    required = set()
+    # ---------------- Probe sanity ----------------
 
-    for domain in domains:
-        key = (domain, intent)
-        if key in EVIDENCE_REQUIREMENTS:
-            required.update(EVIDENCE_REQUIREMENTS[key])
+    if probes:
+        usable = [v for v in probes.values() if v == "ok"]
+        if not usable:
+            return _refuse("domain", "no usable probes")
 
-    if not required:
-        return EvidenceResult(
-            status=EvidenceStatus.INSUFFICIENT,
-            missing=["unspecified_evidence"]
-        )
+    # ---------------- CPU + Memory minimum ----------------
 
-    if not is_fresh(available_facts):
-        return EvidenceResult(
-            status=EvidenceStatus.INSUFFICIENT,
-            missing=["stale_data"]
-        )
+    cpu = metrics.get("cpu")
+    mem = metrics.get("memory")
 
-    missing = []
-    for item in required:
-        if item not in available_facts or available_facts[item] is None:
-            missing.append(item)
+    if not cpu or not mem:
+        return _refuse("domain", "missing cpu/memory")
 
-    if not missing:
-        return EvidenceResult(
-            status=EvidenceStatus.SUFFICIENT,
-            missing=[]
-        )
+    if cpu.get("usage") is None and cpu.get("usage_percent") is None:
+        return _refuse("domain", "cpu missing usage")
 
-    if len(missing) < len(required):
-        return EvidenceResult(
-            status=EvidenceStatus.PARTIAL,
-            missing=missing
-        )
+    if mem.get("usage") is None and mem.get("percent") is None:
+        return _refuse("domain", "memory missing usage")
 
-    return EvidenceResult(
-        status=EvidenceStatus.INSUFFICIENT,
-        missing=missing
-    )
+    # ---------------- PASS ----------------
+
+    return {
+        "mode": "ok",
+        "confidence": 0.85,
+        "evidence": "live telemetry",
+    }

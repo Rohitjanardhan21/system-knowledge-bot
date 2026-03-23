@@ -1,0 +1,26 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/schema.json",
+  "identifier": "com.system.knowledgebot",
+
+  "build": {
+    "beforeDevCommand": "python3 -m uvicorn backend.main:app --host 0.0.0.0 --port 8000",
+    "beforeBuildCommand": "",
+    "devUrl": "http://127.0.0.1:8000",
+    "frontendDist": "../backend/static"
+  },
+
+  "app": {
+    "windows": [
+      {
+        "title": "System Knowledge Bot",
+        "width": 900,
+        "height": 600,
+        "resizable": false
+      }
+    ],
+
+    "security": {
+      "csp": null
+    }
+  }
+}

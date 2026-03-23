@@ -1,87 +1,102 @@
-from enum import Enum
-from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Dict, Any
 
-from agent.intent import Intent
-from agent.evidence import EvidenceStatus
+from agent.types import EvidenceStatus, ResponseMode
 
 
 # --------------------------------------------------
-# Response modes
+# Response container
 # --------------------------------------------------
 
-class ResponseMode(Enum):
-    ANSWER = "answer"
-    EXPLAIN = "explain"
-    VISUAL = "visual"
-    REFUSE = "refuse"
-
-
-# --------------------------------------------------
-# Response object
-# --------------------------------------------------
-
-@dataclass
-class AgentResponse:
-    mode: ResponseMode
-    text: str
-    visual: Optional[dict] = None
-
-
-# --------------------------------------------------
-# Response mode selection
-# --------------------------------------------------
-
-def select_response_mode(intent: Intent, evidence: EvidenceStatus) -> ResponseMode:
-    if evidence != EvidenceStatus.SUFFICIENT:
-        return ResponseMode.REFUSE
-
-    if intent == Intent.EXPLAIN:
-        return ResponseMode.EXPLAIN
-
-    if intent in (Intent.VISUALIZE, Intent.HISTORY):
-        return ResponseMode.VISUAL
-
-    if intent == Intent.STATUS:
-        return ResponseMode.ANSWER
-
-    return ResponseMode.REFUSE
-
-
-# --------------------------------------------------
-# Concrete response helpers
-# --------------------------------------------------
-
-def refuse_response(reason: Optional[str] = None) -> AgentResponse:
+class AgentResponse(dict):
     """
-    Conservative refusal. Reason is intentionally not exposed to user.
+    Thin dict wrapper for agent output payloads.
     """
-    return AgentResponse(
-        mode=ResponseMode.REFUSE,
-        text=(
+    pass
+
+
+# --------------------------------------------------
+# Refusal Response
+# --------------------------------------------------
+
+def refuse_response(
+    reason: Optional[str] = None,
+    confidence: float = 0.0,
+    evidence: str = "insufficient telemetry",
+) -> AgentResponse:
+
+    return {
+        "mode": ResponseMode.REFUSE.value,
+        "text": (
             "I understand what you're asking. "
             "I don’t have enough verified system evidence to answer that reliably."
-        )
-    )
+        ),
+        "visual": None,
+        "confidence": confidence,
+        "evidence": evidence,
+        "reason": reason,
+    }
 
 
-def answer_response(text: str) -> AgentResponse:
-    return AgentResponse(
-        mode=ResponseMode.ANSWER,
-        text=text
-    )
+# --------------------------------------------------
+# Answer Response
+# --------------------------------------------------
+
+def answer_response(
+    text: str,
+    confidence: float = 1.0,
+    evidence: str = "strong",
+) -> AgentResponse:
+
+    return {
+        "mode": ResponseMode.ANSWER.value,
+        "text": text,
+        "visual": None,
+        "confidence": confidence,
+        "evidence": evidence,
+        "reason": None,
+    }
 
 
-def explain_response(text: str) -> AgentResponse:
-    return AgentResponse(
-        mode=ResponseMode.EXPLAIN,
-        text=text
-    )
+# --------------------------------------------------
+# Visual Response
+# --------------------------------------------------
+
+def visual_response(
+    text: str,
+    visual_data: Dict[str, Any],
+    confidence: float = 1.0,
+    evidence: str = "strong",
+) -> AgentResponse:
+
+    return {
+        "mode": ResponseMode.VISUAL.value,
+        "text": text,
+        "visual": visual_data,
+        "confidence": confidence,
+        "evidence": evidence,
+        "reason": None,
+    }
 
 
-def visual_response(summary: str, visual_data: dict) -> AgentResponse:
-    return AgentResponse(
-        mode=ResponseMode.VISUAL,
-        text=summary,
-        visual=visual_data
-    )
+# --------------------------------------------------
+# Mode Selector
+# --------------------------------------------------
+
+def select_response_mode(intent, evidence_status: EvidenceStatus) -> ResponseMode:
+    """
+    Determines the high-level response mode
+    based on intent + evidence sufficiency.
+    """
+
+    if evidence_status == EvidenceStatus.INSUFFICIENT:
+        return ResponseMode.REFUSE
+
+    intent_name = intent.name.lower()
+
+    if intent_name in ("visualize", "timeline", "show"):
+        return ResponseMode.VISUAL
+
+    if intent_name in ("explain",):
+        return ResponseMode.EXPLAIN
+
+    return ResponseMode.ANSWER

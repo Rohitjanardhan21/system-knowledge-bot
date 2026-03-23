@@ -1,80 +1,268 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>System Knowledge Bot</title>
-
-  <style>
-    body {
-      font-family: system-ui, sans-serif;
-      margin: 2rem;
-      line-height: 1.5;
-    }
-
-    h1 {
-      margin-bottom: 1rem;
-    }
-
-    .posture {
-      font-size: 1.4rem;
-      margin-bottom: 1.5rem;
-    }
-
-    ul {
-      padding-left: 1.2rem;
-    }
-  </style>
+<meta charset="UTF-8">
+<title>System Knowledge Bot</title>
+<link rel="stylesheet" href="style.css">
 </head>
+
 <body>
 
-<h1>System Knowledge Bot</h1>
+<!-- ================= HEADER ================= -->
 
-<div id="current" class="posture">
-  Loading current posture…
+<header class="app-header">
+
+  <div class="left">
+    <div class="host-chip">
+      <span id="collectorDot" class="collector-dot ok"></span>
+      <strong id="hostLabel">localhost</strong>
+    </div>
+
+    <div class="os-pill">
+      <img id="osIcon" src="/icons/linux.svg">
+      <span id="osLabel">Linux</span>
+    </div>
+
+    <div class="uptime-pill">
+      ⏱ <span id="uptimeLabel">--</span>
+    </div>
+  </div>
+
+  <div class="right">
+
+    <button id="themeToggle" class="theme-btn">🌙</button>
+
+    <div class="accent-picker">
+      <input type="color" id="accentInput">
+    </div>
+
+    <button id="refreshBtn" class="refresh-btn">⟳ Refresh</button>
+
+    <span id="postureBadge" class="posture-badge work-stable">
+      WORK-STABLE
+    </span>
+  </div>
+
+</header>
+
+<!-- ============== HEALTH ================= -->
+
+<div id="healthBanner" class="health-banner hidden"></div>
+
+<!-- ============== ALERT CENTER ================= -->
+
+<section class="alert-center">
+  <header class="alert-header">
+    <h3>Alerts</h3>
+    <span id="alertCount" class="alert-count">0</span>
+  </header>
+  <div id="alertList"></div>
+</section>
+
+<!-- ============== DASHBOARD ================= -->
+
+<main class="dashboard">
+
+<section class="metrics-grid">
+
+<!-- TRENDS -->
+<div class="trend-card" id="cpuTrend">
+<h4>CPU Trend</h4>
+<div class="trend-main">
+<span id="cpuArrow">–</span>
+<span id="cpuDelta">0%</span>
+</div>
+<canvas id="cpuSpark" width="160" height="40"></canvas>
 </div>
 
-<h2>Posture Timeline</h2>
-<ul id="timeline"></ul>
+<div class="trend-card" id="memTrend">
+<h4>Memory Trend</h4>
+<div class="trend-main">
+<span id="memArrow">–</span>
+<span id="memDelta">0%</span>
+</div>
+<canvas id="memSpark" width="160" height="40"></canvas>
+</div>
 
-<script>
-async function loadGUI() {
-  try {
-    const currentResp = await fetch("/gui/current");
-    const current = await currentResp.json();
+<div class="trend-card" id="diskTrend">
+<h4>Disk Trend</h4>
+<div class="trend-main">
+<span id="diskArrow">–</span>
+<span id="diskDelta">0%</span>
+</div>
+<canvas id="diskSpark" width="160" height="40"></canvas>
+</div>
 
-    const currentDiv = document.getElementById("current");
+<div class="trend-diff card">
+<h3>Since Yesterday</h3>
+<ul id="diffList"></ul>
+</div>
 
-    if (!current || current.available !== true) {
-      currentDiv.innerText = "System state not available.";
-      return;
-    }
+<div id="bottleneckBanner" class="bottleneck hidden"></div>
 
-    const posture = current.state.posture.posture;
+<!-- GAUGES -->
+<div class="card gauge-card">
+<h3>CPU</h3>
+<svg class="radial" id="cpuGauge"></svg>
+<div class="stale-overlay hidden">STALE</div>
+</div>
 
-    currentDiv.innerHTML =
-      `<strong>Current posture:</strong> ${posture}`;
+<div class="card gauge-card">
+<h3>Memory</h3>
+<svg class="radial" id="memGauge"></svg>
+<div class="stale-overlay hidden">STALE</div>
+</div>
 
-    const timelineResp = await fetch("/gui/timeline");
-    const timeline = await timelineResp.json();
+<div class="card gauge-card">
+<h3>Disk</h3>
+<svg class="radial" id="diskGauge"></svg>
+<div class="stale-overlay hidden">STALE</div>
+</div>
 
-    const list = document.getElementById("timeline");
-    list.innerHTML = "";
+<!-- NETWORK -->
+<div class="card">
+<h3>Network</h3>
+<canvas id="netChart" width="420" height="160"></canvas>
+<div class="stale-overlay hidden">STALE</div>
+</div>
 
-    timeline.forEach(item => {
-      const li = document.createElement("li");
-      li.textContent = `${item.timestamp} — ${item.posture}`;
-      list.appendChild(li);
-    });
+<!-- PROBES -->
+<div class="card">
+<h3>Telemetry Coverage</h3>
+<table id="probeTable"></table>
+</div>
 
-  } catch (err) {
-    console.error("GUI error:", err);
-    document.getElementById("current").innerText =
-      "System state not available.";
-  }
-}
+</section>
 
-loadGUI();
-</script>
+<!-- AGENT PANEL -->
 
+<aside class="agent-panel">
+
+<h3>Agent</h3>
+
+<div id="agentOutput"></div>
+
+<div class="confidence-box">
+<span>Assessment Confidence</span>
+<div class="confidence-track">
+<div id="confidenceFill"></div>
+</div>
+<small id="evidenceLabel"></small>
+</div>
+
+</aside>
+
+</main>
+
+<!-- ============== PREDICTIVE ================= -->
+
+<section class="predictive-section">
+
+<div class="predictive-grid">
+
+<div class="card predictive-card">
+<h3>System Risk</h3>
+<svg class="radial" id="riskGauge"></svg>
+<div id="riskLabel"></div>
+</div>
+
+<div class="card predictive-card">
+<h3>Workload Capacity</h3>
+<svg class="radial" id="workloadGauge"></svg>
+<div id="workloadLabel"></div>
+</div>
+
+<div class="card predictive-wide">
+<h3>Next Likely Constraint</h3>
+<div id="forecastStrip"></div>
+<p id="timeEstimate"></p>
+<span id="futurePosture" class="forecast-badge"></span>
+</div>
+
+</div>
+
+</section>
+
+<!-- ============== TIMELINE ================= -->
+
+<section class="timeline-section">
+
+<header class="timeline-header">
+<h3>System Timeline</h3>
+<button id="compareBtn">Compare Yesterday</button>
+</header>
+
+<div class="timeline-wrapper">
+<canvas id="timelineCanvas" width="1200" height="220"></canvas>
+</div>
+
+</section>
+<!-- ============ DRILLDOWN DRAWER ============ -->
+
+<div id="drillDrawer" class="drill-drawer hidden">
+
+  <header class="drill-header">
+    <h3 id="drillTitle">Component</h3>
+    <button id="drillClose">✕</button>
+  </header>
+
+  <div id="drillContent"></div>
+
+</div>
+<!-- ============== ACTION SIMULATOR ================= -->
+
+<section class="simulator-section">
+
+  <header class="sim-header">
+    <h3>Action Simulator</h3>
+  </header>
+
+  <div class="sim-grid">
+
+    <select id="workloadSelect">
+      <option value="ml_training">ML Training</option>
+      <option value="docker_stack">Docker Stack</option>
+      <option value="video_render">Video Rendering</option>
+      <option value="database_load">Database Load</option>
+      <option value="build_job">Build Job</option>
+    </select>
+
+    <button id="runSim">Simulate</button>
+
+    <div class="sim-result">
+
+      <div>CPU → <span id="simCpu">–</span>%</div>
+      <div>Memory → <span id="simMem">–</span>%</div>
+      <div>Disk → <span id="simDisk">–</span>%</div>
+
+      <div id="simPosture" class="forecast-badge"></div>
+      <div id="simRisk"></div>
+      <div id="simConf"></div>
+
+    </div>
+
+  </div>
+
+</section>
+<!-- ============== INSTALLER / SERVICE WIZARD ================= -->
+
+<div id="wizardOverlay" class="wizard-overlay hidden">
+
+  <div class="wizard">
+
+    <h2>System Knowledge Bot Setup</h2>
+
+    <div id="wizardStep"></div>
+
+    <div class="wizard-actions">
+      <button id="wizardPrev">Back</button>
+      <button id="wizardNext">Next</button>
+    </div>
+
+  </div>
+
+</div>
+
+<script src="app.js"></script>
 </body>
 </html>

@@ -3,109 +3,53 @@ from dataclasses import dataclass
 from typing import List
 
 
-# ==================================================
-# Intent definitions
-# ==================================================
-
-class Intent(Enum):
-    STATUS = "status"         # current state / health
-    EXPLAIN = "explain"       # why / how something works
-    HISTORY = "history"       # over time / today / timeline
-    VISUALIZE = "visualize"   # show / graph / chart
-    CAPABILITY = "capability" # can-run / feasibility
+class Intent(str, Enum):
+    STATUS = "status"
+    EXPLAIN = "explain"
+    VISUAL = "visual"
+    CAPABILITY = "capability"
     UNKNOWN = "unknown"
 
-
-# ==================================================
-# Intent resolution result
-# ==================================================
 
 @dataclass
 class IntentResult:
     intent: Intent
+    confidence: float
 
 
-# ==================================================
-# Intent resolution logic
-# ==================================================
+STATUS_WORDS = {
+    "status", "health", "state", "posture", "condition", "ok", "okay",
+    "running", "idle", "busy", "normal"
+}
+
+EXPLAIN_WORDS = {
+    "why", "explain", "reason", "cause", "because", "meaning"
+}
+
+VISUAL_WORDS = {
+    "show", "graph", "timeline", "visualize", "chart", "plot", "today",
+    "history"
+}
+
+CAPABILITY_WORDS = {
+    "can", "handle", "run", "support", "capable", "preflight"
+}
+
 
 def resolve_intent(tokens: List[str]) -> IntentResult:
-    """
-    Resolve user intent from normalized tokens.
 
-    Rules:
-    - HISTORY must be detected before VISUALIZE
-    - STATUS is the default for health/state questions
-    - UNKNOWN is explicit and safe
-    """
+    token_set = set(tokens)
 
-    t = set(tokens)
+    if token_set & VISUAL_WORDS:
+        return IntentResult(Intent.VISUAL, 0.9)
 
-    # --------------------------------------------------
-    # HISTORY / TEMPORAL (highest priority)
-    # --------------------------------------------------
-    if any(word in t for word in (
-        "today",
-        "timeline",
-        "history",
-        "earlier",
-        "previous",
-        "before",
-        "over",
-        "trend",
-        "trends",
-    )):
-        return IntentResult(Intent.HISTORY)
+    if token_set & EXPLAIN_WORDS:
+        return IntentResult(Intent.EXPLAIN, 0.8)
 
-    # --------------------------------------------------
-    # VISUALIZATION
-    # --------------------------------------------------
-    if any(word in t for word in (
-        "show",
-        "visual",
-        "visualize",
-        "graph",
-        "chart",
-        "plot",
-    )):
-        return IntentResult(Intent.VISUALIZE)
+    if token_set & CAPABILITY_WORDS:
+        return IntentResult(Intent.CAPABILITY, 0.8)
 
-    # --------------------------------------------------
-    # EXPLANATION
-    # --------------------------------------------------
-    if any(word in t for word in (
-        "why",
-        "explain",
-        "reason",
-        "how",
-    )):
-        return IntentResult(Intent.EXPLAIN)
+    if token_set & STATUS_WORDS:
+        return IntentResult(Intent.STATUS, 0.7)
 
-    # --------------------------------------------------
-    # CAPABILITY / FEASIBILITY
-    # --------------------------------------------------
-    if any(word in t for word in (
-        "can",
-        "handle",
-        "run",
-        "support",
-        "capable",
-    )):
-        return IntentResult(Intent.CAPABILITY)
-
-    # --------------------------------------------------
-    # STATUS / HEALTH
-    # --------------------------------------------------
-    if any(word in t for word in (
-        "status",
-        "health",
-        "healthy",
-        "state",
-        "ok",
-    )):
-        return IntentResult(Intent.STATUS)
-
-    # --------------------------------------------------
-    # Fallback (explicit)
-    # --------------------------------------------------
-    return IntentResult(Intent.UNKNOWN)
+    return IntentResult(Intent.UNKNOWN, 0.0)

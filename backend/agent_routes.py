@@ -1,26 +1,17 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from agent.agent_core import handle_question
-import json
+import sys, os
+sys.path.append(os.path.dirname(__file__))
+
+from facts import load_facts
 
 router = APIRouter(prefix="/agent")
 
-FACTS_PATH = "system_facts/current.json"
-
-def load_facts():
-    try:
-        with open(FACTS_PATH) as f:
-            return json.load(f)
-    except Exception:
-        return {}
-
 @router.post("/ask")
-def ask_agent(payload: dict):
-    question = payload.get("question", "")
-    facts = load_facts()
-    response = handle_question(question, facts)
+def ask(payload: dict):
+    question = payload.get("question")
+    if not question:
+        raise HTTPException(status_code=400, detail="Missing question")
 
-    return {
-        "mode": response.mode.value,
-        "text": response.text,
-        "visual": response.visual
-    }
+    facts = load_facts()
+    return handle_question(question, facts)

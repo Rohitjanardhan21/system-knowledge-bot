@@ -8,7 +8,7 @@ class Domain(Enum):
     CPU = "cpu"
     MEMORY = "memory"
     STORAGE = "storage"
-    THERMAL = "thermal"          # ✅ ADDED
+    THERMAL = "thermal"
     BOTTLENECK = "bottleneck"
     CAPABILITY = "capability"
     TRENDS = "trends"
@@ -19,7 +19,8 @@ class Domain(Enum):
 
 DOMAIN_KEYWORDS = {
     Domain.SYSTEM_HEALTH: {
-        "healthy", "health", "status", "overall", "ok", "normal"
+        "healthy", "health", "status", "overall", "ok", "normal",
+        "posture", "state", "condition", "situation", "load"
     },
     Domain.CPU: {
         "cpu", "processor", "compute", "core"
@@ -40,7 +41,7 @@ DOMAIN_KEYWORDS = {
         "can", "handle", "run", "support"
     },
     Domain.TRENDS: {
-        "trend", "today", "history", "over", "time"
+        "trend", "today", "history", "over", "time", "yesterday"
     },
     Domain.EXPLANATION: {
         "why", "how", "explain"
@@ -58,6 +59,7 @@ class DomainResult:
 
 
 def resolve_domains(tokens: List[str]) -> DomainResult:
+
     matched = set()
 
     for token in tokens:
@@ -65,6 +67,7 @@ def resolve_domains(tokens: List[str]) -> DomainResult:
             if token in keywords:
                 matched.add(domain)
 
+    # Allow generic "system" queries even if only posture/state matched
     if not matched:
         return DomainResult(domains=[Domain.UNKNOWN], allowed=False)
 
