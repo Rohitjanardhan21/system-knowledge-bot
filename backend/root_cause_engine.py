@@ -1,30 +1,26 @@
-import psutil
+class RootCauseEngine:
 
+    def analyze(self, nodes):
+        if not nodes:
+            return {}
 
-def get_top_processes():
-    processes = []
+        # pick most loaded node
+        worst_node = max(nodes, key=lambda n: n.get("cpu", 0))
 
-    for p in psutil.process_iter(['pid', 'name', 'cpu_percent']):
-        try:
-            processes.append(p.info)
-        except:
-            continue
+        processes = worst_node.get("processes", [])
 
-    processes = sorted(processes, key=lambda x: x['cpu_percent'], reverse=True)
+        if not processes:
+            return {
+                "node": worst_node.get("node_id"),
+                "cause": "No process data available"
+            }
 
-    return processes[:5]
+        # 🔥 find top CPU process
+        top_process = max(processes, key=lambda p: p.get("cpu_percent", 0))
 
-
-def detect_root_cause():
-    top = get_top_processes()
-
-    if not top:
-        return None
-
-    main = top[0]
-
-    return {
-        "process": main["name"],
-        "pid": main["pid"],
-        "cpu_usage": main["cpu_percent"],
-    }
+        return {
+            "node": worst_node.get("node_id"),
+            "process": top_process.get("name"),
+            "cpu": top_process.get("cpu_percent"),
+            "explanation": f"{top_process.get('name')} is consuming {top_process.get('cpu_percent')}% CPU"
+        }

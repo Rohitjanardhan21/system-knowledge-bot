@@ -1,0 +1,74 @@
+[
+  {
+    "key": "cpu_anomaly:cpu",
+    "type": "cpu_anomaly",
+    "metric": "cpu",
+    "severity": "critical",
+    "confidence": 0.79,
+    "first_seen": "2026-03-26T14:40:06.366215",
+    "last_seen": "2026-03-26T14:40:50.805997",
+    "count": 4,
+    "status": "active",
+    "resolved_at": "2026-03-26T16:33:00.547275"
+  },
+  {
+    "key": "memory_anomaly:memory",
+    "type": "memory_anomaly",
+    "metric": "memory",
+    "severity": "warning",
+    "confidence": 0.67,
+    "first_seen": "2026-03-26T14:41:03.295382",
+    "last_seen": "2026-03-26T14:43:29.227825",
+    "count": 7,
+    "status": "active",
+    "resolved_at": "2026-03-26T16:33:00.548030"
+  },
+  {
+    "key": "memory_drift:memory",
+    "type": "memory_drift",
+    "metric": "memory",
+    "severity": "warning",
+    "confidence": 0.75,
+    "first_seen": "2026-03-26T14:42:07.989554",
+    "last_seen": "2026-03-26T14:48:26.628655",
+    "count": 19,
+    "status": "active",
+    "resolved_at": "2026-03-26T16:33:00.548363"
+  },
+  {
+    "key": "memory_anomaly:memory",
+    "type": "memory_anomaly",
+    "metric": "memory",
+    "severity": "critical",
+    "confidence": 0.8,
+    "first_seen": "2026-03-26T16:33:00.548959",
+    "last_seen": "2026-03-26T16:48:01.783636",
+    "count": 25,
+    "status": "active",
+    "resolved_at": "2026-03-27T05:09:40.746895"
+  },
+  {
+    "key": "memory_anomaly:memory",
+    "type": "memory_anomaly",
+    "metric": "memory",
+    "severity": "critical",
+    "confidence": 0.65,
+    "first_seen": "2026-03-27T05:09:40.747336",
+    "last_seen": "2026-03-27T06:47:30.202041",
+    "count": 68,
+    "status": "active",
+    "resolved_at": "2026-03-27T07:18:30.841795"
+  },
+  {
+    "key": "memory_anomaly:memory",
+    "type": "memory_anomaly",
+    "metric": "memory",
+    "severity": "warning",
+    "confidence": 0.6,
+    "first_seen": "2026-03-27T07:39:19.182062",
+    "last_seen": "2026-03-27T08:02:41.118606",
+    "count": 114,
+    "status": "active",
+    "resolved_at": "2026-03-27T08:32:44.084588"
+  }
+]

@@ -1,0 +1,9 @@
+{
+  "epsilon": 0.06019482751734476,
+  "reward_scale": 0.23116899074647748,
+  "mode_scores": {
+    "high_performance": 0,
+    "balanced": 38.155,
+    "lightweight": 280.36499999999995
+  }
+}

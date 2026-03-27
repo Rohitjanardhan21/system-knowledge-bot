@@ -1,179 +1,283 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from pathlib import Path
 import json
 
-from backend.metric_normalizer import normalize_metrics
-from backend.trend_engine import compute_trends
-from backend.forecast_engine import compute_forecast
-from backend.posture_engine import compute_posture
-from backend.history_engine import load_yesterday_snapshot, load_history
-from backend.temporal_engine import temporal_analysis
-from backend.causal_engine import detect_causal_relationship
-from backend.decision_engine import compute_decision
-from backend.root_cause_engine import detect_root_cause
+# Core
+from backend.timeline_engine import get_timeline
+from backend.multi_agent_system import MultiAgentSystem
+from backend.action_executor import ActionExecutor
+
+# Intelligence
+from backend.causal_engine import CausalEngine
+from backend.dynamic_causal_graph import DynamicCausalGraph
+from backend.temporal_engine import TemporalEngine, temporal_analysis
+from backend.predictor_engine import PredictorEngine
+from backend.autonomous_engine import AutonomousEngine
+from backend.diagnosis_engine import generate_diagnosis
+
+# Detection
 from backend.anomaly_engine import detect_anomalies
-from backend.explanation_engine import generate_explanation
-from backend.recommendation_engine import generate_recommendation
-from backend.alert_engine import (
-    register_alerts,
-    load_alerts,
-)
+from backend.alert_engine import register_alerts
+from backend.log_engine import log, get_logs
+
+# Learning
+from backend.cause_history import record as record_cause, get_top_causes
 
 router = APIRouter()
+NODES_DIR = Path("system_facts/nodes")
 
-CURRENT_FILE = Path("system_facts/current.json")
+# ---------------------------------------------------------
+# GLOBAL ENGINES
+# ---------------------------------------------------------
+dynamic_graph = DynamicCausalGraph()
+causal_engine = CausalEngine()
+temporal_engine = TemporalEngine()
+predictor = PredictorEngine()
+autonomous_engine = AutonomousEngine()
 
 
 # ---------------------------------------------------------
-# Helpers
+# LOAD NODES
 # ---------------------------------------------------------
+def load_all_nodes():
+    if not NODES_DIR.exists():
+        return []
 
-def load_current_snapshot():
-    if not CURRENT_FILE.exists():
-        raise HTTPException(
-            status_code=503,
-            detail="No current system snapshot available",
-        )
+    nodes = []
+    for file in NODES_DIR.glob("*.json"):
+        try:
+            nodes.append(json.loads(file.read_text()))
+        except Exception as e:
+            print("❌ Node read error:", e)
 
-    try:
-        return json.loads(CURRENT_FILE.read_text())
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to read current snapshot: {e}",
-        )
+    return nodes
 
 
 # ---------------------------------------------------------
-# /system/summary
+# PROCESS NODE
 # ---------------------------------------------------------
-@router.get("/system/summary")
-def system_summary():
+def process_node(node):
+    metrics = node.get("metrics", {})
 
-    # ---------------------------
-    # Load snapshot
-    # ---------------------------
-    raw_snapshot = load_current_snapshot()
-
-    # ---------------------------
-    # Normalize
-    # ---------------------------
-    flat_metrics = normalize_metrics(raw_snapshot)
-
-    # ---------------------------
-    # Trends + Forecast
-    # ---------------------------
-    trends = compute_trends()
-    forecast = compute_forecast(trends)
-
-    # ---------------------------
-    # Posture
-    # ---------------------------
-    posture = compute_posture(flat_metrics, forecast)
-
-    # ---------------------------
-    # Yesterday snapshot
-    # ---------------------------
-    yesterday = load_yesterday_snapshot()
-
-    # ---------------------------
-    # Full History
-    # ---------------------------
-    history = load_history()
-
-    # ---------------------------
-    # Temporal Analysis
-    # ---------------------------
-    temporal = temporal_analysis(history)
-
-    # ---------------------------
-    # Causal Analysis
-    # ---------------------------
-    causal = detect_causal_relationship(flat_metrics, temporal)
-
-    # Anomalies + Alerts
-    anomalies = detect_anomalies(flat_metrics)
-    alerts = register_alerts(anomalies)
-
-    # Decision Engine
-    decision = compute_decision(flat_metrics, forecast, anomalies, causal)
-    # ---------------------------
-    # Confidence Score
-    # ---------------------------
-    if anomalies:
-        total_conf = sum(a.get("confidence", 0.5) for a in anomalies)
-        confidence_score = round(1.0 - min(1.0, total_conf / 3.0), 2)
-    else:
-        confidence_score = 1.0
-
-    # ---------------------------
-    # Root Cause
-    # ---------------------------
-    root_cause = detect_root_cause()
-
-    # ---------------------------
-    # Explanation + Recommendation
-    # ---------------------------
-    explanation = generate_explanation(
-        flat_metrics.get("cpu_pct"),
-        anomalies,
-        root_cause
-    )
-
-    # Add causal reasoning into explanation
-    if causal and causal.get("type") != "unknown":
-        explanation += f" Likely cause: {causal.get('reason')}."
-
-    recommendation = generate_recommendation(
-        anomalies,
-        root_cause
-    )
-
-    # ---------------------------
-    # Final Response
-    # ---------------------------
     return {
-        "cpu": flat_metrics.get("cpu_pct"),
-        "memory": flat_metrics.get("mem_pct"),
-        "disk": flat_metrics.get("disk_pct"),
-        "network": flat_metrics.get("network"),
-
-        "trends": trends,
-        "forecast": forecast,
-        "posture": posture,
-
-        # 🔥 Intelligence Layers
-        "temporal": temporal,
-        "causal": causal,
-        "decision": decision,
-
-        "workload_score": forecast.get("risk_score"),
-        "yesterday": yesterday,
-
-        "anomalies": anomalies,
-        "alerts": alerts,
-        "confidence_score": confidence_score,
-
-        "root_cause": root_cause,
-
-        "explanation": explanation,
-        "recommendation": recommendation,
+        "node_id": node.get("node"),
+        "cpu": float(metrics.get("cpu", 0)),
+        "memory": float(metrics.get("memory", 0)),
+        "disk": float(metrics.get("disk", 0)),
+        "processes": metrics.get("processes", [])
     }
 
 
 # ---------------------------------------------------------
-# /alerts/active
+# AGGREGATE SYSTEM
 # ---------------------------------------------------------
+def aggregate(nodes):
+    if not nodes:
+        return {"cpu": 0, "memory": 0, "disk": 0, "node_count": 0}
 
-@router.get("/alerts/active")
-def get_active_alerts():
-    return load_alerts()
+    return {
+        "cpu": sum(n["cpu"] for n in nodes) / len(nodes),
+        "memory": sum(n["memory"] for n in nodes) / len(nodes),
+        "disk": sum(n["disk"] for n in nodes) / len(nodes),
+        "node_count": len(nodes)
+    }
 
 
 # ---------------------------------------------------------
-# Health check
+# PROCESS ACTIONS
 # ---------------------------------------------------------
+def get_process_actions(processes):
 
-@router.get("/health")
-def health_check():
-    return {"status": "ok"}
+    actions = []
+
+    for p in processes:
+        cpu = p.get("cpu", 0)
+
+        if cpu < 10:
+            continue
+
+        actions.append({
+            "name": p.get("name"),
+            "cpu": cpu,
+            "target_pid": p.get("pid"),
+            "target_name": p.get("name"),
+            "actions": [
+                {"type": "kill_process", "label": "Kill"},
+                {"type": "throttle_process", "label": "Throttle"}
+            ]
+        })
+
+    return sorted(actions, key=lambda x: x["cpu"], reverse=True)
+
+
+# ---------------------------------------------------------
+# BUILD SYSTEM STATE
+# ---------------------------------------------------------
+def build_system_state():
+
+    raw_nodes = load_all_nodes()
+    nodes = [process_node(n) for n in raw_nodes]
+    global_state = aggregate(nodes)
+
+    # -------- TEMPORAL --------
+    temporal_engine.update(global_state)
+    history = list(temporal_engine.history)
+    temporal_patterns = temporal_analysis(history)
+
+    # -------- PREDICTION --------
+    prediction = predictor.predict(history, temporal_patterns)
+
+    # -------- CAUSAL GRAPH --------
+    dynamic_graph.update(global_state)
+    dynamic_graph.compute_graph()
+    graph = dynamic_graph.export()
+
+    # -------- PROCESS LIST --------
+    all_processes = []
+    for n in nodes:
+        all_processes.extend(n.get("processes", []))
+
+    # -------- ANOMALIES --------
+    node_anomalies = []
+    for n in nodes:
+        anomalies = detect_anomalies(n)
+        if anomalies:
+            node_anomalies.append({
+                "node": n["node_id"],
+                "anomalies": anomalies
+            })
+
+    global_anomalies = detect_anomalies(global_state)
+
+    # -------- CAUSAL --------
+    causal = causal_engine.detect(
+        {
+            "cpu_pct": global_state["cpu"],
+            "mem_pct": global_state["memory"],
+            "disk_pct": global_state["disk"]
+        },
+        temporal_patterns,
+        learned_graph=graph,
+        processes=all_processes
+    )
+
+    # -------- CAUSE HISTORY --------
+    cause_type = causal.get("primary_cause", {}).get("type")
+    record_cause(cause_type)
+
+    return {
+        "nodes": nodes,
+        "global_state": global_state,
+        "temporal": temporal_patterns,
+        "prediction": prediction,
+        "causal": causal,
+        "graph": graph,
+        "all_processes": all_processes,
+        "node_anomalies": node_anomalies,
+        "global_anomalies": global_anomalies
+    }
+
+
+# ---------------------------------------------------------
+# MAIN SUMMARY
+# ---------------------------------------------------------
+def get_system_summary():
+
+    state = build_system_state()
+
+    nodes = state["nodes"]
+    global_state = state["global_state"]
+
+    # -------- PROCESS ACTIONS --------
+    process_actions = get_process_actions(state["all_processes"])
+
+    # -------- MAS --------
+    mas = MultiAgentSystem()
+
+    result = mas.run(
+        global_state,
+        nodes,
+        context={
+            "causal": state["causal"],
+            "causal_graph": state["graph"]
+        }
+    )
+
+    decision = result.get("decision", {}) or {}
+    execution = result.get("execution") or {}
+
+    # -------- AUTONOMOUS --------
+    auto_decision = autonomous_engine.decide(
+        state["prediction"],
+        state["causal"],
+        decision
+    )
+
+    executor = ActionExecutor()
+    auto_execution = None
+
+    if auto_decision and auto_decision.get("mode") == "auto":
+        try:
+            auto_execution = executor.execute({
+                "action": auto_decision["action"],
+                "executable": True,
+                "auto": True
+            })
+        except Exception as e:
+            auto_execution = {"error": str(e)}
+
+    # -------- DIAGNOSIS --------
+    diagnosis = generate_diagnosis(state)
+
+    # -------- ALERTS + LOGS --------
+    alerts = register_alerts(state["global_anomalies"])
+
+    for a in state["global_anomalies"]:
+        log(f"[GLOBAL] {a['type']}", level=a["severity"])
+
+    # -------- FINAL RESPONSE --------
+    return {
+        "cpu": global_state["cpu"],
+        "memory": global_state["memory"],
+        "disk": global_state["disk"],
+        "node_count": global_state["node_count"],
+
+        "nodes": nodes,
+        "process_actions": process_actions,
+
+        "temporal": state["temporal"],
+        "prediction": state["prediction"],
+        "causal": state["causal"],
+        "system_risk": state["causal"].get("system_risk", 0),
+
+        "diagnosis": diagnosis,
+        "top_causes": get_top_causes(),
+
+        "decision_data": decision,
+        "execution": execution,
+
+        "autonomous_action": auto_decision,
+        "autonomous_execution": auto_execution,
+
+        "alerts": alerts,
+        "logs": get_logs(),
+        "timeline": get_timeline(),
+    }
+
+
+# ---------------------------------------------------------
+# ROUTES
+# ---------------------------------------------------------
+@router.get("/system/summary")
+def system_summary():
+    return get_system_summary()
+
+
+@router.post("/system/execute")
+def execute_action(decision: dict):
+    executor = ActionExecutor()
+
+    if not decision.get("executable"):
+        return {"status": "blocked"}
+
+    return executor.execute(decision)

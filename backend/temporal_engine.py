@@ -1,23 +1,44 @@
 import numpy as np
+from collections import deque
 
 # -------------------------------
 # CONFIG
 # -------------------------------
-WINDOW_SIZE = 20   # last N points to analyze
-SPIKE_THRESHOLD = 25   # sudden jump %
-SLOPE_THRESHOLD = 1.5  # gradual trend
+WINDOW_SIZE = 20
+SPIKE_THRESHOLD = 25
+SLOPE_THRESHOLD = 1.5
 OSCILLATION_THRESHOLD = 10
+
+
+# -------------------------------
+# TEMPORAL MEMORY (for system)
+# -------------------------------
+class TemporalEngine:
+
+    def __init__(self):
+        self.history = deque(maxlen=50)
+
+    def update(self, state):
+        if isinstance(state, dict):
+            self.history.append({
+                "cpu": float(state.get("cpu", 0)),
+                "memory": float(state.get("memory", 0)),
+                "disk": float(state.get("disk", 0))
+            })
 
 
 # -------------------------------
 # UTIL FUNCTIONS
 # -------------------------------
-
 def get_recent_values(history, key):
     values = []
+
     for h in history[-WINDOW_SIZE:]:
-        if key in h and h[key] is not None:
-            values.append(h[key])
+        val = h.get(key)
+
+        if isinstance(val, (int, float)):
+            values.append(val)
+
     return values
 
 
@@ -28,8 +49,12 @@ def compute_slope(values):
     x = np.arange(len(values))
     y = np.array(values)
 
-    slope = np.polyfit(x, y, 1)[0]
-    return slope
+    try:
+        slope = np.polyfit(x, y, 1)[0]
+    except Exception:
+        slope = 0
+
+    return float(slope)
 
 
 def detect_spike(values):
@@ -53,14 +78,14 @@ def detect_plateau(values):
         return False
 
     std_dev = np.std(values)
-    return std_dev < 2  # almost flat
+    return std_dev < 2
 
 
 # -------------------------------
 # MAIN ANALYSIS
 # -------------------------------
-
 def analyze_metric(values):
+
     if not values:
         return {
             "pattern": "unknown",
@@ -108,11 +133,18 @@ def analyze_metric(values):
 # -------------------------------
 # ENGINE ENTRY POINT
 # -------------------------------
-
 def temporal_analysis(history):
-    cpu_values = get_recent_values(history, "cpu_pct")
-    mem_values = get_recent_values(history, "mem_pct")
-    disk_values = get_recent_values(history, "disk_pct")
+
+    if not history:
+        return {
+            "cpu": {"pattern": "unknown"},
+            "memory": {"pattern": "unknown"},
+            "disk": {"pattern": "unknown"}
+        }
+
+    cpu_values = get_recent_values(history, "cpu")
+    mem_values = get_recent_values(history, "memory")
+    disk_values = get_recent_values(history, "disk")
 
     cpu_analysis = analyze_metric(cpu_values)
     mem_analysis = analyze_metric(mem_values)

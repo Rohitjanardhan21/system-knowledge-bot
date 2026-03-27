@@ -1,0 +1,16 @@
+{
+  "cpu_normal|mem_normal": {
+    "throttle_background_processes": 0.1934,
+    "free_memory_cache": 0.0,
+    "preemptive_cpu_control": 0.0,
+    "kill_high_cpu_process": 0.0415,
+    "maintain_state": 0.0
+  },
+  "cpu_moderate|mem_normal": {
+    "throttle_background_processes": 0.2214,
+    "free_memory_cache": 0.0,
+    "preemptive_cpu_control": 0.0,
+    "kill_high_cpu_process": 0.0545,
+    "maintain_state": 0.0
+  }
+}

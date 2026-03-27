@@ -63,3 +63,19 @@ def simulate_workload(payload: dict):
             "Assumes sustained load for >10 minutes"
         ]
     }
+from fastapi import APIRouter
+from backend.intelligence_pipeline import run_intelligence_pipeline
+router = APIRouter()
+
+@router.post("/simulate")
+def simulate(payload: dict):
+    # override metrics temporarily
+    result = run_intelligence_pipeline()
+
+    # override manually
+    if "cpu" in payload:
+        result["cpu"] = payload["cpu"]
+    if "memory" in payload:
+        result["memory"] = payload["memory"]
+
+    return result

@@ -4,53 +4,132 @@ Z_SPIKE = 3.0
 
 
 def detect_anomalies(current):
+
     anomalies = []
 
-    for metric in ["cpu_pct", "mem_pct", "network"]:
-        base = compute_baseline(metric)
+    # --------------------------------------------------
+    # 🔥 METRICS
+    # --------------------------------------------------
+    metric_map = {
+        "cpu": current.get("cpu", 0),
+        "memory": current.get("memory", 0),
+        "disk": current.get("disk", 0)
+    }
 
-        if not base or base["std"] == 0:
+    # 🔥 PRELOAD BASELINES (IMPORTANT OPTIMIZATION)
+    baselines = {
+        m: compute_baseline(m)
+        for m in metric_map
+    }
+
+    # --------------------------------------------------
+    # 🔥 Z-SCORE DETECTION
+    # --------------------------------------------------
+    for metric, value in metric_map.items():
+
+        base = baselines.get(metric)
+
+        if not base:
             continue
 
-        z = abs(current[metric] - base["mean"]) / base["std"]
+        mean = base.get("mean", 0)
+        std = base.get("std", 0)
+
+        # 🔥 avoid noise
+        if std == 0 or value < 5:
+            continue
+
+        try:
+            z = abs(value - mean) / std
+        except:
+            continue
 
         if z >= Z_SPIKE:
-            severity = "high" if z > 4 else "medium"
+
+            severity = "critical" if z > 4 else "warning"
 
             anomalies.append({
-                "type": f"{metric}_spike",
+                "type": f"{metric}_anomaly",  # 🔥 unified naming
                 "metric": metric,
-                "value": current[metric],
-                "baseline": base["mean"],
-                "z": round(z, 2),
+                "value": round(value, 2),
+                "baseline": round(mean, 2),
+                "z_score": round(z, 2),
                 "severity": severity,
-                "confidence": min(1.0, z / 5),
+                "confidence": round(min(1.0, z / 5), 2)
             })
 
-    # Memory leak detection
-    mem_base = compute_baseline("mem_pct")
+    # --------------------------------------------------
+    # 🔥 MEMORY LEAK (IMPROVED TREND)
+    # --------------------------------------------------
+    mem_base = baselines.get("memory")
+
     if mem_base:
-        slope = mem_base["latest"] - mem_base["min"]
-        if slope > 15:
+        latest = mem_base.get("latest", 0)
+        mean = mem_base.get("mean", 0)
+
+        # 🔥 deviation from baseline
+        drift = latest - mean
+
+        if drift > 15:
             anomalies.append({
-                "type": "memory_leak_pattern",
-                "metric": "mem_pct",
-                "value": mem_base["latest"],
-                "baseline": mem_base["mean"],
-                "severity": "medium",
-                "confidence": 0.75,
+                "type": "memory_drift",
+                "metric": "memory",
+                "value": latest,
+                "baseline": mean,
+                "severity": "warning",
+                "confidence": 0.75
             })
 
-    # Disk growth
+    # --------------------------------------------------
+    # 🔥 DISK GROWTH
+    # --------------------------------------------------
     disk_growth = compute_disk_growth()
-    if disk_growth and disk_growth["delta"] > 5:
+
+    if disk_growth and disk_growth.get("delta", 0) > 5:
         anomalies.append({
             "type": "disk_growth",
-            "metric": "disk_pct",
-            "delta": disk_growth["delta"],
-            "rate": disk_growth["rate"],
-            "severity": "medium" if disk_growth["delta"] < 15 else "high",
-            "confidence": 0.8,
+            "metric": "disk",
+            "delta": round(disk_growth["delta"], 2),
+            "rate": disk_growth.get("rate", 0),
+            "severity": "critical" if disk_growth["delta"] > 15 else "warning",
+            "confidence": 0.8
         })
 
-    return anomalies
+    # --------------------------------------------------
+    # 🔥 HARD THRESHOLD (CRITICAL FAILSAFE)
+    # --------------------------------------------------
+    if current.get("cpu", 0) > 95:
+        anomalies.append({
+            "type": "cpu_overload",
+            "metric": "cpu",
+            "value": current["cpu"],
+            "severity": "critical",
+            "confidence": 0.95
+        })
+
+    # --------------------------------------------------
+    # 🔥 NETWORK (RELATIVE DETECTION)
+    # --------------------------------------------------
+    net = current.get("network", {})
+    throughput = net.get("throughput", 0)
+
+    # 🔥 dynamic baseline (simple heuristic)
+    if throughput > 50:  # safer default
+        anomalies.append({
+            "type": "network_spike",
+            "metric": "network",
+            "value": throughput,
+            "severity": "warning",
+            "confidence": 0.7
+        })
+
+    # --------------------------------------------------
+    # 🔥 DEDUPLICATION (IMPORTANT)
+    # --------------------------------------------------
+    unique = {}
+    for a in anomalies:
+        key = f"{a['type']}:{a.get('metric')}"
+        if key not in unique:
+            unique[key] = a
+
+    return list(unique.values())
