@@ -2,7 +2,6 @@ import os
 import json
 import platform
 import socket
-import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -27,7 +26,7 @@ SERVER_URL = "http://127.0.0.1:8000/node/update"
 
 
 # --------------------------------------------------
-# SYSTEM INFO (🔥 ENTERPRISE)
+# SYSTEM INFO
 # --------------------------------------------------
 
 def get_system_info():
@@ -47,7 +46,7 @@ def get_system_info():
 # --------------------------------------------------
 
 def get_cpu():
-    return psutil.cpu_percent(interval=0.5)
+    return psutil.cpu_percent(interval=0.3)
 
 
 def get_memory():
@@ -61,35 +60,95 @@ def get_disk():
         return 0
 
 
+# --------------------------------------------------
+# 🔥 PROCESS CLASSIFICATION
+# --------------------------------------------------
+
+def classify_process(name):
+    name = (name or "").lower()
+
+    if "chrome" in name:
+        return "browser"
+    if "code" in name or "python" in name:
+        return "development"
+    if "game" in name or "steam" in name:
+        return "gaming"
+    if "docker" in name:
+        return "container"
+
+    return "system"
+
+
+# --------------------------------------------------
+# 🔥 IMPROVED PROCESS TRACKING (CRITICAL FIX)
+# --------------------------------------------------
+
 def get_top_processes():
+
     processes = []
 
-    for p in psutil.process_iter(['pid', 'name', 'cpu_percent', 'memory_percent']):
+    # 🔥 Initialize CPU counters
+    for p in psutil.process_iter():
         try:
-            processes.append({
-                "pid": p.info['pid'],
-                "name": p.info['name'],
-                "cpu": p.info['cpu_percent'],
-                "memory": round(p.info['memory_percent'], 2)
-            })
+            p.cpu_percent(None)
         except:
             continue
 
-    return sorted(processes, key=lambda x: x["cpu"], reverse=True)[:5]
+    # 🔥 Allow CPU measurement window
+    psutil.cpu_percent(interval=0.2)
 
+    total_cpu = get_cpu()
+
+    for p in psutil.process_iter(['pid', 'name']):
+        try:
+            cpu = p.cpu_percent(None)
+            mem = p.memory_percent()
+
+            # ignore noise
+            if cpu < 1:
+                continue
+
+            name = p.info['name']
+
+            processes.append({
+                "pid": p.info['pid'],
+                "name": name,
+                "cpu": round(cpu, 2),
+                "memory": round(mem, 2),
+
+                # 🔥 NEW (for intelligence layer)
+                "category": classify_process(name),
+                "weight": round(cpu / max(total_cpu, 1), 2)
+            })
+
+        except:
+            continue
+
+    processes = sorted(processes, key=lambda x: x["cpu"], reverse=True)
+
+    return processes[:5]
+
+
+# --------------------------------------------------
+# NETWORK
+# --------------------------------------------------
 
 def get_network():
     net = psutil.net_io_counters()
     return {
-        "throughput": net.bytes_sent / 1e6
+        "throughput_mb": round(net.bytes_sent / 1e6, 2)
     }
 
+
+# --------------------------------------------------
+# DISK IO
+# --------------------------------------------------
 
 def get_disk_io():
     io = psutil.disk_io_counters()
     return {
-        "read": io.read_bytes,
-        "write": io.write_bytes
+        "read_bytes": io.read_bytes,
+        "write_bytes": io.write_bytes
     }
 
 
@@ -114,11 +173,17 @@ def main():
 
     system_info = get_system_info()
 
+    cpu = get_cpu()
+    memory = get_memory()
+    disk = get_disk()
+
+    processes = get_top_processes()
+
     metrics = {
-        "cpu": get_cpu(),
-        "memory": get_memory(),
-        "disk": get_disk(),
-        "processes": get_top_processes(),
+        "cpu": cpu,
+        "memory": memory,
+        "disk": disk,
+        "processes": processes,
         "network": get_network(),
         "disk_io": get_disk_io()
     }
@@ -131,14 +196,15 @@ def main():
         "timestamp": timestamp
     }
 
-    # SAVE FILE (fallback)
+    # SAVE FILE
     node_file = NODES_DIR / f"{NODE_ID}.json"
     node_file.write_text(json.dumps(facts, indent=2))
 
-    # PUSH MODE (🔥 distributed)
+    # PUSH TO SERVER
     send_to_server(facts)
 
-    print("✅ Data sent + saved")
+    print("✅ Data collected + sent")
+    print(f"🔥 Top Process: {processes[0]['name'] if processes else 'None'}")
 
 
 if __name__ == "__main__":

@@ -7,55 +7,65 @@
     "machine": "x86_64",
     "cpu_cores": 4,
     "memory_total_gb": 5.79,
-    "boot_time": 1774596331.0
+    "boot_time": 1774751070.0
   },
   "metrics": {
-    "cpu": 9.9,
-    "memory": 72.3,
-    "disk": 79.4,
+    "cpu": 3.4,
+    "memory": 34.7,
+    "disk": 80.9,
     "processes": [
       {
-        "pid": 1,
-        "name": "systemd",
-        "cpu": 0.0,
-        "memory": 0.25
+        "pid": 2874,
+        "name": "gnome-shell",
+        "cpu": 21.3,
+        "memory": 4.36,
+        "category": "system",
+        "weight": 21.3
       },
       {
-        "pid": 2,
-        "name": "kthreadd",
-        "cpu": 0.0,
-        "memory": 0.0
+        "pid": 3742,
+        "name": "gnome-terminal-server",
+        "cpu": 3.8,
+        "memory": 0.81,
+        "category": "system",
+        "weight": 3.8
       },
       {
-        "pid": 3,
-        "name": "pool_workqueue_release",
-        "cpu": 0.0,
-        "memory": 0.0
+        "pid": 15203,
+        "name": "python",
+        "cpu": 3.8,
+        "memory": 0.47,
+        "category": "development",
+        "weight": 3.8
       },
       {
-        "pid": 4,
-        "name": "kworker/R-rcu_gp",
-        "cpu": 0.0,
-        "memory": 0.0
+        "pid": 2996,
+        "name": "ibus-daemon",
+        "cpu": 1.9,
+        "memory": 0.12,
+        "category": "system",
+        "weight": 1.9
       },
       {
-        "pid": 5,
-        "name": "kworker/R-sync_wq",
-        "cpu": 0.0,
-        "memory": 0.0
+        "pid": 3528,
+        "name": "xdg-desktop-portal-gnome",
+        "cpu": 1.9,
+        "memory": 0.31,
+        "category": "system",
+        "weight": 1.9
       }
     ],
     "network": {
-      "throughput": 15.875852
+      "throughput_mb": 117.31
     },
     "disk_io": {
-      "read": 5324092416,
-      "write": 1312169984
+      "read_bytes": 15728665600,
+      "write_bytes": 7909539840
     }
   },
   "tags": [
     "env:dev",
     "service:aiops"
   ],
-  "timestamp": "2026-03-27T09:23:05.000763+00:00"
+  "timestamp": "2026-03-29T04:34:05.142969+00:00"
 }

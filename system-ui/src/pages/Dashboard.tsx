@@ -1,7 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
+import { motion } from "framer-motion";
 import { connectWebSocket } from "../services/wsClient";
-import CausalGraph from "../components/CausalGraph";
-
 import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer
 } from "recharts";
@@ -12,214 +11,231 @@ export default function Dashboard() {
 
   const [data, setData] = useState<any>(null);
   const [history, setHistory] = useState<any[]>([]);
-  const [rewards, setRewards] = useState<number[]>([]);
-  const [selectedSim, setSelectedSim] = useState<any>(null);
+  const [expanded, setExpanded] = useState(false);
+
+  const prevRef = useRef<any>(null);
 
   useEffect(() => {
     const ws = connectWebSocket((incoming: any) => {
-
+      prevRef.current = data;
       setData(incoming);
 
       setHistory(prev => [
-        ...prev.slice(-50),
+        ...prev.slice(-60),
         {
           time: new Date().toLocaleTimeString(),
-          cpu: safe(incoming.cpu),
-          memory: safe(incoming.memory)
+          cpu: Number.isFinite(incoming.cpu) ? incoming.cpu : 0,
+          memory: Number.isFinite(incoming.memory) ? incoming.memory : 0
         }
       ]);
-
-      if (incoming.execution?.reward !== undefined) {
-        setRewards(prev => [
-          ...prev.slice(-50),
-          incoming.execution.reward
-        ]);
-      }
     });
 
     return () => ws?.close();
-  }, []);
+  }, [data]);
 
   if (!data) return <div className="p-6 text-white">Connecting...</div>;
-
-  const decision = data.decision_data || {};
-  const exec = data.execution || {};
-  const causal = data.causal || {};
-  const temporal = data.temporal || {};
-  const prediction = data.prediction;
-  const diagnosis = data.diagnosis;
 
   const cpu = safe(data.cpu);
   const memory = safe(data.memory);
   const disk = safe(data.disk);
-  const systemRisk = safe(data.system_risk);
+  const risk = safe(data.system_risk);
 
-  const primaryCause = causal.primary_cause || {};
+  const diagnosis = data.diagnosis || {};
+  const prediction = data.prediction || {};
+  const causal = data.causal || {};
+  const action = data.autonomous_action;
 
-  // ---------------- ACTIONS ----------------
-  const triggerProcessAction = async (action: string, pid: number, name: string) => {
-    await fetch("http://127.0.0.1:8000/system/execute", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action,
-        target_pid: pid,
-        target_name: name,
-        executable: true
-      })
-    });
-  };
+  // 🔥 FIXED CONTEXT HANDLING
+  const context = data.context?.type || data.context || "general";
 
-  const triggerAction = async (action: string) => {
-    await fetch("http://127.0.0.1:8000/system/execute", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action, executable: true })
-    });
-  };
+  // 🔥 FIXED CAUSE HANDLING
+  const cause = causal?.primary_cause;
 
-  const setMode = async (mode: string) => {
-    await fetch("http://127.0.0.1:8000/system/mode", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mode })
-    });
-  };
+  const causeText = cause
+    ? cause.reason || `${cause.process || "system"} (${cause.type})`
+    : "background activity";
+
+  const contributors = cause?.contributors || [];
+
+  const status =
+    risk > 0.7 ? "⚠ Critical" :
+    risk > 0.4 ? "⚡ Under Load" :
+    "✅ Stable";
 
   return (
-    <div className="min-h-screen bg-black text-white p-6 space-y-6">
+    <div className="min-h-screen bg-black text-white px-10 py-8 space-y-8">
 
-      <h1 className="text-2xl text-green-400">AI Ops Console</h1>
+      {/* HEADER */}
+      <div className="flex justify-between items-center">
+        <h1 className="text-2xl text-green-400">AI System Agent</h1>
+        <p className="text-xs text-gray-400">
+          Context: <span className="text-blue-400">{context}</span>
+        </p>
+      </div>
 
-      {/* 🧠 SYSTEM INSIGHT */}
-      <Card title="🧠 System Insight">
-        {diagnosis ? (
-          <div className="space-y-2">
-            <p className="text-green-400 text-lg font-semibold">
-              {diagnosis.summary}
-            </p>
-            <p className="text-sm text-gray-400">
-              {diagnosis.details}
-            </p>
-            <p className="text-yellow-400 text-sm">
-              💡 {diagnosis.suggestion}
-            </p>
+      {/* 🧠 SYSTEM STORY */}
+      <Card title="🧠 System Understanding">
+        <p className="text-lg">
+          System is <span className="text-green-400">{status}</span>
+        </p>
 
-            {data.autonomous_action && (
-              <button
-                className="bg-green-600 px-3 py-2 rounded mt-2"
-                onClick={() => triggerAction(data.autonomous_action.action)}
-              >
-                ⚡ Fix Automatically
-              </button>
-            )}
+        <p className="text-sm mt-2 text-gray-300">
+          CPU at {cpu.toFixed(0)}% primarily due to{" "}
+          <span className="text-yellow-400">{causeText}</span>
+        </p>
+
+        {/* 🔥 CONTRIBUTORS */}
+        {contributors.length > 0 && (
+          <div className="mt-3 text-xs text-gray-400">
+            Top contributors:
+            {contributors.slice(0, 3).map((c: any, i: number) => (
+              <div key={i}>
+                • {c.name} ({c.cpu || 0}%)
+              </div>
+            ))}
           </div>
-        ) : (
-          <p className="text-gray-400">No insights</p>
         )}
+
+        <p className="text-xs text-gray-500 mt-2">
+          {diagnosis.details}
+        </p>
       </Card>
 
       {/* KPI */}
-      <div className="grid grid-cols-6 gap-4">
+      <div className="grid grid-cols-4 gap-4">
         <KPI title="CPU" value={`${cpu.toFixed(1)}%`} />
         <KPI title="Memory" value={`${memory.toFixed(1)}%`} />
         <KPI title="Disk" value={`${disk.toFixed(1)}%`} />
-        <KPI title="Nodes" value={data.node_count} />
-        <KPI title="Mode" value={data.mode || "unknown"} />
-        <KPI title="Risk" value={`${(systemRisk * 100).toFixed(1)}%`} highlight={systemRisk > 0.7} />
+        <KPI title="Risk" value={`${(risk * 100).toFixed(1)}%`} highlight={risk > 0.7} />
       </div>
 
-      {/* MODE */}
-      <Card title="⚙️ Mode">
-        {["manual", "assist", "autonomous"].map(m => (
-          <button key={m}
-            className="bg-gray-700 px-2 py-1 m-1 rounded"
-            onClick={() => setMode(m)}>
-            {m}
-          </button>
-        ))}
+      {/* 📊 GRAPH */}
+      <Card title="📈 System Behavior">
+        <ResponsiveContainer width="100%" height={240}>
+          <LineChart data={history}>
+            <XAxis dataKey="time" />
+            <YAxis />
+            <Tooltip />
+
+            <Line
+              dataKey="cpu"
+              stroke="#22c55e"
+              strokeWidth={2}
+              connectNulls
+            />
+
+            <Line
+              dataKey="memory"
+              stroke="#3b82f6"
+              strokeWidth={2}
+              connectNulls
+            />
+          </LineChart>
+        </ResponsiveContainer>
+
+        <p className="text-xs text-gray-500 mt-2">
+          Real-time system load trends.
+        </p>
       </Card>
 
-      {/* MAIN GRID */}
-      <div className="grid grid-cols-3 gap-6">
+      {/* 🔮 FUTURE + IMPACT */}
+      <div className="grid grid-cols-2 gap-6">
 
-        {/* LEFT */}
-        <div className="col-span-2 space-y-6">
+        <Card title="🔮 Prediction">
+          <p className="text-blue-400">{prediction.type || "Stable"}</p>
 
-          <Card title="System Metrics">
-            <ResponsiveContainer width="100%" height={200}>
-              <LineChart data={history}>
-                <XAxis dataKey="time" />
-                <YAxis />
-                <Tooltip />
-                <Line dataKey="cpu" stroke="#22c55e" />
-                <Line dataKey="memory" stroke="#3b82f6" />
-              </LineChart>
-            </ResponsiveContainer>
-          </Card>
+          <div className="w-full bg-gray-800 h-2 mt-2 rounded">
+            <div
+              className="bg-green-500 h-2 rounded"
+              style={{ width: `${(prediction.confidence || 0) * 100}%` }}
+            />
+          </div>
 
-          <Card title="🚨 Main Issue">
-            <p className="text-red-400 text-xl">
-              {primaryCause.type || "No issue"}
-            </p>
-          </Card>
+          <p className="text-xs text-gray-400 mt-1">
+            Confidence: {(prediction.confidence * 100 || 0).toFixed(0)}%
+          </p>
+        </Card>
 
-          <Card title="🌐 Causal Graph">
-            <CausalGraph graph={data.causal_graph || {}} />
-          </Card>
+        <Card title="🔥 Impact">
+          <p className="text-sm text-gray-300">
+            Current system load may impact responsiveness.
+          </p>
 
-        </div>
+          <p className="text-xs text-gray-500 mt-2">
+            Risk Level: {(risk * 100).toFixed(0)}%
+          </p>
+        </Card>
 
-        {/* RIGHT */}
-        <div className="space-y-6">
-
-          <Card title="Execution">
-            <p>Status: {exec.status}</p>
-            <p>Reward: {safe(exec.reward).toFixed(2)}</p>
-          </Card>
-
-          <Card title="🧠 Explanation">
-            {exec.explanation ? (
-              <div className="text-xs">
-                <p>Cause: {exec.explanation.cause}</p>
-                <p>Improvement: {exec.explanation.improvement}</p>
-                <p>Status: {exec.explanation.result}</p>
-              </div>
-            ) : <p>No explanation</p>}
-          </Card>
-
-          <Card title="🚨 Alerts">
-            {data.alerts?.map((a: any, i: number) => (
-              <p key={i}>{a.type}</p>
-            ))}
-          </Card>
-
-          <Card title="📜 Logs">
-            {data.logs?.slice(-10).map((l: any, i: number) => (
-              <p key={i}>[{l.level}] {l.message}</p>
-            ))}
-          </Card>
-
-        </div>
       </div>
+
+      {/* ⚡ ACTION */}
+      {action && (
+        <Card title="⚡ Recommended Action">
+          <p className="text-white">{action.action?.type}</p>
+
+          <p className="text-yellow-400 text-sm mt-1">
+            {action.reason}
+          </p>
+
+          <p className="text-xs text-gray-400 mt-2">
+            Confidence: {(action.confidence * 100 || 0).toFixed(0)}%
+          </p>
+
+          <div className="flex gap-3 mt-3">
+            {action.requires_user && (
+              <button className="bg-blue-600 px-4 py-2 rounded hover:bg-blue-700">
+                Approve
+              </button>
+            )}
+            <button className="bg-gray-700 px-4 py-2 rounded hover:bg-gray-600">
+              Ignore
+            </button>
+          </div>
+        </Card>
+      )}
+
+      {/* 🔍 DETAILS */}
+      <Card title="🔍 Deep Analysis">
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="text-blue-400 text-xs"
+        >
+          {expanded ? "Hide details" : "Show details"}
+        </button>
+
+        {expanded && (
+          <div className="mt-3 space-y-2">
+            {data.decision_trace?.map((d: string, i: number) => (
+              <p key={i} className="text-xs text-gray-400">
+                • {d}
+              </p>
+            ))}
+          </div>
+        )}
+      </Card>
+
     </div>
   );
 }
 
+/* ---------- COMPONENTS ---------- */
+
 function KPI({ title, value, highlight = false }: any) {
   return (
-    <div className={`p-4 rounded ${highlight ? "bg-red-900" : "bg-gray-900"}`}>
-      <p className="text-xs">{title}</p>
-      <p className="text-lg">{value}</p>
-    </div>
+    <motion.div whileHover={{ scale: 1.05 }}
+      className={`p-4 rounded-xl ${highlight ? "bg-red-900" : "bg-gray-900"}`}>
+      <p className="text-xs text-gray-400">{title}</p>
+      <p className="text-lg font-semibold">{value}</p>
+    </motion.div>
   );
 }
 
 function Card({ title, children }: any) {
   return (
-    <div className="bg-gray-900 p-4 rounded-xl border border-gray-800">
-      <h3 className="text-sm text-gray-400 mb-2">{title}</h3>
+    <motion.div whileHover={{ y: -2 }}
+      className="bg-gray-900 p-4 rounded-xl border border-gray-800">
+      <p className="text-xs text-gray-400 mb-2">{title}</p>
       {children}
-    </div>
+    </motion.div>
   );
 }

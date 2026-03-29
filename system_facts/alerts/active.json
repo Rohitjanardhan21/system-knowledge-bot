@@ -1,1 +1,35 @@
-[]
+[
+  {
+    "key": "memory_anomaly:memory",
+    "type": "memory_anomaly",
+    "metric": "memory",
+    "severity": "critical",
+    "confidence": 0.65,
+    "first_seen": "2026-03-27T15:09:22.171632",
+    "last_seen": "2026-03-27T15:11:43.859037",
+    "count": 13,
+    "status": "active"
+  },
+  {
+    "key": "cpu_anomaly:cpu",
+    "type": "cpu_anomaly",
+    "metric": "cpu",
+    "severity": "warning",
+    "confidence": 0.65,
+    "first_seen": "2026-03-27T15:14:11.358124",
+    "last_seen": "2026-03-27T15:24:38.962215",
+    "count": 2,
+    "status": "active"
+  },
+  {
+    "key": "cpu_overload:cpu",
+    "type": "cpu_overload",
+    "metric": "cpu",
+    "severity": "critical",
+    "confidence": 0.95,
+    "first_seen": "2026-03-27T15:14:11.358124",
+    "last_seen": "2026-03-27T15:24:38.962215",
+    "count": 2,
+    "status": "active"
+  }
+]

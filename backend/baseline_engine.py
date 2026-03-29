@@ -1,7 +1,14 @@
+# backend/baseline_engine.py
+
 import statistics
+import json
+import os
 from backend.history_engine import load_recent_history
 
 WINDOW = 30
+BASELINE_PATH = "system_facts/baseline.json"
+
+os.makedirs("system_facts", exist_ok=True)
 
 
 # ---------------------------------------------------------
@@ -31,7 +38,7 @@ def extract_metric(snap, metric):
 
 
 # ---------------------------------------------------------
-# CORE BASELINE
+# CORE BASELINE ANALYSIS
 # ---------------------------------------------------------
 def compute_baseline(metric: str, window: int = WINDOW):
 
@@ -49,20 +56,11 @@ def compute_baseline(metric: str, window: int = WINDOW):
 
     mean = statistics.mean(values)
     std = statistics.stdev(values) if len(values) > 1 else 0
-
     latest = values[-1]
 
-    # -----------------------------------------------------
-    # 🔥 Z-SCORE (ANOMALY)
-    # -----------------------------------------------------
-    if std > 0:
-        z = (latest - mean) / std
-    else:
-        z = 0
+    # Z-score
+    z = (latest - mean) / std if std > 0 else 0
 
-    # -----------------------------------------------------
-    # 🔥 CLASSIFICATION
-    # -----------------------------------------------------
     if z > 2:
         status = "high_anomaly"
     elif z > 1:
@@ -72,9 +70,6 @@ def compute_baseline(metric: str, window: int = WINDOW):
     else:
         status = "normal"
 
-    # -----------------------------------------------------
-    # 🔥 CONFIDENCE
-    # -----------------------------------------------------
     confidence = min(1.0, len(values) / window)
 
     return {
@@ -111,9 +106,6 @@ def compute_disk_growth(window: int = WINDOW):
 
     delta = end - start
 
-    # -----------------------------------------------------
-    # 🔥 TREND CLASSIFICATION
-    # -----------------------------------------------------
     if delta > 5:
         trend = "rapid_growth"
     elif delta > 2:
@@ -128,3 +120,38 @@ def compute_disk_growth(window: int = WINDOW):
         "rate": round(delta / len(values), 3),
         "trend": trend
     }
+
+
+# =========================================================
+# 🔥 REQUIRED SYSTEM FUNCTIONS (FIX IMPORT ERROR)
+# =========================================================
+
+_baseline_store = []
+
+
+def update(cpu_value: float):
+    """Store latest CPU values for quick baseline tracking"""
+    _baseline_store.append(cpu_value)
+
+    if len(_baseline_store) > WINDOW:
+        _baseline_store.pop(0)
+
+    try:
+        with open(BASELINE_PATH, "w") as f:
+            json.dump(_baseline_store, f)
+    except Exception:
+        pass
+
+
+def get_baseline():
+    """Return average CPU baseline"""
+    if not _baseline_store:
+        try:
+            if os.path.exists(BASELINE_PATH):
+                with open(BASELINE_PATH, "r") as f:
+                    data = json.load(f)
+                    return sum(data) / len(data) if data else 50
+        except Exception:
+            return 50
+
+    return sum(_baseline_store) / len(_baseline_store)

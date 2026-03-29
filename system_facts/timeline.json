@@ -1,206 +1,5 @@
 [
   {
-    "time": "2026-03-27T05:23:18.695092",
-    "event": "Final decision",
-    "action": "observe",
-    "risk": "MEDIUM"
-  },
-  {
-    "time": "2026-03-27T05:23:21.124881",
-    "event": "Executed: observe",
-    "reward": -0.2,
-    "risk": 0.52,
-    "mode": "lightweight"
-  },
-  {
-    "time": "2026-03-27T05:23:23.203112",
-    "event": "Executed: observe",
-    "reward": -0.2,
-    "risk": 0.56,
-    "mode": "lightweight"
-  },
-  {
-    "time": "2026-03-27T05:23:26.065582",
-    "event": "Final decision",
-    "action": "observe",
-    "risk": "MEDIUM"
-  },
-  {
-    "time": "2026-03-27T05:23:29.609397",
-    "event": "Executed: observe",
-    "reward": -0.2,
-    "risk": 0.55,
-    "mode": "lightweight"
-  },
-  {
-    "time": "2026-03-27T05:23:31.665707",
-    "event": "Executed: observe",
-    "reward": -0.2,
-    "risk": 0.52,
-    "mode": "lightweight"
-  },
-  {
-    "time": "2026-03-27T05:23:34.129171",
-    "event": "Anomaly detected",
-    "cpu": 67.6,
-    "anomalies": [
-      "CPU anomaly"
-    ]
-  },
-  {
-    "time": "2026-03-27T05:23:34.131152",
-    "event": "Final decision",
-    "action": "observe",
-    "risk": "MEDIUM"
-  },
-  {
-    "time": "2026-03-27T05:23:36.174669",
-    "event": "Executed: observe",
-    "reward": -0.2,
-    "risk": 0.55,
-    "mode": "lightweight"
-  },
-  {
-    "time": "2026-03-27T05:23:38.233881",
-    "event": "Executed: observe",
-    "reward": -0.2,
-    "risk": 0.57,
-    "mode": "lightweight"
-  },
-  {
-    "time": "2026-03-27T05:23:40.762404",
-    "event": "Final decision",
-    "action": "observe",
-    "risk": "MEDIUM"
-  },
-  {
-    "time": "2026-03-27T05:23:42.833424",
-    "event": "Executed: observe",
-    "reward": -0.2,
-    "risk": 0.55,
-    "mode": "lightweight"
-  },
-  {
-    "time": "2026-03-27T05:23:44.892364",
-    "event": "Executed: observe",
-    "reward": -0.2,
-    "risk": 0.51,
-    "mode": "lightweight"
-  },
-  {
-    "time": "2026-03-27T05:23:47.280906",
-    "event": "Final decision",
-    "action": "observe",
-    "risk": "MEDIUM"
-  },
-  {
-    "time": "2026-03-27T05:23:49.337726",
-    "event": "Executed: observe",
-    "reward": -0.2,
-    "risk": 0.69,
-    "mode": "lightweight"
-  },
-  {
-    "time": "2026-03-27T05:23:51.973273",
-    "event": "Executed: observe",
-    "reward": -0.2,
-    "risk": 0.68,
-    "mode": "lightweight"
-  },
-  {
-    "time": "2026-03-27T05:23:59.613611",
-    "event": "Final decision",
-    "action": "kill_high_cpu_process",
-    "risk": "HIGH"
-  },
-  {
-    "time": "2026-03-27T05:24:02.509304",
-    "event": "Executed: kill_high_cpu_process",
-    "reward": -0.2,
-    "risk": 0.82,
-    "mode": "lightweight"
-  },
-  {
-    "time": "2026-03-27T05:24:05.503535",
-    "event": "Executed: kill_high_cpu_process",
-    "reward": -0.2,
-    "risk": 0.86,
-    "mode": "lightweight"
-  },
-  {
-    "time": "2026-03-27T05:24:08.418375",
-    "event": "Final decision",
-    "action": "kill_high_cpu_process",
-    "risk": "HIGH"
-  },
-  {
-    "time": "2026-03-27T05:24:11.056681",
-    "event": "Executed: kill_high_cpu_process",
-    "reward": -0.2,
-    "risk": 0.48,
-    "mode": "lightweight"
-  },
-  {
-    "time": "2026-03-27T05:24:13.727791",
-    "event": "Executed: kill_high_cpu_process",
-    "reward": -0.2,
-    "risk": 0.46,
-    "mode": "lightweight"
-  },
-  {
-    "time": "2026-03-27T05:24:16.318969",
-    "event": "Final decision",
-    "action": "observe",
-    "risk": "MEDIUM"
-  },
-  {
-    "time": "2026-03-27T05:24:18.415730",
-    "event": "Executed: observe",
-    "reward": -0.2,
-    "risk": 0.72,
-    "mode": "lightweight"
-  },
-  {
-    "time": "2026-03-27T05:24:20.525023",
-    "event": "Executed: observe",
-    "reward": -0.2,
-    "risk": 0.59,
-    "mode": "lightweight"
-  },
-  {
-    "time": "2026-03-27T05:24:23.949684",
-    "event": "Final decision",
-    "action": "observe",
-    "risk": "MEDIUM"
-  },
-  {
-    "time": "2026-03-27T05:24:26.150902",
-    "event": "Executed: observe",
-    "reward": -0.2,
-    "risk": 0.78,
-    "mode": "lightweight"
-  },
-  {
-    "time": "2026-03-27T05:24:28.302857",
-    "event": "Executed: observe",
-    "reward": -0.2,
-    "risk": 0.47,
-    "mode": "lightweight"
-  },
-  {
-    "time": "2026-03-27T05:24:30.951888",
-    "event": "Final decision",
-    "action": "observe",
-    "risk": "MEDIUM"
-  },
-  {
-    "time": "2026-03-27T05:24:33.036681",
-    "event": "Executed: observe",
-    "reward": -0.2,
-    "risk": 0.53,
-    "mode": "lightweight"
-  },
-  {
     "time": "2026-03-27T05:24:35.116179",
     "event": "Executed: observe",
     "reward": -0.2,
@@ -1348,5 +1147,185 @@
     "event": "Executed: free_memory_cache",
     "reward": 1.34,
     "risk": 0.49
+  },
+  {
+    "time": "2026-03-27T09:23:23.376310",
+    "event": "Executed: free_memory_cache",
+    "reward": -0.355,
+    "risk": 0.46
+  },
+  {
+    "time": "2026-03-27T09:24:13.323448",
+    "event": "Executed: free_memory_cache",
+    "reward": 1.055,
+    "risk": 0.49
+  },
+  {
+    "time": "2026-03-27T09:24:20.727927",
+    "event": "Executed: free_memory_cache",
+    "reward": 1.355,
+    "risk": 0.51
+  },
+  {
+    "time": "2026-03-27T09:24:29.417638",
+    "event": "Executed: free_memory_cache",
+    "reward": 1.61,
+    "risk": 0.45
+  },
+  {
+    "time": "2026-03-27T09:25:23.657829",
+    "event": "Executed: free_memory_cache",
+    "reward": 0.55,
+    "risk": 0.45
+  },
+  {
+    "time": "2026-03-27T09:25:40.477187",
+    "event": "Executed: free_memory_cache",
+    "reward": 1.095,
+    "risk": 0.45
+  },
+  {
+    "time": "2026-03-27T09:26:05.027442",
+    "event": "Executed: free_memory_cache",
+    "reward": 0.37,
+    "risk": 0.45
+  },
+  {
+    "time": "2026-03-27T09:26:15.980309",
+    "event": "Executed: free_memory_cache",
+    "reward": 1.615,
+    "risk": 0.54
+  },
+  {
+    "time": "2026-03-27T09:26:33.413608",
+    "event": "Executed: free_memory_cache",
+    "reward": 0.96,
+    "risk": 0.45
+  },
+  {
+    "time": "2026-03-27T09:26:46.174830",
+    "event": "Executed: free_memory_cache",
+    "reward": 1.45,
+    "risk": 0.48
+  },
+  {
+    "time": "2026-03-27T09:27:22.293061",
+    "event": "Executed: free_memory_cache",
+    "reward": 1.375,
+    "risk": 0.48
+  },
+  {
+    "time": "2026-03-27T09:27:58.991676",
+    "event": "Executed: free_memory_cache",
+    "reward": 1.3250000000000002,
+    "risk": 0.49
+  },
+  {
+    "time": "2026-03-27T09:28:18.046998",
+    "event": "Executed: free_memory_cache",
+    "reward": 1.715,
+    "risk": 0.47
+  },
+  {
+    "time": "2026-03-27T09:29:10.371834",
+    "event": "Executed: free_memory_cache",
+    "reward": 1.19,
+    "risk": 0.45
+  },
+  {
+    "time": "2026-03-27T09:30:30.893384",
+    "event": "Executed: free_memory_cache",
+    "reward": 2.2600000000000002,
+    "risk": 0.54
+  },
+  {
+    "time": "2026-03-27T09:30:41.043664",
+    "event": "Executed: free_memory_cache",
+    "reward": 1.6300000000000001,
+    "risk": 0.44
+  },
+  {
+    "time": "2026-03-27T09:31:20.569825",
+    "event": "Executed: free_memory_cache",
+    "reward": 1.295,
+    "risk": 0.44
+  },
+  {
+    "time": "2026-03-27T09:32:04.882245",
+    "event": "Executed: free_memory_cache",
+    "reward": 2.5,
+    "risk": 0.61
+  },
+  {
+    "time": "2026-03-27T09:32:52.722549",
+    "event": "Executed: free_memory_cache",
+    "reward": 1.705,
+    "risk": 0.45
+  },
+  {
+    "time": "2026-03-27T09:33:08.434894",
+    "event": "Executed: free_memory_cache",
+    "reward": 1.605,
+    "risk": 0.44
+  },
+  {
+    "time": "2026-03-27T09:33:52.153361",
+    "event": "Executed: free_memory_cache",
+    "reward": 1.9900000000000002,
+    "risk": 0.5
+  },
+  {
+    "time": "2026-03-27T09:35:03.980564",
+    "event": "Executed: free_memory_cache",
+    "reward": 1.73,
+    "risk": 0.52
+  },
+  {
+    "time": "2026-03-27T09:36:36.020174",
+    "event": "Executed: free_memory_cache",
+    "reward": 2.3499999999999996,
+    "risk": 0.53
+  },
+  {
+    "time": "2026-03-27T09:36:53.688369",
+    "event": "Executed: free_memory_cache",
+    "reward": 1.625,
+    "risk": 0.52
+  },
+  {
+    "time": "2026-03-27T09:37:02.973549",
+    "event": "Executed: free_memory_cache",
+    "reward": 0.97,
+    "risk": 0.44
+  },
+  {
+    "time": "2026-03-27T09:37:12.529884",
+    "event": "Executed: free_memory_cache",
+    "reward": 2.0349999999999997,
+    "risk": 0.48
+  },
+  {
+    "time": "2026-03-27T09:37:41.084615",
+    "event": "Executed: free_memory_cache",
+    "reward": 1.6400000000000001,
+    "risk": 0.46
+  },
+  {
+    "time": "2026-03-27T09:38:16.996761",
+    "event": "Executed: free_memory_cache",
+    "reward": 0.655,
+    "risk": 0.44
+  },
+  {
+    "time": "2026-03-27T09:38:38.622876",
+    "event": "Executed: free_memory_cache",
+    "reward": 1.9500000000000002,
+    "risk": 0.48
+  },
+  {
+    "time": "2026-03-27T09:38:54.868938",
+    "event": "Executed: free_memory_cache",
+    "reward": 1.23,
+    "risk": 0.44
   }
 ]

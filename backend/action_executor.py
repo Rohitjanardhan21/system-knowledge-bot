@@ -1,5 +1,4 @@
 import time
-import os
 import psutil
 from datetime import datetime
 
@@ -11,9 +10,9 @@ from backend.simulation_engine import SimulationEngine
 from backend.causal_engine import CausalEngine
 from backend.self_optimizer import update_optimizer, get_optimizer
 
-# 🔥 NEW
 from backend.action_history import record as record_action
 from backend.action_feedback import penalize, is_blocked
+from backend.policy_engine import is_action_allowed  # ✅ FIXED
 
 COOLDOWN_SECONDS = 2
 GLOBAL_COOLDOWN = 5
@@ -36,11 +35,10 @@ class ActionExecutor:
         })
 
     # -----------------------------------------
-    # COOLDOWN
+    # COOLDOWN + BLOCK
     # -----------------------------------------
     def can_execute(self, action, decision):
 
-        # 🔥 block bad actions
         if is_blocked(action):
             return False
 
@@ -77,27 +75,58 @@ class ActionExecutor:
         action = decision.get("action")
         context = decision.get("context", "general")
         baseline = decision.get("baseline_cpu", 50)
+        duration = decision.get("duration_seconds", 0)
+        target_name = decision.get("target_name")
 
         if not action:
             return {"status": "no_action"}
 
-        if not is_safe(action):
-            return {"status": "blocked_by_safety", "action": action}
+        # 🔒 POLICY CHECK (FIXED PROPERLY)
+        allowed, reason = is_action_allowed(
+            action,
+            context=context,
+            target_name=target_name
+        )
 
+        if not allowed:
+            return {
+                "status": "blocked_policy",
+                "reason": reason
+            }
+
+        # 🔒 SAFETY CHECK
+        if not is_safe(action):
+            return {"status": "blocked_by_safety"}
+
+        # 🔁 COOLDOWN CHECK
         if not self.can_execute(action, decision):
-            return {"status": "cooldown_or_blocked", "action": action}
+            return {"status": "cooldown_or_blocked"}
 
         # ---------------- BEFORE ----------------
         before = self.get_metrics()
 
-        # 🔥 BASELINE FILTER (ignore normal usage)
+        # 🔥 CONTEXT-AWARE SYSTEM
+        if context == "gaming":
+            return {
+                "status": "ignored",
+                "reason": "Gaming session detected — no interference"
+            }
+
+        if context == "critical":
+            return {
+                "status": "blocked",
+                "reason": "Critical workload — protected"
+            }
+
+        # 🔥 BASELINE FILTER
         if before["cpu"] < baseline + 20:
             return {"status": "ignored_normal_usage"}
 
-        # 🔥 CONTEXT FILTER
-        if context == "gaming":
-            return {"status": "ignored_gaming_context"}
+        # 🔥 DURATION FILTER
+        if duration < 30:
+            return {"status": "ignored_short_spike"}
 
+        # ---------------- STATE ----------------
         state = self.agent.encode_state(before)
 
         # ---------------- CAUSAL ----------------
@@ -114,6 +143,7 @@ class ActionExecutor:
             }
         )
 
+        contributors = causal.get("primary_cause", {}).get("contributors", [])
         risk = causal.get("system_risk", 0)
 
         # ---------------- SIMULATION ----------------
@@ -127,7 +157,7 @@ class ActionExecutor:
         if self.agent.epsilon < 0.7:
             if sim_score < block_threshold and risk < 0.3:
                 return {
-                    "status": "blocked_by_simulation",
+                    "status": "blocked_simulation",
                     "reason": "Predicted negative outcome",
                     "simulated": simulated
                 }
@@ -154,12 +184,18 @@ class ActionExecutor:
 
             record_action(action, reward)
 
-            # 🔥 SELF-CORRECTION
             if reward < 0:
                 penalize(action)
 
         # ---------------- EXPLANATION ----------------
-        explanation = self._build_explanation(action, before, after, causal)
+        explanation = {
+            "action": action,
+            "contributors": contributors,
+            "cpu_before": before["cpu"],
+            "cpu_after": after["cpu"],
+            "improvement": round(before["cpu"] - after["cpu"], 2),
+            "result": "improved" if after["cpu"] < before["cpu"] else "no_effect"
+        }
 
         # ---------------- LOG ----------------
         log_event({
@@ -203,20 +239,6 @@ class ActionExecutor:
         return round(reward, 3)
 
     # -----------------------------------------
-    # EXPLANATION
-    # -----------------------------------------
-    def _build_explanation(self, action, before, after, causal):
-
-        return {
-            "action": action,
-            "cause": causal.get("primary_cause", {}).get("type"),
-            "cpu_before": before["cpu"],
-            "cpu_after": after["cpu"],
-            "improvement": round(before["cpu"] - after["cpu"], 2),
-            "result": "improved" if after["cpu"] < before["cpu"] else "no_effect"
-        }
-
-    # -----------------------------------------
     # ACTION HANDLER
     # -----------------------------------------
     def _execute_action(self, action, decision):
@@ -233,8 +255,6 @@ class ActionExecutor:
         return {"status": "executed", "action": action}
 
     # -----------------------------------------
-    # SAFE PROCESS KILL (WINDOWS SAFE)
-    # -----------------------------------------
     def kill_specific_process(self, decision):
 
         pid = decision.get("target_pid")
@@ -250,7 +270,6 @@ class ActionExecutor:
             return {"status": "blocked", "reason": "protected process"}
 
         try:
-            # 🔥 cross-platform safe kill
             proc = psutil.Process(pid)
             proc.terminate()
             return {"status": "executed", "action": "kill_process", "pid": pid}

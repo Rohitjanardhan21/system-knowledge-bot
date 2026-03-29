@@ -1,1002 +1,1002 @@
 [
   {
-    "time": "2026-03-27T07:56:44.830230",
+    "time": "2026-03-27T14:19:35.824881",
     "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:56:44.832006",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T14:25:09.313071",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:56:47.907327",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T14:25:12.000919",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:56:47.908554",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T14:25:14.883643",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:56:50.790014",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T14:25:17.473521",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:56:50.791625",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T14:25:20.176861",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:56:54.225307",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T14:25:22.638587",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:56:54.226708",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T14:25:25.431052",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:56:57.433560",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T14:25:28.087228",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:56:57.434820",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T14:25:30.985052",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:57:00.789654",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T14:25:33.712693",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:57:00.791364",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T14:25:36.331201",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:57:03.779425",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T14:25:39.126339",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:57:03.781259",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T14:25:41.910408",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:57:07.050489",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T14:25:45.205313",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:57:07.051682",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T14:25:48.063723",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:57:10.267255",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T14:25:51.100015",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:57:10.269061",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T14:25:53.903443",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:57:13.424704",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T14:25:56.438662",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:57:13.425830",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T14:25:59.139088",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:57:16.650278",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T14:26:02.279580",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:57:16.651830",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T14:26:05.013989",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:57:19.938780",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T14:26:07.432035",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:57:19.940946",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T14:26:10.337432",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:57:23.294893",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T14:26:13.410278",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:57:23.296139",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T14:26:16.363792",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:57:26.472822",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T14:26:19.617571",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:57:26.474534",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T14:26:22.639679",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:57:29.939430",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T14:26:25.595982",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:57:29.940933",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T14:26:28.572637",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:57:33.249044",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T14:26:31.643703",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:57:33.250992",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T14:26:34.668753",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:57:39.886907",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T14:26:37.771649",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:57:39.887976",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T14:26:40.623686",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:57:42.932913",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T14:26:43.799065",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:57:42.934140",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T14:26:46.871315",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:57:46.123535",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T14:26:49.712901",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:57:46.124797",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T14:26:52.792283",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:57:49.397494",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T14:26:55.558892",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:57:49.398672",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T14:26:58.653152",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:57:52.529958",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T14:27:01.608291",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:57:52.531210",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T14:27:04.798160",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:57:55.709644",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T14:27:07.645233",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:57:55.711017",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T14:27:10.718250",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:57:58.866030",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T14:27:13.786616",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:57:58.867865",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T14:27:16.678805",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:58:01.902178",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T14:27:19.734397",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:58:01.903053",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T14:27:22.590159",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:58:04.997004",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T14:27:25.681023",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:58:04.998066",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T14:27:28.791515",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:58:08.288886",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T14:27:31.841673",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:58:08.292570",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T14:27:34.728415",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:58:11.412532",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T14:27:38.229013",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:58:11.413666",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T14:27:41.713208",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:58:14.355977",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T14:27:44.826160",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:58:14.365824",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T14:27:48.316539",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:58:17.455610",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T14:27:51.655624",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:58:17.456654",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T14:27:54.893971",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:58:20.635112",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T14:27:58.192202",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:58:20.636546",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T14:28:01.694076",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:58:23.572633",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T14:28:04.796275",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:58:23.573913",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T14:28:08.077972",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:58:26.762020",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T14:28:11.638999",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:58:26.763625",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T14:28:15.196485",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:58:29.810849",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T14:28:18.653512",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:58:29.811962",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T14:28:21.703746",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:58:32.957919",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T14:28:24.966879",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:58:32.959641",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T14:28:27.915956",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:58:36.109534",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T14:28:30.606695",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:58:36.110494",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T14:28:33.042764",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:58:39.589992",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T14:28:35.733900",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:58:39.591123",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T14:28:38.552778",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:58:52.234067",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T14:28:40.986395",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:58:52.237910",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T14:28:43.499791",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:58:55.493212",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T14:28:45.931520",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:58:55.494063",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T14:28:48.420562",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:58:58.569724",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T14:28:50.949080",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:58:58.572214",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T14:28:53.829302",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:59:01.660021",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T14:28:57.113164",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:59:01.661760",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T14:29:00.241010",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:59:04.714835",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T14:29:03.035068",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:59:04.716055",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T14:29:06.133152",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:59:07.860939",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T14:29:08.779861",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:59:07.861830",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T14:29:11.567244",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:59:11.096765",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T14:29:13.888801",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:59:11.098517",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T14:29:16.412132",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:59:14.278547",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T14:29:19.385241",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:59:14.279911",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T14:29:21.739631",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:59:17.236676",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T14:29:24.203591",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:59:17.238085",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T14:29:27.050632",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:59:20.146863",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T14:29:29.648123",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:59:20.148982",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T14:29:32.299731",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:59:23.257769",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T14:29:33.665217",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:59:23.259037",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T14:29:35.174683",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:59:26.181792",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T14:29:39.180088",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:59:26.183187",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T14:29:42.213830",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:59:29.277156",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T14:29:44.919177",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:59:29.278521",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T14:29:47.595607",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:59:32.501611",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T14:29:50.103926",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:59:32.503034",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T14:29:52.996626",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:59:35.619548",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T14:29:55.618784",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:59:35.620735",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T14:29:58.770711",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:59:38.660583",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T14:30:01.581320",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:59:38.662037",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T14:30:05.113951",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:59:41.832733",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T14:30:08.484945",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:59:41.834079",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T14:30:11.506109",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:59:45.213438",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T14:30:14.845332",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:59:45.214392",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T14:30:18.184794",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:59:48.258981",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T14:30:21.491507",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:59:48.261335",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T14:30:24.787403",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:59:51.322089",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T14:30:28.303683",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:59:51.323354",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T14:30:31.551350",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:59:56.735600",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T14:30:34.898791",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:59:56.736263",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T14:30:38.286272",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:59:59.794249",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T14:30:41.433484",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T07:59:59.795494",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T14:30:44.569140",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:00:02.290965",
+    "time": "2026-03-27T14:30:48.020608",
     "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:00:02.291993",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T14:30:51.777313",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:00:04.719506",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T14:30:54.762816",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:00:04.720871",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T14:30:58.099385",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:00:07.257419",
+    "time": "2026-03-27T14:31:01.426102",
     "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:00:07.258587",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T14:31:04.498195",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:00:09.809439",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T14:31:08.039093",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:00:09.810435",
+    "time": "2026-03-27T14:31:12.125931",
     "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:00:14.904142",
+    "time": "2026-03-27T14:31:15.846620",
     "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:00:14.905354",
+    "time": "2026-03-27T14:31:19.194920",
     "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:00:17.381709",
+    "time": "2026-03-27T14:31:22.311934",
     "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:00:17.384136",
+    "time": "2026-03-27T14:31:25.576466",
     "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:00:19.865043",
+    "time": "2026-03-27T14:31:29.088053",
     "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:00:19.866224",
+    "time": "2026-03-27T14:31:32.741630",
     "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:00:22.416740",
+    "time": "2026-03-27T14:31:35.992884",
     "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:00:22.417885",
+    "time": "2026-03-27T14:31:38.971921",
     "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:00:25.044704",
+    "time": "2026-03-27T14:31:42.315530",
     "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:00:25.045754",
+    "time": "2026-03-27T14:31:48.438024",
     "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:00:27.753756",
+    "time": "2026-03-27T14:31:52.028023",
     "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:00:27.754762",
+    "time": "2026-03-27T14:31:58.694538",
     "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:00:30.377591",
+    "time": "2026-03-27T14:32:05.062583",
     "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:00:30.379395",
+    "time": "2026-03-27T14:32:08.516653",
     "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:00:32.802355",
+    "time": "2026-03-27T14:32:14.936702",
     "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:00:32.803614",
+    "time": "2026-03-27T14:32:18.209718",
     "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:00:35.372730",
+    "time": "2026-03-27T14:32:21.066140",
     "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:00:35.373819",
+    "time": "2026-03-27T14:32:24.375719",
     "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:00:37.992676",
+    "time": "2026-03-27T14:32:27.262064",
     "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:00:37.993966",
+    "time": "2026-03-27T14:32:31.060232",
     "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:00:40.456128",
+    "time": "2026-03-27T14:32:38.189229",
     "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:00:40.456993",
+    "time": "2026-03-27T14:32:48.679204",
     "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:00:43.148756",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T14:36:31.568712",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:00:43.149955",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T15:09:22.172153",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:00:52.231479",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T15:09:25.180659",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:00:52.232538",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T15:09:28.405147",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:00:57.669030",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T15:09:31.049668",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:00:57.670086",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T15:09:33.889470",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:01:00.246005",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T15:09:36.749933",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:01:00.247219",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T15:09:40.062943",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:01:02.679782",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T15:09:43.356511",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:01:02.680944",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T15:09:46.082919",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:01:05.173779",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T15:09:48.675461",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:01:05.174906",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T15:09:51.283826",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:01:07.685167",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T15:09:53.688735",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:01:07.687604",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T15:09:56.177944",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:01:10.241096",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T15:09:58.999156",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:01:10.241999",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T15:10:01.540636",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:01:12.989812",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T15:10:04.283439",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:01:12.990717",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T15:10:07.082806",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:01:15.544737",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T15:10:09.765138",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:01:15.545678",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T15:10:12.331520",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:01:18.112036",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T15:10:14.944661",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:01:18.113024",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T15:10:17.587343",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:01:21.038568",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T15:10:20.328082",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:01:21.039378",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T15:10:23.064946",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:01:23.710090",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T15:10:25.786555",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:01:23.711395",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T15:10:28.208086",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:01:26.204915",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T15:10:30.732901",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:01:26.206081",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T15:10:33.585764",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:01:28.854750",
-    "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "time": "2026-03-27T15:10:36.331966",
+    "level": "critical",
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:01:28.855666",
+    "time": "2026-03-27T15:10:39.110305",
     "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:01:31.445110",
+    "time": "2026-03-27T15:10:41.771986",
     "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:01:31.445962",
+    "time": "2026-03-27T15:10:44.214939",
     "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:01:33.922750",
+    "time": "2026-03-27T15:10:46.814598",
     "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:01:33.923601",
+    "time": "2026-03-27T15:10:49.406857",
     "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:01:36.585248",
+    "time": "2026-03-27T15:10:52.127270",
     "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:01:36.586290",
+    "time": "2026-03-27T15:10:54.898225",
     "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:01:39.095249",
+    "time": "2026-03-27T15:10:57.679197",
     "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:01:39.096068",
+    "time": "2026-03-27T15:11:00.451802",
     "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:01:41.537425",
+    "time": "2026-03-27T15:11:03.065084",
     "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:01:41.538297",
+    "time": "2026-03-27T15:11:05.881004",
     "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:01:44.011065",
+    "time": "2026-03-27T15:11:08.771322",
     "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:01:44.011957",
+    "time": "2026-03-27T15:11:11.416306",
     "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:01:46.830529",
+    "time": "2026-03-27T15:11:18.478098",
     "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:01:46.831855",
+    "time": "2026-03-27T15:11:25.661802",
     "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:02:29.364098",
+    "time": "2026-03-27T15:11:29.161650",
     "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:02:29.365507",
+    "time": "2026-03-27T15:11:35.443005",
     "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:02:32.218715",
+    "time": "2026-03-27T15:11:43.860122",
     "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:02:32.219949",
+    "time": "2026-03-27T15:11:47.215156",
     "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "message": "[GLOBAL] memory_anomaly"
   },
   {
-    "time": "2026-03-27T08:02:35.239562",
+    "time": "2026-03-27T15:14:11.359107",
     "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "message": "[GLOBAL] cpu_anomaly"
   },
   {
-    "time": "2026-03-27T08:02:35.243552",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T15:14:11.364443",
+    "level": "critical",
+    "message": "[GLOBAL] cpu_overload"
   },
   {
-    "time": "2026-03-27T08:02:41.119075",
+    "time": "2026-03-27T15:24:38.986830",
     "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "message": "[GLOBAL] cpu_anomaly"
   },
   {
-    "time": "2026-03-27T08:02:41.120713",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T15:24:39.015839",
+    "level": "critical",
+    "message": "[GLOBAL] cpu_overload"
   },
   {
-    "time": "2026-03-27T08:02:50.372053",
+    "time": "2026-03-27T15:24:43.156092",
     "level": "warning",
-    "message": "[GLOBAL] memory_anomaly (warning)"
+    "message": "[GLOBAL] cpu_anomaly"
   },
   {
-    "time": "2026-03-27T08:02:50.372965",
-    "level": "warning",
-    "message": "[NODE:rohit-janardhan-VirtualBox] memory_anomaly"
+    "time": "2026-03-27T15:24:43.199720",
+    "level": "critical",
+    "message": "[GLOBAL] cpu_overload"
   }
 ]

@@ -1,8 +1,9 @@
 # ---------------------------------------------------------
-# 🧠 PROCESS-AWARE CAUSAL ENGINE
+# 🧠 PROCESS + CONTEXT + MULTI-CAUSE ENGINE (UPGRADED)
 # ---------------------------------------------------------
 
 HIGH_CPU = 80
+MODERATE_CPU = 40
 HIGH_MEM = 75
 HIGH_DISK = 85
 
@@ -17,10 +18,10 @@ def compute_severity(cpu, mem, disk):
 def map_action(cause_type):
     mapping = {
         "cpu_overload": "kill_high_cpu_process",
+        "moderate_cpu_load": "optimize_processes",
         "memory_pressure": "free_memory_cache",
         "disk_io_bottleneck": "reduce_disk_io",
-        "latency_spike": "scale_resources",
-        "unknown": "observe"
+        "background_load": "observe"
     }
     return mapping.get(cause_type, "observe")
 
@@ -30,35 +31,57 @@ def propagate_risk(base, length):
 
 
 # ---------------------------------------------------------
+# 🔥 PROCESS INTELLIGENCE
+# ---------------------------------------------------------
+def classify_process(name):
+    name = (name or "").lower()
+
+    if "chrome" in name:
+        return "browser activity"
+    if "code" in name or "python" in name:
+        return "development workload"
+    if "game" in name or "steam" in name:
+        return "gaming workload"
+    if "docker" in name:
+        return "container workload"
+
+    return "system activity"
+
+
+# ---------------------------------------------------------
 # CORE ENGINE
 # ---------------------------------------------------------
 class CausalEngine:
 
     # -----------------------------------------------------
-    # 🔍 FIND TOP PROCESS
+    # 🔍 TOP CONTRIBUTORS
     # -----------------------------------------------------
-    def get_top_process(self, processes, metric="cpu"):
+    def get_top_contributors(self, processes, metric="cpu", top_n=3):
 
         if not processes:
-            return None
+            return []
 
         try:
-            sorted_p = sorted(processes, key=lambda x: x.get(metric, 0), reverse=True)
-            return sorted_p[0]
-        except:
-            return None
+            sorted_p = sorted(
+                processes,
+                key=lambda x: x.get(metric, 0),
+                reverse=True
+            )
+            return sorted_p[:top_n]
+        except Exception:
+            return []
 
     # -----------------------------------------------------
     # 🔗 IMPACT CHAIN
     # -----------------------------------------------------
-    def build_chain(self, cause, process_name=None):
+    def build_chain(self, cause, process_names=None):
 
         chain = []
 
-        if process_name:
-            chain.append(process_name)
+        if process_names:
+            chain.extend(process_names)
 
-        if cause == "cpu_overload":
+        if cause in ["cpu_overload", "moderate_cpu_load"]:
             chain += ["cpu", "latency"]
 
         elif cause == "memory_pressure":
@@ -75,29 +98,113 @@ class CausalEngine:
     # -----------------------------------------------------
     # 🧠 DETECT
     # -----------------------------------------------------
-    def detect(self, flat_metrics, temporal, learned_graph=None, processes=None):
+    def detect(
+        self,
+        flat_metrics,
+        temporal,
+        learned_graph=None,
+        processes=None,
+        context="general",
+        duration=0
+    ):
 
         cpu = flat_metrics.get("cpu_pct", 0)
         mem = flat_metrics.get("mem_pct", 0)
         disk = flat_metrics.get("disk_pct", 0)
 
         processes = processes or []
-
         causes = []
 
         # -------------------------------------------------
-        # 🔥 PROCESS-AWARE CPU
+        # 🔥 CONTEXT AWARENESS
+        # -------------------------------------------------
+        if context == "gaming":
+            return {
+                "primary_cause": {
+                    "type": "expected_high_usage",
+                    "confidence": 0.9,
+                    "reason": "Gaming workload detected",
+                    "contributors": [],
+                    "severity": compute_severity(cpu, mem, disk),
+                    "recommended_action": "do_nothing"
+                },
+                "root_causes": [],
+                "system_risk": 0.3
+            }
+
+        if context == "critical":
+            return {
+                "primary_cause": {
+                    "type": "protected_workload",
+                    "confidence": 0.95,
+                    "reason": "Critical process running",
+                    "contributors": [],
+                    "severity": compute_severity(cpu, mem, disk),
+                    "recommended_action": "observe"
+                },
+                "root_causes": [],
+                "system_risk": 0.4
+            }
+
+        # -------------------------------------------------
+        # 🔥 CPU (HIGH)
         # -------------------------------------------------
         if cpu > HIGH_CPU:
 
-            top_proc = self.get_top_process(processes, "cpu")
+            top = self.get_top_contributors(processes, "cpu")
+
+            contributors = []
+            for p in top:
+                name = p.get("name")
+                cpu_val = p.get("cpu", 0)
+
+                contributors.append({
+                    "name": name,
+                    "cpu": cpu_val,
+                    "impact": round(cpu_val / max(cpu, 1), 2),
+                    "behavior": classify_process(name)
+                })
+
+            if contributors:
+                top_proc = contributors[0]
+                reason = f"{top_proc['name']} using {top_proc['cpu']}% CPU ({top_proc['behavior']})"
+            else:
+                reason = "CPU usage above threshold"
 
             causes.append({
                 "type": "cpu_overload",
                 "confidence": 0.9,
-                "reason": "CPU usage above threshold",
-                "caused_by": top_proc.get("name") if top_proc else None,
-                "process_cpu": top_proc.get("cpu") if top_proc else None
+                "reason": reason,
+                "contributors": contributors
+            })
+
+        # -------------------------------------------------
+        # 🔥 CPU (MODERATE) ⭐ FIX
+        # -------------------------------------------------
+        elif cpu > MODERATE_CPU:
+
+            top = self.get_top_contributors(processes, "cpu")
+
+            contributors = []
+            for p in top:
+                name = p.get("name")
+
+                contributors.append({
+                    "name": name,
+                    "cpu": p.get("cpu", 0),
+                    "behavior": classify_process(name)
+                })
+
+            if contributors:
+                reason = f"{contributors[0]['name']} contributing to CPU load"
+            else:
+                reason = "Moderate system load"
+
+            causes.append({
+                "type": "moderate_cpu_load",
+                "confidence": 0.6,
+                "reason": reason,
+                "contributors": contributors
             })
 
         # -------------------------------------------------
@@ -105,14 +212,21 @@ class CausalEngine:
         # -------------------------------------------------
         if mem > HIGH_MEM:
 
-            top_proc = self.get_top_process(processes, "memory")
+            top = self.get_top_contributors(processes, "memory")
+
+            contributors = [
+                {
+                    "name": p.get("name"),
+                    "memory": p.get("memory", 0)
+                }
+                for p in top
+            ]
 
             causes.append({
                 "type": "memory_pressure",
                 "confidence": 0.85,
                 "reason": "High memory usage",
-                "caused_by": top_proc.get("name") if top_proc else None,
-                "process_memory": top_proc.get("memory") if top_proc else None
+                "contributors": contributors
             })
 
         # -------------------------------------------------
@@ -122,18 +236,44 @@ class CausalEngine:
             causes.append({
                 "type": "disk_io_bottleneck",
                 "confidence": 0.75,
-                "reason": "Disk usage high"
+                "reason": "Disk usage high",
+                "contributors": []
             })
 
         # -------------------------------------------------
-        # FALLBACK
+        # ⏳ DURATION BOOST
+        # -------------------------------------------------
+        if duration > 60:
+            for c in causes:
+                c["confidence"] = min(1.0, c["confidence"] + 0.05)
+                c["reason"] += " (persistent issue)"
+
+        # -------------------------------------------------
+        # 🔥 FALLBACK (FIXED)
         # -------------------------------------------------
         if not causes:
-            causes = [{
-                "type": "unknown",
-                "confidence": 0.4,
-                "reason": "No clear pattern"
-            }]
+
+            top = self.get_top_contributors(processes, "cpu")
+
+            if top:
+                p = top[0]
+                causes = [{
+                    "type": "background_load",
+                    "confidence": 0.5,
+                    "reason": f"{p.get('name')} contributing to system load",
+                    "contributors": [{
+                        "name": p.get("name"),
+                        "cpu": p.get("cpu", 0),
+                        "behavior": classify_process(p.get("name"))
+                    }]
+                }]
+            else:
+                causes = [{
+                    "type": "background_load",
+                    "confidence": 0.4,
+                    "reason": "Load distributed across processes",
+                    "contributors": []
+                }]
 
         # -------------------------------------------------
         # 🔥 ENRICH
@@ -144,9 +284,9 @@ class CausalEngine:
 
         for c in causes:
 
-            process_name = c.get("caused_by")
+            process_names = [p["name"] for p in c.get("contributors", [])]
 
-            chain = self.build_chain(c["type"], process_name)
+            chain = self.build_chain(c["type"], process_names)
 
             enriched.append({
                 **c,
@@ -164,13 +304,11 @@ class CausalEngine:
             "all_causes": enriched,
             "system_risk": max(c["propagated_risk"] for c in enriched)
         }
+
+
 # ---------------------------------------------------------
-# 🔄 BACKWARD COMPATIBILITY (CRITICAL FIX)
+# 🔄 BACKWARD COMPATIBILITY
 # ---------------------------------------------------------
 def detect_causal_relationship(flat_metrics, temporal):
-    """
-    Legacy wrapper for older modules.
-    Keeps system stable after upgrading to CausalEngine.
-    """
     engine = CausalEngine()
     return engine.detect(flat_metrics, temporal)

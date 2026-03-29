@@ -1,5 +1,6 @@
 {
   "dependencies": {
+    "framer-motion": "^12.38.0",
     "react-force-graph": "^1.48.2"
   }
 }
