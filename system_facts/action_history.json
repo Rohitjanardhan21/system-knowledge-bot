@@ -1,0 +1,24 @@
+[
+  {
+    "time": "2026-03-29T07:06:03.406633",
+    "action": {
+      "action": "kill",
+      "target": "System Idle Process"
+    },
+    "reward": {
+      "status": "ignored_normal_usage"
+    },
+    "meta": {}
+  },
+  {
+    "time": "2026-03-29T07:06:12.519277",
+    "action": {
+      "action": "kill",
+      "target": "VirtualBoxVM.exe"
+    },
+    "reward": {
+      "status": "ignored_short_spike"
+    },
+    "meta": {}
+  }
+]

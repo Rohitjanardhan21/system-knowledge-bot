@@ -1,314 +1,273 @@
 # ---------------------------------------------------------
-# 🧠 PROCESS + CONTEXT + MULTI-CAUSE ENGINE (UPGRADED)
+# 🧠 MULTI-MODAL CAUSAL ENGINE (PRODUCTION + SAFE)
 # ---------------------------------------------------------
 
+from typing import List, Dict, Any
+
+# ---------------------------------------------------------
+# THRESHOLDS
+# ---------------------------------------------------------
 HIGH_CPU = 80
 MODERATE_CPU = 40
 HIGH_MEM = 75
 HIGH_DISK = 85
+HIGH_TEMP = 75
+HIGH_VIBRATION = 0.7
+HIGH_ELECTRICAL = 90
 
 
 # ---------------------------------------------------------
-# HELPERS
+# CONFIDENCE CALIBRATION (ANTI-HALLUCINATION)
 # ---------------------------------------------------------
-def compute_severity(cpu, mem, disk):
-    return round((cpu * 0.5 + mem * 0.3 + disk * 0.2) / 100, 2)
+def calibrate_confidence(anomaly_score, evidence_count, data_points=50):
+    base = 0.4
+
+    if anomaly_score > 1.5:
+        base += 0.2
+
+    if evidence_count >= 2:
+        base += 0.2
+
+    if data_points < 20:
+        base -= 0.3  # low data penalty
+
+    return round(max(0.1, min(0.95, base)), 2)
 
 
+# ---------------------------------------------------------
+# SEVERITY
+# ---------------------------------------------------------
+def compute_severity(cpu, mem, disk, anomaly_score=0):
+    base = (cpu * 0.4 + mem * 0.3 + disk * 0.2) / 100
+    return round(min(1.0, base + anomaly_score * 0.2), 2)
+
+
+# ---------------------------------------------------------
+# ACTION MAP
+# ---------------------------------------------------------
 def map_action(cause_type):
-    mapping = {
-        "cpu_overload": "kill_high_cpu_process",
+    return {
+        "cpu_overload": "reduce_compute_load",
         "moderate_cpu_load": "optimize_processes",
-        "memory_pressure": "free_memory_cache",
-        "disk_io_bottleneck": "reduce_disk_io",
+        "memory_pressure": "free_memory",
+        "disk_io_bottleneck": "optimize_io",
+
+        "thermal_overload": "increase_cooling",
+        "mechanical_fault": "inspect_mechanics",
+        "electrical_instability": "check_power",
+
         "background_load": "observe"
-    }
-    return mapping.get(cause_type, "observe")
+    }.get(cause_type, "observe")
 
 
+# ---------------------------------------------------------
+# RISK PROPAGATION
+# ---------------------------------------------------------
 def propagate_risk(base, length):
     return min(1.0, round(base + 0.1 * length, 2))
 
 
 # ---------------------------------------------------------
-# 🔥 PROCESS INTELLIGENCE
+# PROCESS FILTER
 # ---------------------------------------------------------
-def classify_process(name):
-    name = (name or "").lower()
+def is_valid_process(p):
+    name = (p.get("name") or "").lower()
 
-    if "chrome" in name:
-        return "browser activity"
-    if "code" in name or "python" in name:
-        return "development workload"
-    if "game" in name or "steam" in name:
-        return "gaming workload"
-    if "docker" in name:
-        return "container workload"
+    if not name:
+        return False
 
-    return "system activity"
+    if any(x in name for x in ["idle", "system idle"]):
+        return False
+
+    if p.get("cpu", 0) < 1:
+        return False
+
+    return True
 
 
 # ---------------------------------------------------------
-# CORE ENGINE
+# 🧠 CAUSAL ENGINE
 # ---------------------------------------------------------
 class CausalEngine:
 
     # -----------------------------------------------------
-    # 🔍 TOP CONTRIBUTORS
+    # TOP CONTRIBUTORS
     # -----------------------------------------------------
-    def get_top_contributors(self, processes, metric="cpu", top_n=3):
+    def get_top_contributors(self, processes, metric="cpu", top_n=5):
+        valid = [p for p in processes if is_valid_process(p)]
 
-        if not processes:
+        if not valid:
             return []
 
-        try:
-            sorted_p = sorted(
-                processes,
-                key=lambda x: x.get(metric, 0),
-                reverse=True
-            )
-            return sorted_p[:top_n]
-        except Exception:
-            return []
+        valid.sort(key=lambda x: x.get(metric, 0), reverse=True)
+        return valid[:top_n]
 
     # -----------------------------------------------------
-    # 🔗 IMPACT CHAIN
+    # IMPACT CHAIN
     # -----------------------------------------------------
-    def build_chain(self, cause, process_names=None):
+    def build_chain(self, cause_type, process=None):
 
-        chain = []
+        base = []
+        if process:
+            base.append(f"Process: {process}")
 
-        if process_names:
-            chain.extend(process_names)
+        mapping = {
+            "cpu_overload": ["CPU usage ↑", "Scheduler pressure ↑", "Latency ↑"],
+            "thermal_overload": ["Heat ↑", "Efficiency ↓", "Hardware stress ↑"],
+            "mechanical_fault": ["Vibration ↑", "Wear ↑", "Failure risk ↑"],
+            "electrical_instability": ["Voltage fluctuation", "Instability ↑"],
+            "moderate_cpu_load": ["Load ↑", "Performance impact ↑"],
+            "background_load": ["Normal variation"]
+        }
 
-        if cause in ["cpu_overload", "moderate_cpu_load"]:
-            chain += ["cpu", "latency"]
-
-        elif cause == "memory_pressure":
-            chain += ["memory", "cpu", "latency"]
-
-        elif cause == "disk_io_bottleneck":
-            chain += ["disk", "cpu"]
-
-        else:
-            chain += ["system"]
-
-        return chain
+        return base + mapping.get(cause_type, ["System impact ↑"])
 
     # -----------------------------------------------------
-    # 🧠 DETECT
+    # 🔍 BUILD EVIDENCE (ANTI-HALLUCINATION CORE)
+    # -----------------------------------------------------
+    def build_evidence(self, cpu, mem, disk, temp, vibration, electrical, anomaly_score):
+        evidence = []
+
+        if cpu > HIGH_CPU:
+            evidence.append("High CPU usage")
+
+        if mem > HIGH_MEM:
+            evidence.append("High memory usage")
+
+        if disk > HIGH_DISK:
+            evidence.append("High disk usage")
+
+        if temp > HIGH_TEMP:
+            evidence.append("Elevated temperature")
+
+        if vibration > HIGH_VIBRATION:
+            evidence.append("Abnormal vibration detected")
+
+        if electrical > HIGH_ELECTRICAL:
+            evidence.append("Electrical instability")
+
+        if anomaly_score > 1.5:
+            evidence.append("High anomaly score")
+
+        return evidence
+
+    # -----------------------------------------------------
+    # 🔥 MAIN DETECTION
     # -----------------------------------------------------
     def detect(
         self,
-        flat_metrics,
-        temporal,
+        flat_metrics: Dict[str, Any],
+        temporal: Dict[str, Any],
         learned_graph=None,
-        processes=None,
+        processes: List[Dict] = None,
         context="general",
-        duration=0
+        duration=0,
+        multimodal=None
     ):
+
+        processes = processes or []
+        multimodal = multimodal or {}
 
         cpu = flat_metrics.get("cpu_pct", 0)
         mem = flat_metrics.get("mem_pct", 0)
         disk = flat_metrics.get("disk_pct", 0)
 
-        processes = processes or []
-        causes = []
+        anomaly_score = multimodal.get("anomaly_score", 0)
+        features = multimodal.get("features", {})
+
+        temp = features.get("thermal", 0)
+        vibration = features.get("vibration_intensity", 0)
+        electrical = features.get("electrical", 0)
+
+        contributors = self.get_top_contributors(processes)
 
         # -------------------------------------------------
-        # 🔥 CONTEXT AWARENESS
+        # CAUSE DETECTION (STRICT ORDER)
         # -------------------------------------------------
-        if context == "gaming":
-            return {
-                "primary_cause": {
-                    "type": "expected_high_usage",
-                    "confidence": 0.9,
-                    "reason": "Gaming workload detected",
-                    "contributors": [],
-                    "severity": compute_severity(cpu, mem, disk),
-                    "recommended_action": "do_nothing"
-                },
-                "root_causes": [],
-                "system_risk": 0.3
-            }
+        if vibration > HIGH_VIBRATION and anomaly_score > 1:
+            cause_type = "mechanical_fault"
 
-        if context == "critical":
-            return {
-                "primary_cause": {
-                    "type": "protected_workload",
-                    "confidence": 0.95,
-                    "reason": "Critical process running",
-                    "contributors": [],
-                    "severity": compute_severity(cpu, mem, disk),
-                    "recommended_action": "observe"
-                },
-                "root_causes": [],
-                "system_risk": 0.4
-            }
+        elif temp > HIGH_TEMP and cpu > MODERATE_CPU:
+            cause_type = "thermal_overload"
 
-        # -------------------------------------------------
-        # 🔥 CPU (HIGH)
-        # -------------------------------------------------
-        if cpu > HIGH_CPU:
+        elif electrical > HIGH_ELECTRICAL:
+            cause_type = "electrical_instability"
 
-            top = self.get_top_contributors(processes, "cpu")
+        elif cpu > HIGH_CPU:
+            cause_type = "cpu_overload"
 
-            contributors = []
-            for p in top:
-                name = p.get("name")
-                cpu_val = p.get("cpu", 0)
-
-                contributors.append({
-                    "name": name,
-                    "cpu": cpu_val,
-                    "impact": round(cpu_val / max(cpu, 1), 2),
-                    "behavior": classify_process(name)
-                })
-
-            if contributors:
-                top_proc = contributors[0]
-                reason = f"{top_proc['name']} using {top_proc['cpu']}% CPU ({top_proc['behavior']})"
-            else:
-                reason = "CPU usage above threshold"
-
-            causes.append({
-                "type": "cpu_overload",
-                "confidence": 0.9,
-                "reason": reason,
-                "contributors": contributors
-            })
-
-        # -------------------------------------------------
-        # 🔥 CPU (MODERATE) ⭐ FIX
-        # -------------------------------------------------
         elif cpu > MODERATE_CPU:
+            cause_type = "moderate_cpu_load"
 
-            top = self.get_top_contributors(processes, "cpu")
-
-            contributors = []
-            for p in top:
-                name = p.get("name")
-
-                contributors.append({
-                    "name": name,
-                    "cpu": p.get("cpu", 0),
-                    "behavior": classify_process(name)
-                })
-
-            if contributors:
-                reason = f"{contributors[0]['name']} contributing to CPU load"
-            else:
-                reason = "Moderate system load"
-
-            causes.append({
-                "type": "moderate_cpu_load",
-                "confidence": 0.6,
-                "reason": reason,
-                "contributors": contributors
-            })
+        else:
+            cause_type = "background_load"
 
         # -------------------------------------------------
-        # 🔥 MEMORY
+        # PROCESS CONTEXT
         # -------------------------------------------------
-        if mem > HIGH_MEM:
+        process_name = None
+        process_cpu = 0
 
-            top = self.get_top_contributors(processes, "memory")
-
-            contributors = [
-                {
-                    "name": p.get("name"),
-                    "memory": p.get("memory", 0)
-                }
-                for p in top
-            ]
-
-            causes.append({
-                "type": "memory_pressure",
-                "confidence": 0.85,
-                "reason": "High memory usage",
-                "contributors": contributors
-            })
+        if contributors:
+            top = contributors[0]
+            process_name = top.get("name")
+            process_cpu = top.get("cpu", 0)
 
         # -------------------------------------------------
-        # 🔥 DISK
+        # EVIDENCE
         # -------------------------------------------------
-        if disk > HIGH_DISK:
-            causes.append({
-                "type": "disk_io_bottleneck",
-                "confidence": 0.75,
-                "reason": "Disk usage high",
-                "contributors": []
-            })
+        evidence = self.build_evidence(
+            cpu, mem, disk, temp, vibration, electrical, anomaly_score
+        )
 
         # -------------------------------------------------
-        # ⏳ DURATION BOOST
+        # CONFIDENCE (CALIBRATED)
         # -------------------------------------------------
-        if duration > 60:
-            for c in causes:
-                c["confidence"] = min(1.0, c["confidence"] + 0.05)
-                c["reason"] += " (persistent issue)"
-
-        # -------------------------------------------------
-        # 🔥 FALLBACK (FIXED)
-        # -------------------------------------------------
-        if not causes:
-
-            top = self.get_top_contributors(processes, "cpu")
-
-            if top:
-                p = top[0]
-                causes = [{
-                    "type": "background_load",
-                    "confidence": 0.5,
-                    "reason": f"{p.get('name')} contributing to system load",
-                    "contributors": [{
-                        "name": p.get("name"),
-                        "cpu": p.get("cpu", 0),
-                        "behavior": classify_process(p.get("name"))
-                    }]
-                }]
-            else:
-                causes = [{
-                    "type": "background_load",
-                    "confidence": 0.4,
-                    "reason": "Load distributed across processes",
-                    "contributors": []
-                }]
+        confidence = calibrate_confidence(
+            anomaly_score,
+            len(evidence),
+            data_points=temporal.get("samples", 50)
+        )
 
         # -------------------------------------------------
-        # 🔥 ENRICH
+        # SEVERITY
         # -------------------------------------------------
-        severity = compute_severity(cpu, mem, disk)
+        severity = compute_severity(cpu, mem, disk, anomaly_score)
 
-        enriched = []
+        # -------------------------------------------------
+        # IMPACT
+        # -------------------------------------------------
+        chain = self.build_chain(cause_type, process_name)
 
-        for c in causes:
+        # -------------------------------------------------
+        # PRIMARY CAUSE (SAFE STRUCTURE)
+        # -------------------------------------------------
+        primary = {
+            "type": cause_type,
+            "process": process_name,
+            "cpu": process_cpu,
 
-            process_names = [p["name"] for p in c.get("contributors", [])]
+            "confidence": confidence,
+            "severity": severity,
 
-            chain = self.build_chain(c["type"], process_names)
+            # 🔥 NO FREE TEXT GUESSING
+            "evidence": evidence,
 
-            enriched.append({
-                **c,
-                "severity": severity,
-                "impact_chain": chain,
-                "propagated_risk": propagate_risk(severity, len(chain)),
-                "recommended_action": map_action(c["type"])
-            })
+            "contributors": contributors,
+            "impact_chain": chain,
+            "propagated_risk": propagate_risk(severity, len(chain)),
+            "recommended_action": map_action(cause_type),
 
-        enriched.sort(key=lambda x: x["confidence"], reverse=True)
-
-        return {
-            "primary_cause": enriched[0],
-            "root_causes": enriched,
-            "all_causes": enriched,
-            "system_risk": max(c["propagated_risk"] for c in enriched)
+            "signals": {
+                "thermal": temp,
+                "vibration": vibration,
+                "electrical": electrical,
+                "anomaly": anomaly_score
+            }
         }
 
-
-# ---------------------------------------------------------
-# 🔄 BACKWARD COMPATIBILITY
-# ---------------------------------------------------------
-def detect_causal_relationship(flat_metrics, temporal):
-    engine = CausalEngine()
-    return engine.detect(flat_metrics, temporal)
+        return {
+            "primary_cause": primary,
+            "root_causes": [primary],
+            "system_risk": primary["propagated_risk"]
+        }

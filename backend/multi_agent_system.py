@@ -1,236 +1,311 @@
 # ---------------------------------------------------------
-# 🧠 MULTI AGENT SYSTEM (SUPER INTELLIGENT VERSION)
+# 🧠 COGNITIVE MULTI AGENT SYSTEM (ZERO-HALLUCINATION SAFE)
 # ---------------------------------------------------------
+
+import numpy as np
+from collections import deque
+from datetime import datetime
 
 from backend.dqn_agent import DQNAgent
 from backend.simulation_engine import SimulationEngine
-from backend.action_executor import ActionExecutor
-
-# 🔥 NEW
 from backend.action_feedback import is_blocked
+from backend.learning_engine import LearningEngine
+
+from backend.multimodal_engine import process_multimodal
+from backend.truth_engine import TruthEngine
 
 
+# ---------------------------------------------------------
+# 🧠 MEMORY ENGINE
+# ---------------------------------------------------------
+class MemoryEngine:
+    def __init__(self, maxlen=200):
+        self.history = deque(maxlen=maxlen)
+
+    def update(self, state):
+        self.history.append(state)
+
+    def get_recent(self, n=10):
+        return list(self.history)[-n:]
+
+    def get_baseline(self):
+        if not self.history:
+            return 50
+        return sum([h["cpu"] for h in self.history]) / len(self.history)
+
+
+# ---------------------------------------------------------
+# 🧠 CONFIDENCE CALIBRATION (CRITICAL)
+# ---------------------------------------------------------
+def calibrate_confidence(anomaly_score, stability, data_points):
+
+    base = 0.5
+
+    if anomaly_score > 1.5:
+        base += 0.2
+
+    if stability > 0.9:
+        base += 0.2
+
+    if data_points < 20:
+        base -= 0.3
+
+    return max(0.1, min(0.95, base))
+
+
+# ---------------------------------------------------------
+# 🧠 MULTI AGENT SYSTEM
+# ---------------------------------------------------------
 class MultiAgentSystem:
 
     def __init__(self):
         self.agent = DQNAgent()
-        self.simulator = None
-        self.executor = ActionExecutor()
+        self.memory = MemoryEngine()
+        self.simulator = SimulationEngine({})
+        self.learning = LearningEngine()
+        self.truth_engine = TruthEngine()
+
+        self.decision_history = deque(maxlen=100)
 
     # -----------------------------------------------------
-    # 🧠 BUILD STATE (ENRICHED)
+    # STATE BUILDER
     # -----------------------------------------------------
-    def build_state(self, global_state, context=None):
-
-        causal = (context or {}).get("causal", {})
-
-        primary = causal.get("primary_cause", {}) or {}
-        root_causes = causal.get("root_causes", []) or []
+    def build_state(self, raw):
+        processes = raw.get("process_ranking", [])
+        root = processes[0] if processes else {}
 
         return {
-            "cpu": float(global_state.get("cpu", 0)),
-            "memory": float(global_state.get("memory", 0)),
-            "disk": float(global_state.get("disk", 0)),
+            "cpu": float(raw.get("cpu", 0)),
+            "memory": float(raw.get("memory", 0)),
+            "disk": float(raw.get("disk", 0)),
 
-            "root_cause": primary.get("type", "unknown"),
-            "confidence": float(primary.get("confidence", 0)),
-            "severity": float(primary.get("severity", 0)),
-            "system_risk": float(causal.get("system_risk", 0)),
+            "temperature": float(raw.get("temp", 0)),
+            "audio": raw.get("audio", []),
+            "vibration": raw.get("vibration", []),
 
-            "impact_chain": primary.get("impact_chain", []),
-            "num_root_causes": len(root_causes),
-
-            # 🔥 NEW
-            "context": (context or {}).get("context", "general"),
-            "baseline_cpu": (context or {}).get("baseline_cpu", 50),
+            "root_cause": root.get("name", "unknown"),
+            "confidence": min(1.0, root.get("cpu", 0) / 100 + 0.5),
+            "system_risk": float(raw.get("cpu", 0)) / 100,
         }
+
+    # -----------------------------------------------------
+    def derive_semantic(self, state):
+        if state["cpu"] > 85:
+            return {"system_state": "overloaded", "severity": "critical"}
+        elif state["cpu"] > 65:
+            return {"system_state": "elevated", "severity": "high"}
+        return {"system_state": "normal", "severity": "low"}
+
+    def infer_intent(self, state):
+        if state["cpu"] > 75:
+            return {"intent": "high_compute_task", "confidence": 0.85}
+        return {"intent": "normal_usage", "confidence": 0.6}
+
+    def build_context(self, raw):
+        return {
+            "system_type": raw.get("system_type", "generic"),
+            "environment": raw.get("environment", "local"),
+            "priority": "performance"
+        }
+
+    # -----------------------------------------------------
+    def compute_metrics(self):
+        history = self.memory.get_recent(10)
+
+        if len(history) < 5:
+            return {"trend": 0, "volatility": 0, "stability": 1}
+
+        cpu_vals = [h["cpu"] for h in history]
+
+        return {
+            "trend": float(np.polyfit(range(len(cpu_vals)), cpu_vals, 1)[0]),
+            "volatility": float(np.std(cpu_vals)),
+            "stability": max(0, 1 - np.std(cpu_vals) / 50)
+        }
+
+    # -----------------------------------------------------
+    def build_impact_chain(self, state):
+        chain = []
+
+        if state["cpu"] > 70:
+            chain += ["high_cpu_load"]
+
+        if state["memory"] > 80:
+            chain += ["memory_pressure"]
+
+        if state.get("physical_cause") == "mechanical_fault":
+            chain += ["mechanical_instability"]
+
+        if state.get("physical_cause") == "thermal_overload":
+            chain += ["heat_buildup"]
+
+        return chain
 
     # -----------------------------------------------------
     def get_action_space(self):
         return [
-            "do_nothing",
-            "kill_high_cpu_process",
-            "free_memory_cache",
-            "reduce_disk_io",
-            "throttle_background_processes",
-            "scale_resources",
+            "maintain_state",
+            "reduce_compute_load",
+            "optimize_memory_usage",
+            "rebalance_resources",
+            "investigate_physical_system",
         ]
 
     # -----------------------------------------------------
-    def prioritize_actions(self, state):
+    def generate_events(self, state):
+        events = []
 
-        cause = state.get("root_cause")
+        if state["cpu"] > 75:
+            events.append("CPU spike")
 
-        mapping = {
-            "cpu_overload": ["throttle_background_processes", "kill_high_cpu_process"],
-            "memory_pressure": ["free_memory_cache"],
-            "disk_io_bottleneck": ["reduce_disk_io"],
-            "latency_spike": ["scale_resources"],
-        }
+        if state["stability"] < 0.7:
+            events.append("System instability")
 
-        return mapping.get(cause, self.get_action_space())
+        if state["anomaly_score"] > 1.5:
+            events.append("Physical anomaly detected")
+
+        return events
 
     # -----------------------------------------------------
-    # 🧠 RUN SYSTEM
+    def compute_reward(self, prev_state, new_state):
+        reward = new_state.get("stability", 1) - prev_state.get("stability", 1)
+
+        if new_state["cpu"] > 85:
+            reward -= 0.2
+
+        return reward
+
     # -----------------------------------------------------
-    def run(self, global_state, nodes, context=None):
+    def should_auto_execute(self, decision):
+        return (
+            decision["confidence"] > 0.85 and
+            decision["risk"] > 0.7 and
+            decision["action"] != "maintain_state"
+        )
 
-        # -------------------------------------------------
-        # 🧠 BUILD STATE
-        # -------------------------------------------------
-        state = self.build_state(global_state, context)
+    # -----------------------------------------------------
+    def build_explanation(self, state):
+        evidence = []
 
-        learned_graph = (context or {}).get("causal_graph", {}) or {}
+        if state["cpu"] > 80:
+            evidence.append("High CPU usage")
 
-        self.simulator = SimulationEngine(learned_graph)
+        if state["anomaly_score"] > 1.5:
+            evidence.append("Multi-modal anomaly detected")
 
-        # -------------------------------------------------
-        # 🔥 CONTEXT-AWARE FILTERING
-        # -------------------------------------------------
-        user_context = state.get("context")
+        return evidence
 
-        if user_context == "gaming":
-            # 🚫 never interfere with gaming
-            return self._safe_response(state, "User is gaming")
+    # -----------------------------------------------------
+    def run(self, raw):
 
-        # -------------------------------------------------
-        # 🔥 BASELINE-AWARE FILTERING
-        # -------------------------------------------------
-        baseline = state.get("baseline_cpu", 50)
+        state = self.build_state(raw)
+        self.memory.update(state)
 
-        if state["cpu"] < baseline + 20:
-            return self._safe_response(state, "Within normal usage")
+        state["baseline_cpu"] = self.memory.get_baseline()
+        state.update(self.compute_metrics())
 
-        # -------------------------------------------------
-        # ACTION SPACE
-        # -------------------------------------------------
-        actions = self.get_action_space()
+        semantic = self.derive_semantic(state)
+        intent = self.infer_intent(state)
+        context = self.build_context(raw)
 
-        # 🔥 REMOVE BAD ACTIONS
-        actions = [a for a in actions if not is_blocked(a)]
+        state.update(semantic)
+        state.update(intent)
 
-        prioritized = self.prioritize_actions(state)
+        # 🔥 MULTI-MODAL
+        mm = process_multimodal(raw)
+        state["anomaly_score"] = mm["anomaly_score"]
+        state["physical_cause"] = mm["cause"]
+        state["features"] = mm["features"]
 
-        # -------------------------------------------------
-        # 🤖 RL DECISION (SAFE INPUT)
-        # -------------------------------------------------
-        safe_state = {
-            "cpu": state["cpu"],
-            "memory": state["memory"],
-            "disk": state["disk"],
-            "risk": state["system_risk"],
-            "confidence": state["confidence"],
-        }
+        state["impact_chain"] = self.build_impact_chain(state)
 
-        action = self.agent.select_action(safe_state, actions)
+        actions = [a for a in self.get_action_space() if not is_blocked(a)]
+        rl_action = self.agent.select_action(state, actions)
 
-        # -------------------------------------------------
-        # 🔥 SIMULATION (ROBUST)
-        # -------------------------------------------------
         simulations = []
 
-        for a in prioritized:
+        for a in actions:
             try:
-                simulated = self.simulator.apply_action(state, a)
-                score = self.simulator.evaluate_state(simulated)
-            except Exception:
-                simulated = {}
+                s = self.simulator.apply_action(state, a)
+                score = self.simulator.evaluate_state(s)
+            except:
                 score = 0
 
-            simulations.append({
-                "action": a,
-                "score": score,
-                "result_state": simulated
-            })
+            simulations.append({"action": a, "score": score})
 
         simulations.sort(key=lambda x: x["score"], reverse=True)
-        best_sim = simulations[0] if simulations else {}
+        best_action = simulations[0]["action"]
 
-        # -------------------------------------------------
-        # 🔥 SAFETY FILTER
-        # -------------------------------------------------
-        best_action = best_sim.get("action", action)
+        if state["anomaly_score"] > 1.5:
+            best_action = "investigate_physical_system"
 
-        if best_action == "kill_high_cpu_process":
-            # never auto execute kill
-            auto_execute = False
-        else:
-            auto_execute = (
-                state["system_risk"] > 0.8 or
-                (state["confidence"] > 0.85 and state["severity"] > 0.7)
-            )
+        # 🔥 CALIBRATED CONFIDENCE
+        confidence = calibrate_confidence(
+            state["anomaly_score"],
+            state["stability"],
+            len(self.memory.history)
+        )
 
-        # -------------------------------------------------
-        # FINAL DECISION
-        # -------------------------------------------------
         decision = {
-            "decision": f"Respond to {state['root_cause']}",
             "action": best_action,
-            "confidence": state["confidence"],
+            "confidence": confidence,
             "risk": state["system_risk"],
-            "auto_execute": auto_execute,
-            "simulations": simulations,
-            "system_mode": self.get_system_mode(state),
-            "state": state
+            "why": state["impact_chain"],
+            "evidence": self.build_explanation(state),
+            "physical_cause": state["physical_cause"]
         }
 
-        execution = {
-            "status": "pending",
-            "epsilon": getattr(self.agent, "epsilon", 0),
-            "optimizer": {
-                "reward_scale": best_sim.get("score", 0)
-            }
-        }
+        decision["auto_execute"] = self.should_auto_execute(decision)
 
-        analysis = {
-            "root_cause": state["root_cause"],
-            "risk": state["system_risk"],
-            "impact_chain": state["impact_chain"],
-            "context": user_context
-        }
+        # 🔥 TRUTH VALIDATION
+        validation = self.truth_engine.validate(raw, state["features"], decision)
+
+        # SAFETY OVERRIDE
+        if not validation["valid"]:
+            decision["action"] = "maintain_state"
+            decision["confidence"] = 0.3
+            decision["auto_execute"] = False
+
+        # RL update
+        try:
+            next_state = self.simulator.apply_action(state, best_action)
+            reward = self.compute_reward(state, next_state)
+            self.agent.store_transition(state, best_action, reward, next_state)
+            self.agent.train()
+        except:
+            pass
+
+        self.decision_history.append({
+            "time": datetime.utcnow().isoformat(),
+            "action": decision["action"],
+            "confidence": decision["confidence"]
+        })
 
         return {
             "decision": decision,
-            "execution": execution,
-            "analysis": analysis
+            "validated": validation["valid"],
+            "validation_issues": validation["issues"],
+            "events": self.generate_events(state),
+            "multimodal": mm,
+            "prediction": {
+                "trend": state["trend"],
+                "stability": state["stability"]
+            },
+            "intelligence": {
+                "stability": state["stability"],
+                "score": confidence
+            },
+            "decision_history": list(self.decision_history)
         }
 
     # -----------------------------------------------------
-    # SAFE FALLBACK RESPONSE
-    # -----------------------------------------------------
-    def _safe_response(self, state, reason):
+    def autonomous_loop(self, raw):
+        result = self.run(raw)
 
-        return {
-            "decision": {
-                "decision": f"No action ({reason})",
-                "action": "do_nothing",
-                "confidence": state["confidence"],
-                "risk": state["system_risk"],
-                "auto_execute": False,
-                "simulations": [],
-                "system_mode": self.get_system_mode(state),
-                "state": state
-            },
-            "execution": {
-                "status": "skipped",
-                "reason": reason
-            },
-            "analysis": {
-                "root_cause": state["root_cause"],
-                "context": state.get("context")
-            }
-        }
+        if result["decision"]["auto_execute"]:
+            try:
+                self.simulator.apply_action(raw, result["decision"]["action"])
+            except:
+                pass
 
-    # -----------------------------------------------------
-    def get_system_mode(self, state):
-
-        risk = state.get("system_risk", 0)
-
-        if risk > 0.85:
-            return "critical"
-        elif risk > 0.6:
-            return "stressed"
-        elif risk > 0.3:
-            return "elevated"
-        else:
-            return "stable"
+        return result

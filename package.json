@@ -1,6 +1,8 @@
 {
   "dependencies": {
     "framer-motion": "^12.38.0",
-    "react-force-graph": "^1.48.2"
+    "lucide-react": "^1.7.0",
+    "react-force-graph": "^1.48.2",
+    "recharts": "^3.8.1"
   }
 }

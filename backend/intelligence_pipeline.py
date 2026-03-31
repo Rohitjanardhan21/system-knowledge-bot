@@ -17,6 +17,7 @@ NODES_DIR = "system_facts/nodes"
 # -----------------------------------------
 # LOAD HELPERS
 # -----------------------------------------
+
 def load_json(path):
     if os.path.exists(path):
         with open(path) as f:
@@ -37,15 +38,130 @@ def load_nodes():
 
 
 # -----------------------------------------
+# 🔥 AGGREGATION LAYER (CRITICAL)
+# -----------------------------------------
+
+def aggregate_nodes(nodes):
+
+    all_processes = []
+    node_summary = []
+
+    for node in nodes:
+        node_name = node.get("node_name") or node.get("node") or "unknown"
+        metrics = node.get("metrics", {})
+
+        cpu = metrics.get("cpu", 0)
+        memory = metrics.get("memory", 0)
+
+        node_summary.append({
+            "name": node_name,
+            "cpu": cpu,
+            "memory": memory
+        })
+
+        for p in metrics.get("processes", []):
+            p["node"] = node_name
+            all_processes.append(p)
+
+    return all_processes, node_summary
+
+
+# -----------------------------------------
+# 🔥 ROOT CAUSE ENGINE
+# -----------------------------------------
+
+def find_root_cause(processes):
+
+    if not processes:
+        return None
+
+    valid = [p for p in processes if p.get("cpu", 0) > 1]
+
+    if not valid:
+        return None
+
+    valid.sort(key=lambda x: x["cpu"], reverse=True)
+
+    primary = valid[0]
+
+    return {
+        "process": primary["name"],
+        "cpu": primary["cpu"],
+        "node": primary.get("node", "unknown"),
+        "contributors": valid[:5]
+    }
+
+
+# -----------------------------------------
+# 🔥 GLOBAL PROCESS
+# -----------------------------------------
+
+def get_global_top(processes):
+    if not processes:
+        return None
+    return sorted(processes, key=lambda x: x.get("cpu", 0), reverse=True)[0]
+
+
+# -----------------------------------------
+# 🔥 DIAGNOSIS (HUMAN READABLE)
+# -----------------------------------------
+
+def generate_diagnosis(root, cpu, memory):
+
+    if not root:
+        return {
+            "summary": "System stable. No significant CPU load detected."
+        }
+
+    return {
+        "summary": (
+            f"{root['process']} is consuming {root['cpu']}% CPU on {root['node']}. "
+            f"This is the primary source of system load. "
+            f"Overall CPU is {cpu}% and memory usage is {memory}%."
+        )
+    }
+
+
+# -----------------------------------------
+# 🔥 PREDICTION
+# -----------------------------------------
+
+def generate_prediction(processes):
+
+    if not processes:
+        return {"type": "Stable", "confidence": 0.5}
+
+    top_load = sum(p.get("cpu", 0) for p in processes[:3])
+
+    if top_load > 70:
+        return {"type": "CPU likely to increase", "confidence": 0.85}
+    elif top_load > 40:
+        return {"type": "Moderate load", "confidence": 0.7}
+
+    return {"type": "Stable", "confidence": 0.6}
+
+
+# -----------------------------------------
+# 🔥 RISK SCORE
+# -----------------------------------------
+
+def compute_risk(cpu, memory):
+    return min(1.0, (cpu * 0.6 + memory * 0.4) / 100)
+
+
+# -----------------------------------------
 # 🔥 MAIN PIPELINE
 # -----------------------------------------
+
 def run_intelligence_pipeline():
+
     metrics = load_json(CURRENT_FILE)
     nodes = load_nodes()
 
     # -----------------------------------------
-    # 🧠 LEARNING ENGINE (NEW)
+    # 🧠 LEARNING ENGINE
     # -----------------------------------------
+
     learning_engine.update(metrics)
 
     thresholds = learning_engine.get_thresholds()
@@ -53,21 +169,31 @@ def run_intelligence_pipeline():
     patterns = learning_engine.detect_patterns()
 
     # -----------------------------------------
+    # 🔥 AGGREGATION (NEW)
+    # -----------------------------------------
+
+    all_processes, node_summary = aggregate_nodes(nodes)
+
+    root = find_root_cause(all_processes)
+    global_top = get_global_top(all_processes)
+
+    # -----------------------------------------
     # EXISTING SIGNALS
     # -----------------------------------------
+
     anomalies = metrics.get("anomalies", {})
     forecast = metrics.get("forecast", {})
     deviations = metrics.get("deviations", {})
 
-    # 🔥 merge anomalies
     combined_anomalies = {
         "system": anomalies,
         "learned": learned_anomalies
     }
 
     # -----------------------------------------
-    # 🧠 DECISION ENGINE (NOW ADAPTIVE)
+    # 🧠 DECISION ENGINE
     # -----------------------------------------
+
     decision = decision_engine.decide(
         metrics,
         combined_anomalies,
@@ -77,8 +203,9 @@ def run_intelligence_pipeline():
     )
 
     # -----------------------------------------
-    # ⚡ EXECUTION ENGINE
+    # ⚡ EXECUTION
     # -----------------------------------------
+
     execution = None
     if decision.get("auto_execute") and decision.get("executable"):
         execution = executor.execute(decision)
@@ -86,28 +213,54 @@ def run_intelligence_pipeline():
     # -----------------------------------------
     # 📜 TIMELINE
     # -----------------------------------------
+
     timeline = get_timeline()
 
     # -----------------------------------------
-    # 📦 FINAL RESPONSE (UI PAYLOAD)
+    # 📊 GLOBAL METRICS
     # -----------------------------------------
+
+    avg_cpu = sum(n["cpu"] for n in node_summary) / max(len(node_summary), 1)
+    avg_memory = sum(n["memory"] for n in node_summary) / max(len(node_summary), 1)
+
+    # -----------------------------------------
+    # 📦 FINAL RESPONSE (UI READY)
+    # -----------------------------------------
+
     return {
-        "cpu": metrics.get("cpu", 0),
-        "memory": metrics.get("memory", 0),
+        # 🔥 CORE METRICS
+        "cpu": round(avg_cpu, 2),
+        "memory": round(avg_memory, 2),
         "disk": metrics.get("disk", 0),
 
-        "nodes": nodes,
+        # 🔥 NODE VIEW (CLEAN)
+        "nodes": node_summary,
 
-        "processes": metrics.get("processes", []),
-        "network": metrics.get("network", {}),
-        "disk_io": metrics.get("disk_io", {}),
+        # 🔥 PROCESS VIEW
+        "processes": sorted(all_processes, key=lambda x: x["cpu"], reverse=True)[:10],
 
-        "simulation": metrics.get("simulation", {}),
+        # 🔥 ROOT CAUSE
+        "causal": {
+            "primary_cause": root
+        },
 
+        # 🔥 GLOBAL PROCESS
+        "global_top_process": global_top,
+
+        # 🔥 HUMAN INSIGHT
+        "diagnosis": generate_diagnosis(root, avg_cpu, avg_memory),
+
+        # 🔥 PREDICTION
+        "prediction": generate_prediction(all_processes),
+
+        # 🔥 RISK
+        "system_risk": compute_risk(avg_cpu, avg_memory),
+
+        # 🔥 DECISION + EXECUTION
         "decision_data": decision,
         "execution": execution,
 
-        # 🔥 NEW: LEARNING OUTPUT
+        # 🔥 LEARNING
         "learning": {
             "thresholds": thresholds,
             "patterns": patterns,
@@ -115,5 +268,9 @@ def run_intelligence_pipeline():
         },
 
         # 🔥 TIMELINE
-        "timeline": timeline
+        "timeline": timeline,
+
+        # 🔥 RAW DEBUG (OPTIONAL)
+        "network": metrics.get("network", {}),
+        "disk_io": metrics.get("disk_io", {})
     }

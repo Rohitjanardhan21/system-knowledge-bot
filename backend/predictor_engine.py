@@ -6,7 +6,11 @@ class PredictorEngine:
         # SAFETY
         # -----------------------------------------
         if not history:
-            return None
+            return {
+                "type": "stable",
+                "confidence": 0.5,
+                "message": "No historical data available"
+            }
 
         latest = history[-1]
 
@@ -18,48 +22,54 @@ class PredictorEngine:
         mem_pattern = temporal.get("memory", {}).get("pattern")
 
         # -----------------------------------------
+        # 🔥 SMOOTH CPU TREND
+        # -----------------------------------------
+        recent = history[-10:]
+        cpu_values = [h.get("cpu", 0) for h in recent if isinstance(h.get("cpu"), (int, float))]
+
+        if len(cpu_values) >= 2:
+            trend = cpu_values[-1] - cpu_values[0]
+        else:
+            trend = 0
+
+        # normalize trend
+        trend_strength = min(1.0, abs(trend) / 50)
+
+        # -----------------------------------------
         # 🔥 CASE 1: IMMEDIATE SPIKE
         # -----------------------------------------
         if cpu_pattern == "spike":
             return {
-                "type": "immediate_cpu_spike",
-                "confidence": 0.95,
+                "type": "cpu_spike",
+                "confidence": 0.9,
                 "message": f"Sudden CPU spike detected ({cpu:.1f}%)"
             }
 
         # -----------------------------------------
-        # 🔥 CASE 2: GRADUAL INCREASE (MOST IMPORTANT)
+        # 🔥 CASE 2: GRADUAL INCREASE
         # -----------------------------------------
-        if cpu_pattern == "gradual_increase":
-
-            # compute trend manually
-            values = [h.get("cpu", 0) for h in history[-10:]]
-            if len(values) >= 2:
-                trend = values[-1] - values[0]
-            else:
-                trend = 0
+        if cpu_pattern == "gradual_increase" and trend > 5:
 
             future_cpu = cpu + trend * 0.5
 
-            if future_cpu > 85:
-                return {
-                    "type": "cpu_rising",
-                    "confidence": min(1.0, trend / 25),
-                    "message": f"CPU trending upward → may reach {round(future_cpu,1)}%"
-                }
+            return {
+                "type": "cpu_rising",
+                "confidence": max(0.6, trend_strength),
+                "message": f"CPU trending upward → may reach {round(future_cpu,1)}%"
+            }
 
         # -----------------------------------------
-        # 🔥 CASE 3: OSCILLATION (INSTABILITY)
+        # 🔥 CASE 3: INSTABILITY
         # -----------------------------------------
         if cpu_pattern == "oscillation":
             return {
                 "type": "cpu_instability",
-                "confidence": 0.8,
-                "message": "CPU instability detected (oscillation)"
+                "confidence": 0.75,
+                "message": "CPU usage is fluctuating (instability detected)"
             }
 
         # -----------------------------------------
-        # 🔥 CASE 4: MEMORY PRESSURE (CROSS-METRIC)
+        # 🔥 CASE 4: MEMORY PRESSURE
         # -----------------------------------------
         if mem_pattern == "gradual_increase" and memory > 70:
             return {
@@ -69,7 +79,7 @@ class PredictorEngine:
             }
 
         # -----------------------------------------
-        # 🔥 CASE 5: HIGH LOAD WARNING
+        # 🔥 CASE 5: HIGH LOAD
         # -----------------------------------------
         if cpu > 90:
             return {
@@ -79,6 +89,20 @@ class PredictorEngine:
             }
 
         # -----------------------------------------
-        # DEFAULT
+        # 🔥 CASE 6: MODERATE LOAD
         # -----------------------------------------
-        return None
+        if cpu > 60:
+            return {
+                "type": "moderate_load",
+                "confidence": 0.7,
+                "message": f"Moderate CPU load ({cpu:.1f}%)"
+            }
+
+        # -----------------------------------------
+        # 🔥 DEFAULT (VERY IMPORTANT)
+        # -----------------------------------------
+        return {
+            "type": "stable",
+            "confidence": 0.6,
+            "message": "System load is stable"
+        }

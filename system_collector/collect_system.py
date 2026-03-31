@@ -1,211 +1,241 @@
-import os
 import json
 import platform
 import socket
+import time
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 
 import psutil
 import requests
 
-# --------------------------------------------------
-# PATHS
-# --------------------------------------------------
 
-ROOT_DIR = Path(__file__).resolve().parent.parent
+# --------------------------------------------------
+# 🔧 CONFIG (FLEXIBLE)
+# --------------------------------------------------
+SERVER_URL = os.getenv("SERVER_URL", "http://localhost:8000/node/update")
+INTERVAL = float(os.getenv("COLLECT_INTERVAL", "2"))
 
+ROOT_DIR = Path(__file__).resolve().parent
 FACTS_DIR = ROOT_DIR / "system_facts"
-HISTORY_DIR = FACTS_DIR / "history"
 NODES_DIR = FACTS_DIR / "nodes"
-CURRENT_PATH = FACTS_DIR / "current.json"
-
-HISTORY_DIR.mkdir(parents=True, exist_ok=True)
 NODES_DIR.mkdir(parents=True, exist_ok=True)
 
-SERVER_URL = "http://127.0.0.1:8000/node/update"
-
 
 # --------------------------------------------------
-# SYSTEM INFO
+# 🌐 SAFE IP DETECTION
 # --------------------------------------------------
-
-def get_system_info():
-    return {
-        "hostname": socket.gethostname(),
-        "ip": socket.gethostbyname(socket.gethostname()),
-        "os": platform.system(),
-        "machine": platform.machine(),
-        "cpu_cores": psutil.cpu_count(),
-        "memory_total_gb": round(psutil.virtual_memory().total / (1024**3), 2),
-        "boot_time": psutil.boot_time()
-    }
-
-
-# --------------------------------------------------
-# METRICS
-# --------------------------------------------------
-
-def get_cpu():
-    return psutil.cpu_percent(interval=0.3)
-
-
-def get_memory():
-    return psutil.virtual_memory().percent
-
-
-def get_disk():
+def get_ip():
     try:
-        return psutil.disk_usage('/').percent
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
     except:
-        return 0
+        return "127.0.0.1"
 
 
 # --------------------------------------------------
-# 🔥 PROCESS CLASSIFICATION
+# 🔥 PROCESS NORMALIZATION (CRITICAL FIX)
 # --------------------------------------------------
-
-def classify_process(name):
+def normalize_name(name, cmd):
     name = (name or "").lower()
+    cmd = " ".join(cmd or []).lower()
 
-    if "chrome" in name:
+    # 🔥 unify all browsers
+    if any(x in name or x in cmd for x in [
+        "chrome", "chromium", "firefox", "brave", "edge"
+    ]):
         return "browser"
-    if "code" in name or "python" in name:
+
+    # 🔥 remove subprocess noise
+    if "contentproc" in cmd:
+        return "browser"
+
+    return name
+
+
+# --------------------------------------------------
+# 🧠 PROCESS CLASSIFICATION
+# --------------------------------------------------
+def classify_process(name, cmd):
+    name = (name or "").lower()
+    cmd = " ".join(cmd or []).lower()
+
+    if "browser" in name:
+        return "browser"
+
+    if "gnome" in name or "explorer" in name:
+        return "system_ui"
+
+    if any(x in name for x in ["python", "node", "java"]):
         return "development"
-    if "game" in name or "steam" in name:
-        return "gaming"
-    if "docker" in name:
+
+    if any(x in name for x in ["docker", "containerd"]):
         return "container"
 
     return "system"
 
 
 # --------------------------------------------------
-# 🔥 IMPROVED PROCESS TRACKING (CRITICAL FIX)
+# 🔎 FILTER INVALID PROCESSES
 # --------------------------------------------------
+def is_valid_process(name, cpu):
+    name = (name or "").lower()
 
+    if not name:
+        return False
+
+    # OS noise
+    if any(x in name for x in [
+        "idle", "system idle", "systemd",
+        "kworker", "[", "]"
+    ]):
+        return False
+
+    # ignore tiny cpu
+    if cpu < 0.5:
+        return False
+
+    return True
+
+
+# --------------------------------------------------
+# ⚙️ PROCESS COLLECTION
+# --------------------------------------------------
 def get_top_processes():
 
     processes = []
+    node = platform.node()
+    cpu_cores = psutil.cpu_count(logical=True) or 1
 
-    # 🔥 Initialize CPU counters
+    # 🔥 prime CPU counters
     for p in psutil.process_iter():
         try:
             p.cpu_percent(None)
         except:
             continue
 
-    # 🔥 Allow CPU measurement window
-    psutil.cpu_percent(interval=0.2)
+    psutil.cpu_percent(interval=1)
 
-    total_cpu = get_cpu()
-
-    for p in psutil.process_iter(['pid', 'name']):
+    for p in psutil.process_iter(['pid', 'name', 'cmdline']):
         try:
-            cpu = p.cpu_percent(None)
+            raw_name = p.info['name'] or "unknown"
+            cmd = p.info.get("cmdline") or []
+
+            cpu = p.cpu_percent(None) / cpu_cores
             mem = p.memory_percent()
 
-            # ignore noise
-            if cpu < 1:
+            if not is_valid_process(raw_name, cpu):
                 continue
 
-            name = p.info['name']
+            # 🔥 normalize
+            name = normalize_name(raw_name, cmd)
 
             processes.append({
                 "pid": p.info['pid'],
                 "name": name,
                 "cpu": round(cpu, 2),
                 "memory": round(mem, 2),
-
-                # 🔥 NEW (for intelligence layer)
-                "category": classify_process(name),
-                "weight": round(cpu / max(total_cpu, 1), 2)
+                "node": node,
+                "cmd": " ".join(cmd),
+                "category": classify_process(name, cmd)
             })
 
         except:
             continue
 
-    processes = sorted(processes, key=lambda x: x["cpu"], reverse=True)
+    # 🔥 sort by CPU
+    processes.sort(key=lambda x: x["cpu"], reverse=True)
 
-    return processes[:5]
-
-
-# --------------------------------------------------
-# NETWORK
-# --------------------------------------------------
-
-def get_network():
-    net = psutil.net_io_counters()
-    return {
-        "throughput_mb": round(net.bytes_sent / 1e6, 2)
-    }
+    return processes[:10]
 
 
 # --------------------------------------------------
-# DISK IO
+# 📊 METRICS
 # --------------------------------------------------
+def get_metrics():
 
-def get_disk_io():
-    io = psutil.disk_io_counters()
-    return {
-        "read_bytes": io.read_bytes,
-        "write_bytes": io.write_bytes
-    }
+    cpu = psutil.cpu_percent(interval=0.5)
+    memory = psutil.virtual_memory().percent
 
-
-# --------------------------------------------------
-# PUSH TO SERVER
-# --------------------------------------------------
-
-def send_to_server(data):
     try:
-        requests.post(SERVER_URL, json=data, timeout=1)
+        disk = psutil.disk_usage('/').percent
     except:
-        pass
+        disk = 0
 
-
-# --------------------------------------------------
-# MAIN
-# --------------------------------------------------
-
-def main():
-    NODE_ID = socket.gethostname()
-    timestamp = datetime.now(timezone.utc).isoformat()
-
-    system_info = get_system_info()
-
-    cpu = get_cpu()
-    memory = get_memory()
-    disk = get_disk()
-
-    processes = get_top_processes()
-
-    metrics = {
+    return {
         "cpu": cpu,
         "memory": memory,
         "disk": disk,
-        "processes": processes,
-        "network": get_network(),
-        "disk_io": get_disk_io()
+        "processes": get_top_processes()
     }
 
-    facts = {
-        "node": NODE_ID,
-        "system_info": system_info,
-        "metrics": metrics,
-        "tags": ["env:dev", "service:aiops"],
-        "timestamp": timestamp
+
+# --------------------------------------------------
+# 💻 SYSTEM INFO
+# --------------------------------------------------
+def get_system_info():
+    return {
+        "hostname": socket.gethostname(),
+        "ip": get_ip(),
+        "os": platform.system(),
+        "machine": platform.machine(),
+        "cpu_cores": psutil.cpu_count()
     }
 
-    # SAVE FILE
-    node_file = NODES_DIR / f"{NODE_ID}.json"
-    node_file.write_text(json.dumps(facts, indent=2))
 
-    # PUSH TO SERVER
-    send_to_server(facts)
+# --------------------------------------------------
+# 📡 SEND DATA
+# --------------------------------------------------
+def send_to_server(payload):
+    try:
+        requests.post(SERVER_URL, json=payload, timeout=2)
+    except Exception as e:
+        print("❌ Send failed:", e)
 
-    print("✅ Data collected + sent")
-    print(f"🔥 Top Process: {processes[0]['name'] if processes else 'None'}")
+
+# --------------------------------------------------
+# 🚀 MAIN
+# --------------------------------------------------
+def main():
+
+    node = platform.node()
+
+    payload = {
+        "node": node,
+        "node_name": node,
+        "system_info": get_system_info(),
+        "metrics": get_metrics(),
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
+
+    # save locally
+    (NODES_DIR / f"{node}.json").write_text(json.dumps(payload, indent=2))
+
+    # send to backend
+    send_to_server(payload)
+
+    # debug
+    top = payload["metrics"]["processes"][0]["name"] if payload["metrics"]["processes"] else "None"
+
+    print(f"✅ {node} | CPU: {payload['metrics']['cpu']}% | Top: {top}")
 
 
+# --------------------------------------------------
+# 🔁 LOOP MODE
+# --------------------------------------------------
 if __name__ == "__main__":
-    main()
+
+    print("🚀 System Collector Started")
+    print(f"🌐 Server: {SERVER_URL}")
+    print(f"⏱ Interval: {INTERVAL}s\n")
+
+    while True:
+        try:
+            main()
+        except Exception as e:
+            print("❌ Collector error:", e)
+
+        time.sleep(INTERVAL)

@@ -1,251 +1,315 @@
-from fastapi import APIRouter, Body
+from fastapi import APIRouter
 from pathlib import Path
 import json
 import time
+import numpy as np
+from statistics import mean
 
-# Core
-from backend.timeline_engine import get_timeline
 from backend.multi_agent_system import MultiAgentSystem
-from backend.action_executor import ActionExecutor
+from backend.learning_engine import LearningEngine
+from backend.self_healing_engine import SelfHealingEngine
+from backend.multi_node_engine import MultiNodeEngine
 
-# Intelligence
-from backend.causal_engine import CausalEngine
-from backend.dynamic_causal_graph import DynamicCausalGraph
-from backend.temporal_engine import TemporalEngine, temporal_analysis
-from backend.predictor_engine import PredictorEngine
-from backend.autonomous_engine import AutonomousEngine
-from backend.diagnosis_engine import generate_diagnosis
+# 🔥 NEW IMPORTS
+from backend.pattern_engine import PatternEngine
+from backend.multimodal_engine import process_multimodal
 
-# New Intelligence Layers
-from backend.context_engine import detect_context
-from backend.baseline_engine import update as update_baseline, get_baseline
-
-# Detection
-from backend.anomaly_engine import detect_anomalies
-from backend.alert_engine import register_alerts
-from backend.log_engine import log, get_logs
-
-# Learning
-from backend.cause_history import record as record_cause, get_top_causes
-
-# History
-from backend.action_history import log_action, load_history
 
 router = APIRouter()
 NODES_DIR = Path("system_facts/nodes")
 
-# GLOBAL
-dynamic_graph = DynamicCausalGraph()
-causal_engine = CausalEngine()
-temporal_engine = TemporalEngine()
-predictor = PredictorEngine()
-autonomous_engine = AutonomousEngine()
+# ---------------------------------------------------------
+# 🧠 CORE SYSTEMS
+# ---------------------------------------------------------
 
-# 🔥 duration tracker
-issue_start_time = None
+agent_system = MultiAgentSystem()
+learning_engine = LearningEngine()
+self_healing_engine = SelfHealingEngine()
+multi_node_engine = MultiNodeEngine()
+
+# 🔥 NEW SYSTEMS
+pattern_engine = PatternEngine()
+
+# ---------------------------------------------------------
+# 🔥 HISTORY (FOR ANOMALY BASELINE)
+# ---------------------------------------------------------
+
+HISTORY = {
+    "cpu": [],
+    "memory": []
+}
+
+WINDOW = 50
 
 
 # ---------------------------------------------------------
-# LOAD + PROCESS
+# LOAD NODES
 # ---------------------------------------------------------
-def load_all_nodes():
-    if not NODES_DIR.exists():
-        return []
 
+def load_nodes():
     nodes = []
-    for file in NODES_DIR.glob("*.json"):
+
+    if not NODES_DIR.exists():
+        return nodes
+
+    for f in NODES_DIR.glob("*.json"):
         try:
-            nodes.append(json.loads(file.read_text()))
-        except Exception as e:
-            print("Node error:", e)
+            nodes.append(json.loads(f.read_text()))
+        except:
+            continue
 
     return nodes
 
 
-def process_node(node):
-    metrics = node.get("metrics", {})
+# ---------------------------------------------------------
+# GLOBAL METRICS
+# ---------------------------------------------------------
 
-    return {
-        "node_id": node.get("node"),
-        "cpu": float(metrics.get("cpu", 0)),
-        "memory": float(metrics.get("memory", 0)),
-        "disk": float(metrics.get("disk", 0)),
-        "processes": metrics.get("processes", [])
-    }
-
-
-def aggregate(nodes):
+def compute_global(nodes):
     if not nodes:
-        return {"cpu": 0, "memory": 0, "disk": 0, "node_count": 0}
+        return {"cpu": 0, "memory": 0, "disk": 0}
 
     return {
-        "cpu": sum(n["cpu"] for n in nodes) / len(nodes),
-        "memory": sum(n["memory"] for n in nodes) / len(nodes),
-        "disk": sum(n["disk"] for n in nodes) / len(nodes),
-        "node_count": len(nodes)
+        "cpu": round(mean([n.get("metrics", {}).get("cpu", 0) for n in nodes]), 2),
+        "memory": round(mean([n.get("metrics", {}).get("memory", 0) for n in nodes]), 2),
+        "disk": round(mean([n.get("metrics", {}).get("disk", 0) for n in nodes]), 2),
     }
 
 
 # ---------------------------------------------------------
-# 🔥 DURATION TRACKING (NEW)
+# PROCESS AGGREGATION
 # ---------------------------------------------------------
-def update_duration(cpu):
-    global issue_start_time
 
-    if cpu > 75:
-        if issue_start_time is None:
-            issue_start_time = time.time()
-    else:
-        issue_start_time = None
+def aggregate_processes(nodes):
+    agg = {}
 
-    if issue_start_time:
-        return int(time.time() - issue_start_time)
+    for node in nodes:
+        for p in node.get("metrics", {}).get("processes", []):
+            name = p.get("name", "unknown").lower()
 
-    return 0
+            if name not in agg:
+                agg[name] = {
+                    "name": name,
+                    "cpu": 0,
+                    "memory": 0
+                }
+
+            agg[name]["cpu"] += p.get("cpu", 0)
+            agg[name]["memory"] += p.get("memory", 0)
+
+    processes = list(agg.values())
+    processes.sort(key=lambda x: x["cpu"], reverse=True)
+
+    return processes
 
 
 # ---------------------------------------------------------
-# MAIN STATE
+# HISTORY
 # ---------------------------------------------------------
-def build_system_state():
 
-    raw_nodes = load_all_nodes()
-    nodes = [process_node(n) for n in raw_nodes]
-    global_state = aggregate(nodes)
+def update_history(metric, value):
+    HISTORY[metric].append(value)
+    if len(HISTORY[metric]) > WINDOW:
+        HISTORY[metric].pop(0)
 
-    duration = update_duration(global_state["cpu"])
 
-    update_baseline(global_state["cpu"])
-    baseline = get_baseline()
+def detect_anomaly(metric, value):
+    data = HISTORY[metric]
 
-    temporal_engine.update(global_state)
-    history = list(temporal_engine.history)
-    temporal_patterns = temporal_analysis(history)
+    if len(data) < 10:
+        return None
 
-    prediction = predictor.predict(history, temporal_patterns)
+    arr = np.array(data)
+    z = (value - arr.mean()) / (arr.std() + 1e-5)
 
-    all_processes = []
-    for n in nodes:
-        all_processes.extend(n.get("processes", []))
+    if abs(z) > 2.5:
+        return {
+            "metric": metric,
+            "value": value,
+            "z_score": round(float(z), 2)
+        }
 
-    # 🔥 CONTEXT
-    context = detect_context(all_processes)
+    return None
 
-    # 🔥 CAUSAL (with context + duration)
-    causal = causal_engine.detect(
-        {
-            "cpu_pct": global_state["cpu"],
-            "mem_pct": global_state["memory"],
-            "disk_pct": global_state["disk"]
-        },
-        temporal_patterns,
-        processes=all_processes,
-        context=context,
-        duration=duration
-    )
 
-    record_cause(causal.get("primary_cause", {}).get("type"))
+# ---------------------------------------------------------
+# 🔥 MAIN SUMMARY (UNIFIED COGNITIVE BRAIN)
+# ---------------------------------------------------------
 
-    return {
-        "nodes": nodes,
-        "global_state": global_state,
-        "prediction": prediction,
-        "causal": causal,
-        "all_processes": all_processes,
-        "context": context,
-        "baseline": baseline,
-        "duration": duration
+@router.get("/summary")
+def summary():
+
+    # -----------------------------------------------------
+    # 1. LOAD DATA
+    # -----------------------------------------------------
+    nodes = load_nodes()
+    global_state = compute_global(nodes)
+    processes = aggregate_processes(nodes)
+
+    global_state["process_ranking"] = processes
+
+    # -----------------------------------------------------
+    # 2. HISTORY + BASIC ANOMALY
+    # -----------------------------------------------------
+    update_history("cpu", global_state["cpu"])
+    update_history("memory", global_state["memory"])
+
+    anomalies = []
+
+    a1 = detect_anomaly("cpu", global_state["cpu"])
+    a2 = detect_anomaly("memory", global_state["memory"])
+
+    if a1: anomalies.append(a1)
+    if a2: anomalies.append(a2)
+
+    # -----------------------------------------------------
+    # 3. 🧠 MULTI-MODAL INTELLIGENCE (NEW CORE)
+    # -----------------------------------------------------
+    multimodal = process_multimodal(global_state)
+
+    features = multimodal.get("features", {})
+    anomaly_score = multimodal.get("anomaly_score", 0)
+    cause = multimodal.get("cause", "unknown")
+
+    # -----------------------------------------------------
+    # 4. 🧠 PATTERN ENGINE
+    # -----------------------------------------------------
+    pattern_output = pattern_engine.analyze(features)
+
+    patterns = pattern_output.get("patterns", [])
+    pattern_memory = pattern_output.get("pattern_memory", [])
+
+    # -----------------------------------------------------
+    # 5. 🧠 CORE AGENT SYSTEM
+    # -----------------------------------------------------
+    agent_result = agent_system.run(global_state)
+
+    decision = agent_result.get("decision", {})
+    analysis = agent_result.get("analysis", {})
+    intelligence = agent_result.get("intelligence", {})
+    events = agent_result.get("events", [])
+
+    action = decision.get("action", "do_nothing")
+    target = analysis.get("root_cause", "unknown")
+
+    # -----------------------------------------------------
+    # 🔥 ENHANCE DECISION WITH NEW INTELLIGENCE
+    # -----------------------------------------------------
+    decision["cause"] = cause
+    decision["anomaly_score"] = anomaly_score
+
+    if anomaly_score > 1.5:
+        events.append("High anomaly score detected (multi-modal)")
+
+    # -----------------------------------------------------
+    # 6. 📚 LEARNING
+    # -----------------------------------------------------
+    learning = learning_engine.analyze(global_state) or {}
+    learning["anomalies"] = anomalies
+
+    # -----------------------------------------------------
+    # 7. ⚡ SELF HEALING
+    # -----------------------------------------------------
+    auto_action = {
+        "type": action,
+        "target": target
     }
 
+    execution = self_healing_engine.execute(auto_action) or {
+        "status": "none"
+    }
 
-# ---------------------------------------------------------
-# SUMMARY
-# ---------------------------------------------------------
-def get_system_summary():
+    # -----------------------------------------------------
+    # 8. 🌐 CLUSTER ANALYSIS
+    # -----------------------------------------------------
+    cluster = multi_node_engine.analyze(nodes)
 
-    state = build_system_state()
-
-    global_state = state["global_state"]
-
-    mas = MultiAgentSystem()
-
-    decision = mas.run(
-        global_state,
-        state["nodes"],
-        context={
-            "context": state["context"],
-            "causal": state["causal"]
-        }
-    ).get("decision", {})
-
-    # 🔥 AUTONOMOUS (FULL CONTEXT)
-    auto_decision = autonomous_engine.decide(
-        state["prediction"],
-        state["causal"],
-        {
-            **decision,
-            "context": state["context"],
-            "baseline_cpu": state["baseline"],
-            "cpu": global_state["cpu"],
-            "duration_seconds": state["duration"]
-        }
-    )
-
-    diagnosis = generate_diagnosis(state)
-
+    # -----------------------------------------------------
+    # 9. 🚀 FINAL RESPONSE
+    # -----------------------------------------------------
     return {
         "cpu": global_state["cpu"],
         "memory": global_state["memory"],
         "disk": global_state["disk"],
 
-        "context": state["context"],
-        "duration_seconds": state["duration"],
+        "process_ranking": processes[:10],
 
-        "prediction": state["prediction"],
-        "causal": state["causal"],
-        "system_risk": state["causal"].get("system_risk", 0),
+        # ------------------------------
+        # 🧠 CORE INTELLIGENCE
+        # ------------------------------
+        "decision": decision,
 
-        "diagnosis": diagnosis,
-        "autonomous_action": auto_decision,
+        "root_cause": {
+            "process": target,
+            "inferred": cause
+        },
 
-        "logs": get_logs(),
-        "timeline": get_timeline(),
+        "intelligence": intelligence,
+
+        # ------------------------------
+        # 🔮 PREDICTION
+        # ------------------------------
+        "prediction": {
+            "title": "trend",
+            "details": str(intelligence.get("trend", 0))
+        },
+
+        # ------------------------------
+        # ⚠️ RISK
+        # ------------------------------
+        "risk": {
+            "level": decision.get("system_mode", "NORMAL"),
+            "score": decision.get("confidence", 0)
+        },
+
+        # ------------------------------
+        # ⚡ ACTION
+        # ------------------------------
+        "recommendation": {
+            "message": decision.get("action", "do_nothing"),
+            "actionable": decision.get("action") != "do_nothing",
+            "auto_execute": decision.get("auto_execute", False)
+        },
+
+        # ------------------------------
+        # 🧠 PATTERN INTELLIGENCE
+        # ------------------------------
+        "patterns": patterns,
+        "pattern_memory": pattern_memory,
+
+        # ------------------------------
+        # 🔍 ANOMALY
+        # ------------------------------
+        "anomaly_score": anomaly_score,
+        "anomalies": anomalies,
+
+        # ------------------------------
+        # 📡 EVENTS
+        # ------------------------------
+        "events": events,
+
+        # ------------------------------
+        # 📚 LEARNING
+        # ------------------------------
+        "learning": learning,
+
+        # ------------------------------
+        # ⚙️ EXECUTION
+        # ------------------------------
+        "execution": execution,
+
+        # ------------------------------
+        # 🌐 CLUSTER
+        # ------------------------------
+        "cluster": cluster,
+
+        "timestamp": time.time()
     }
 
 
 # ---------------------------------------------------------
-# ROUTES
+# HELPER
 # ---------------------------------------------------------
-@router.get("/system/summary")
-def system_summary():
-    return get_system_summary()
 
-
-@router.post("/system/chat")
-def system_chat(payload: dict = Body(...)):
-    query = payload.get("message", "").lower()
-    state = payload.get("state", {})
-
-    action = state.get("autonomous_action")
-
-    if "fix" in query:
-        return {
-            "answer": "I can fix this safely. Proceed?",
-            "action": action,
-            "requires_confirmation": True
-        }
-
-    return {"answer": state.get("diagnosis", {}).get("summary")}
-
-
-@router.post("/system/execute")
-def execute_action(payload: dict):
-    executor = ActionExecutor()
-    result = executor.execute(payload)
-    log_action(payload, result)
-    return result
-
-
-@router.get("/system/history")
-def get_history():
-    return load_history()
+def get_system_summary():
+    return summary()
