@@ -1,0 +1,261 @@
+{
+  "hostname": "rohit-janardhan-VirtualBox",
+  "os": "Linux-6.14.0-37-generic-x86_64-with-glibc2.39",
+  "metrics": {
+    "cpu": {
+      "usage_percent": 0.5,
+      "usage": 0.5,
+      "per_core_percent": [
+        2.1,
+        6.4,
+        0.0,
+        2.1
+      ],
+      "core_count": 4,
+      "max_core_usage": 6.4
+    },
+    "memory": {
+      "total": 6213689344,
+      "used": 2312859648,
+      "available": 3900829696,
+      "percent": 37.2,
+      "usage": 37.2
+    },
+    "disk": [
+      {
+        "device": "/dev/sda2",
+        "mount": "/",
+        "percent": 58.7,
+        "total": 52518420480,
+        "used": 29223952384,
+        "free": 20593496064
+      },
+      {
+        "device": "/dev/loop0",
+        "mount": "/snap/code/219",
+        "percent": 100.0,
+        "total": 348389376,
+        "used": 348389376,
+        "free": 0
+      },
+      {
+        "device": "/dev/loop1",
+        "mount": "/snap/core20/2682",
+        "percent": 100.0,
+        "total": 66977792,
+        "used": 66977792,
+        "free": 0
+      },
+      {
+        "device": "/dev/loop2",
+        "mount": "/snap/code/224",
+        "percent": 100.0,
+        "total": 352452608,
+        "used": 352452608,
+        "free": 0
+      },
+      {
+        "device": "/dev/loop3",
+        "mount": "/snap/core22/2292",
+        "percent": 100.0,
+        "total": 77594624,
+        "used": 77594624,
+        "free": 0
+      },
+      {
+        "device": "/dev/loop4",
+        "mount": "/snap/core22/2216",
+        "percent": 100.0,
+        "total": 77594624,
+        "used": 77594624,
+        "free": 0
+      },
+      {
+        "device": "/dev/loop5",
+        "mount": "/snap/core24/1349",
+        "percent": 100.0,
+        "total": 70123520,
+        "used": 70123520,
+        "free": 0
+      },
+      {
+        "device": "/dev/loop7",
+        "mount": "/snap/core20/2686",
+        "percent": 100.0,
+        "total": 66977792,
+        "used": 66977792,
+        "free": 0
+      },
+      {
+        "device": "/dev/loop10",
+        "mount": "/snap/bare/5",
+        "percent": 100.0,
+        "total": 131072,
+        "used": 131072,
+        "free": 0
+      },
+      {
+        "device": "/dev/loop9",
+        "mount": "/snap/firmware-updater/210",
+        "percent": 100.0,
+        "total": 19398656,
+        "used": 19398656,
+        "free": 0
+      },
+      {
+        "device": "/dev/loop12",
+        "mount": "/snap/gtk-common-themes/1535",
+        "percent": 100.0,
+        "total": 96206848,
+        "used": 96206848,
+        "free": 0
+      },
+      {
+        "device": "/dev/loop11",
+        "mount": "/snap/firmware-updater/167",
+        "percent": 100.0,
+        "total": 11796480,
+        "used": 11796480,
+        "free": 0
+      },
+      {
+        "device": "/dev/loop15",
+        "mount": "/snap/tree/54",
+        "percent": 100.0,
+        "total": 4718592,
+        "used": 4718592,
+        "free": 0
+      },
+      {
+        "device": "/dev/loop13",
+        "mount": "/snap/firefox/7766",
+        "percent": 100.0,
+        "total": 263979008,
+        "used": 263979008,
+        "free": 0
+      },
+      {
+        "device": "/dev/loop17",
+        "mount": "/snap/htop/5548",
+        "percent": 100.0,
+        "total": 10878976,
+        "used": 10878976,
+        "free": 0
+      },
+      {
+        "device": "/dev/loop18",
+        "mount": "/snap/gnome-42-2204/226",
+        "percent": 100.0,
+        "total": 541327360,
+        "used": 541327360,
+        "free": 0
+      },
+      {
+        "device": "/dev/loop19",
+        "mount": "/snap/htop/5382",
+        "percent": 100.0,
+        "total": 10878976,
+        "used": 10878976,
+        "free": 0
+      },
+      {
+        "device": "/dev/loop16",
+        "mount": "/snap/gnome-42-2204/247",
+        "percent": 100.0,
+        "total": 557187072,
+        "used": 557187072,
+        "free": 0
+      },
+      {
+        "device": "/dev/loop21",
+        "mount": "/snap/snap-store/1270",
+        "percent": 100.0,
+        "total": 11403264,
+        "used": 11403264,
+        "free": 0
+      },
+      {
+        "device": "/dev/loop20",
+        "mount": "/snap/snapd/25935",
+        "percent": 100.0,
+        "total": 50462720,
+        "used": 50462720,
+        "free": 0
+      },
+      {
+        "device": "/dev/loop22",
+        "mount": "/snap/snapd-desktop-integration/315",
+        "percent": 100.0,
+        "total": 655360,
+        "used": 655360,
+        "free": 0
+      },
+      {
+        "device": "/dev/loop23",
+        "mount": "/snap/snapd-desktop-integration/343",
+        "percent": 100.0,
+        "total": 655360,
+        "used": 655360,
+        "free": 0
+      },
+      {
+        "device": "/dev/sr0",
+        "mount": "/media/rohit-janardhan/VBox_GAs_7.2.43",
+        "percent": 100.0,
+        "total": 53153792,
+        "used": 53153792,
+        "free": 0
+      },
+      {
+        "device": "/dev/loop24",
+        "mount": "/snap/snapd/26382",
+        "percent": 100.0,
+        "total": 50724864,
+        "used": 50724864,
+        "free": 0
+      },
+      {
+        "device": "/dev/loop14",
+        "mount": "/snap/core24/1499",
+        "percent": 100.0,
+        "total": 70123520,
+        "used": 70123520,
+        "free": 0
+      },
+      {
+        "device": "/dev/loop6",
+        "mount": "/snap/firefox/7967",
+        "percent": 100.0,
+        "total": 267386880,
+        "used": 267386880,
+        "free": 0
+      }
+    ],
+    "network": {
+      "bytes_sent": 1187152,
+      "bytes_recv": 203952418,
+      "packets_sent": 13059,
+      "packets_recv": 144277
+    }
+  },
+  "probes": {
+    "cpu": "ok",
+    "memory": "ok",
+    "disk": "ok",
+    "network": "ok",
+    "gpu": "unsupported"
+  },
+  "metadata": {
+    "collected_at": "2026-03-21T08:56:28.766371+00:00"
+  },
+  "_meta": {
+    "collector_version": "0.6-agent-compatible",
+    "runtime_seconds": 1.107
+  },
+  "posture": {
+    "posture": "idle-capable",
+    "recommended_posture": null,
+    "explanation": null
+  },
+  "posture_value": "idle-capable"
+}

@@ -1,0 +1,20 @@
+{
+  "node": "rohit-janardhan-VirtualBox",
+  "hostname": "rohit-janardhan-VirtualBox",
+  "metrics": {
+    "cpu": 3.1,
+    "memory": 44.6,
+    "disk": 98.70357142857142,
+    "network": {
+      "bytes_sent": 3608196,
+      "bytes_recv": 1097731561
+    }
+  },
+  "probes": {
+    "cpu": "ok",
+    "memory": "ok",
+    "disk": "ok",
+    "network": "ok"
+  },
+  "timestamp": "2026-03-24T08:57:05.037574+00:00"
+}

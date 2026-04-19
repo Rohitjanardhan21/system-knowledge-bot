@@ -1,0 +1,62 @@
+# ─────────────────────────────────────────────────────────
+# CVIS v9 — docker-compose.override.yml
+# Development overrides.  Activated automatically when you
+# run `docker compose up` (Docker Compose merges this file).
+#
+# DO NOT commit secrets or use this in production.
+# ─────────────────────────────────────────────────────────
+
+services:
+
+  backend:
+    # Override CMD to single uvicorn worker with hot reload
+    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload --log-level info
+    environment:
+      - ENV=dev
+      - LOG_LEVEL=info
+      - GUNICORN_WORKERS=1
+      # Weak dev secrets (acceptable because this never leaves localhost)
+      - JWT_SECRET=dev-secret-not-for-prod
+      - CVIS_API_KEY=dev-api-key
+      - CVIS_ADMIN_USER=admin
+      - CVIS_ADMIN_PASS=admin
+      - ALLOWED_ORIGIN=*
+    ports:
+      - "8000:8000"     # expose directly for Swagger UI, curl testing
+    volumes:
+      # Mount source code live — uvicorn --reload picks up changes
+      - .:/app
+    # Remove healthcheck delay for faster iteration
+    healthcheck:
+      start_period: 5s
+      interval: 10s
+
+  frontend:
+    # Point nginx at the local frontend folder for live edits
+    volumes:
+      - ./frontend:/usr/share/nginx/html:ro
+    ports:
+      - "80:80"
+      - "4430:4430"     # self-signed HTTPS on 4430 (cert auto-generated)
+    environment:
+      - DOMAIN=localhost
+    # No Let's Encrypt in dev
+    healthcheck:
+      start_period: 5s
+
+  redis:
+    # No password in dev
+    command: redis-server --maxmemory 64mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"     # expose for redis-cli debugging
+
+  # No Prometheus/Grafana in dev by default — uncomment to enable
+  prometheus:
+    profiles: ["monitoring"]    # only starts with: docker compose --profile monitoring up
+
+  grafana:
+    profiles: ["monitoring"]
+
+  # Certbot not needed in dev
+  certbot:
+    profiles: ["tls"]

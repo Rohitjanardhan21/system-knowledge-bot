@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CVIS Driver Alert</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    height: 100%;
+    background: #000;
+    /* Fix 1: system-ui stack covers most embedded/mobile displays */
+    font-family: -apple-system, 'SF Pro Display', 'Helvetica Neue', system-ui, sans-serif;
+    overflow: hidden;
+  }
+
+  /* ── Outer screen ─────────────────────────────────────── */
+  #screen {
+    width: 100%;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: #0a0a0a;
+    position: relative;
+    transition: background 0.4s ease;
+  }
+
+  /* Top severity bar */
+  #sev-bar {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 5px;
+    transition: background 0.3s ease;
+  }
+
+  /* Pulse ring — CRITICAL only, NOT CAUTION */
+  #pulse-ring {
+    position: absolute;
+    width: 320px; height: 320px;
+    border-radius: 50%;
+    border: 1.5px solid transparent;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%) scale(0.55);
+    opacity: 0;
+    pointer-events: none;
+  }
+  @keyframes pulse {
+    0%   { transform: translate(-50%,-50%) scale(0.55); opacity: 0.55; }
+    100% { transform: translate(-50%,-50%) scale(1.15); opacity: 0; }
+  }
+  /* Only CRITICAL gets the pulse ring */
+  .s-critical.do-pulse #pulse-ring {
+    animation: pulse 1.3s ease-out infinite;
+  }
+
+  /* ── Main alert block ─────────────────────────────────── */
+  #alert {
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    z-index: 1;
+    /* Fix 6: padding prevents edge bleed on narrow displays */
+    padding: 0 1.5rem;
+    width: 100%;
+  }
+
+  /* Fix 1: uppercase, Fix 6: max-width + word-break for small screens */
+  #action {
+    font-size: clamp(36px, 10vw, 68px);
+    font-weight: 700;
+    letter-spacing: 0.04em;        /* uppercase needs looser tracking */
+    line-height: 1;
+    margin-bottom: 18px;
+    transition: color 0.25s ease;
+    text-transform: uppercase;
+    max-width: 90%;                 /* Fix 6 */
+    word-break: break-word;         /* Fix 6 */
+  }
+
+  #reason {
+    font-size: clamp(15px, 3.5vw, 20px);
+    font-weight: 400;
+    letter-spacing: 0.01em;
+    line-height: 1.3;
+    margin-bottom: 28px;
+    transition: color 0.25s ease;
+    max-width: 90%;                 /* Fix 6 */
+  }
+
+  #badge {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    padding: 6px 18px;
+    border-radius: 20px;
+    border: 1px solid transparent;
+    transition: background 0.25s, color 0.25s, border-color 0.25s;
+  }
+
+  /* ── State themes ─────────────────────────────────────── */
+
+  /* SAFE — green */
+  .s-safe   #sev-bar  { background: #32d74b; }
+  .s-safe   #action   { color: #32d74b; }
+  .s-safe   #reason   { color: #6ee68a; }
+  .s-safe   #badge    { background: #001a06; color: #32d74b; border-color: #0a3d14; }
+
+  /* Fix 5: CAUTION — softer yellow, no pulse, clear visual distinction from WARNING */
+  .s-caution #sev-bar { background: #ffd60a; }
+  .s-caution #action  { color: #ffd60a; }
+  .s-caution #reason  { color: #ffe77a; }
+  .s-caution #badge   { background: #1a1600; color: #ffd60a; border-color: #3d3000; }
+  /* CAUTION never pulses — it is memory-based / advisory only */
+
+  /* WARNING — amber, more urgent than caution, no pulse */
+  .s-warning #sev-bar { background: #ff9f0a; }
+  .s-warning #action  { color: #ff9f0a; }
+  .s-warning #reason  { color: #ffd060; }
+  .s-warning #badge   { background: #1f1200; color: #ffb340; border-color: #4a2c00; }
+
+  /* CRITICAL — red + pulse ring */
+  .s-critical #sev-bar   { background: #ff3b30; }
+  .s-critical #action    { color: #ff3b30; }
+  .s-critical #reason    { color: #ff9f94; }
+  .s-critical #badge     { background: #2a0800; color: #ff6b5b; border-color: #5c1000; }
+  .s-critical #pulse-ring { border-color: #ff3b30; }
+
+  /* ── Demo control bar (remove entire div in production) ── */
+  #controls {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    background: #111;
+    border-top: 1px solid #1e1e1e;
+    padding: 12px 16px;
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+  }
+
+  .sc-btn {
+    font-size: 11px;
+    padding: 5px 13px;
+    border-radius: 20px;
+    border: 1px solid #2a2a2a;
+    background: transparent;
+    color: #555;
+    cursor: pointer;
+    font-family: inherit;
+    letter-spacing: 0.02em;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+  }
+  .sc-btn:hover  { background: #1e1e1e; color: #999; border-color: #333; }
+  .sc-btn.active { background: #1e1e1e; color: #eee; border-color: #555; }
+
+  #audio-btn {
+    font-size: 11px;
+    padding: 5px 13px;
+    border-radius: 20px;
+    border: 1px solid #2a2a2a;
+    background: transparent;
+    color: #555;
+    cursor: pointer;
+    font-family: inherit;
+    margin-left: 8px;
+    transition: background 0.15s, color 0.15s;
+  }
+  #audio-btn:hover  { background: #1e1e1e; color: #999; }
+  #audio-btn.snd-on { color: #32d74b; border-color: #0a3d14; }
+
+  /* ── WebSocket status dot ─────────────────────────────── */
+  #ws-dot {
+    position: absolute;
+    top: 16px; right: 16px;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: #333;
+    transition: background 0.3s;
+  }
+  #ws-dot.connected    { background: #32d74b; }
+  #ws-dot.disconnected { background: #ff3b30; }
+</style>
+</head>
+<body>
+
+<div id="screen" class="s-safe">
+  <div id="sev-bar"></div>
+  <div id="pulse-ring"></div>
+  <div id="ws-dot" title="WebSocket status"></div>
+
+  <div id="alert">
+    <div id="action">Safe</div>
+    <div id="reason">No hazards ahead</div>
+    <div id="badge">SAFE</div>
+  </div>
+
+  <!-- DEMO ONLY — delete this entire div in production -->
+  <div id="controls"></div>
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════
+   CONFIGURATION  —  edit these two lines before deploying
+   ═══════════════════════════════════════════════════════════ */
+const WS_URL    = "ws://localhost:8000/ws/stream";
+const DEMO_MODE = true;    // set false in production
+
+/* ═══════════════════════════════════════════════════════════
+   RUNTIME STATE
+   ═══════════════════════════════════════════════════════════ */
+const STATES      = ["s-safe","s-caution","s-warning","s-critical"];
+const RANK        = { SAFE:0, CAUTION:1, WARNING:2, CRITICAL:3 };
+
+let audioOn      = false;
+let lastSpoken   = null;   // Fix 3: speech deduplication
+let committed    = null;
+let pendingState = null;
+let pendingCount = 0;
+const HOLD_FRAMES = 2;     // de-escalation hold guard
+
+/* ═══════════════════════════════════════════════════════════
+   BACKEND FRAME  →  UI MODEL
+   Converts the full CVIS JSON frame into the 4-field struct
+   the renderer needs: { action, reason, distance, severity, speech }
+   ═══════════════════════════════════════════════════════════ */
+function frameToUIModel(frame) {
+  const confidence = frame?.intelligence?.confidence ?? 1.0;
+  const alerts     = frame?.hazard_memory?.nearby ?? [];
+
+  // Pick the highest-severity alert (effective_severity desc, then distance asc)
+  const top = alerts
+    .slice()
+    .sort((a, b) => {
+      const da = b.effective_severity ?? b.severity ?? 0;
+      const db = a.effective_severity ?? a.severity ?? 0;
+      if (da !== db) return da - db;
+      return (a.distance ?? 999) - (b.distance ?? 999);
+    })[0] ?? null;
+
+  // Fix 4: only apply low-confidence override when NO strong hazard exists
+  if (confidence < 0.4 && !top) {
+    return {
+      action:   "CHECK SURROUNDINGS",
+      reason:   "Uncertain conditions",
+      distance: null,
+      severity: "CAUTION",
+      speech:   "Check surroundings.",
+    };
+  }
+
+  /* ── Hazard present ──────────────────────────────────── */
+  if (top) {
+    const dist = top.distance ?? null;
+    const sev  = top.sev ?? "WARNING";
+    const type = top.type ?? "UNKNOWN";
+
+    const REASON_MAP = {
+      ROAD:     "Road damage ahead",
+      TRAFFIC:  "Traffic ahead",
+      HUMAN:    "Pedestrian ahead",
+      OBSTACLE: "Obstacle ahead",
+      VEHICLE:  "Vehicle issue",
+      UNKNOWN:  "Hazard ahead",
+    };
+    const reason = REASON_MAP[type] ?? "Hazard ahead";
+
+    // Fix 1: always UPPERCASE commands
+    // Fix 5: CAUTION → softer verb "CAUTION" not "BRAKE"
+    let cmd, speech;
+    if (sev === "CAUTION") {
+      // Memory-based early warning — soft advisory
+      cmd    = "CAUTION";
+      speech = `${reason}.`;
+    } else if (dist !== null && dist < 10) {
+      cmd    = "BRAKE NOW";
+      speech = `Brake now. ${reason}.`;
+    } else if (dist !== null && dist < 25) {
+      cmd    = "SLOW DOWN";
+      speech = `Slow down. ${reason}.`;
+    } else {
+      cmd    = "SLOW DOWN";
+      speech = `${reason}.`;
+    }
+
+    return { action: cmd, reason, distance: dist, severity: sev, speech };
+  }
+
+  /* ── No spatial hazard — fall back to decision engine ── */
+  const decisionAction = frame?.decision?.action ?? "MAINTAIN";
+
+  const ACTION_MAP = {
+    AUTO_BRAKE:    { cmd:"BRAKE NOW",          sev:"CRITICAL", speech:"Brake now." },
+    SLOW_DOWN:     { cmd:"SLOW DOWN",          sev:"WARNING",  speech:"Slow down." },
+    REDUCE_SPEED:  { cmd:"SLOW DOWN",          sev:"WARNING",  speech:"Slow down." },
+    STEER_CORRECT: { cmd:"STEER RIGHT",        sev:"WARNING",  speech:"Steer right." },
+    ALERT_DRIVER:  { cmd:"CHECK SURROUNDINGS", sev:"CAUTION",  speech:"Check surroundings." },
+    INCREASE_DIST: { cmd:"INCREASE DISTANCE",  sev:"CAUTION",  speech:"Increase your distance." },
+    LANE_KEEP:     { cmd:"STAY IN LANE",       sev:"CAUTION",  speech:"Stay in your lane." },
+    MAINTAIN:      { cmd:"SAFE",               sev:"SAFE",     speech: null },
+  };
+
+  const m = ACTION_MAP[decisionAction] ?? ACTION_MAP.MAINTAIN;
+  return {
+    action:   m.cmd,
+    reason:   m.sev === "SAFE" ? "No hazards ahead" : "Caution advised",
+    distance: null,
+    severity: m.sev,
+    speech:   m.speech,
+  };
+}
+
+/* ═══════════════════════════════════════════════════════════
+   RENDERER
+   ═══════════════════════════════════════════════════════════ */
+function render(model) {
+  const screen = document.getElementById("screen");
+  const cls    = "s-" + model.severity.toLowerCase();
+
+  STATES.forEach(s => screen.classList.remove(s));
+  screen.classList.add(cls);
+
+  // Fix 5: pulse ring ONLY on CRITICAL, never CAUTION
+  if (model.severity === "CRITICAL") screen.classList.add("do-pulse");
+  else                               screen.classList.remove("do-pulse");
+
+  // Fix 2: Math.floor for stable distance display (no upward jumps)
+  const distPart = model.distance != null
+    ? ` (${Math.floor(model.distance)}m)` : "";
+
+  document.getElementById("action").textContent = model.action;
+  document.getElementById("reason").textContent = model.reason + distPart;
+  document.getElementById("badge").textContent  = model.severity;
+
+  // Fix 3: speech only when message changes — no spam on repeated frames
+  if (audioOn && model.speech && model.speech !== lastSpoken) {
+    lastSpoken = model.speech;
+    window.speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(model.speech);
+    u.rate = 1.05; u.pitch = 1; u.volume = 1;
+    window.speechSynthesis.speak(u);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   ANTI-FLICKER GATE
+   Escalation  → immediate commit
+   De-escalation → hold HOLD_FRAMES before committing
+   ═══════════════════════════════════════════════════════════ */
+function processModel(model) {
+  if (!committed) { committed = model; render(model); return; }
+
+  const newRank = RANK[model.severity]     ?? 0;
+  const curRank = RANK[committed.severity] ?? 0;
+
+  if (newRank > curRank) {
+    committed = model; pendingState = null; pendingCount = 0;
+    render(model);
+    return;
+  }
+
+  if (model.severity === committed.severity) {
+    committed = model; render(model);
+    return;
+  }
+
+  // De-escalation hold
+  if (pendingState && pendingState.severity === model.severity) {
+    pendingCount++;
+    if (pendingCount >= HOLD_FRAMES) {
+      committed = model; pendingState = null; pendingCount = 0;
+      render(model);
+    }
+  } else {
+    pendingState = model; pendingCount = 1;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   WEBSOCKET  (production path)
+   ═══════════════════════════════════════════════════════════ */
+function startWebSocket() {
+  const dot = document.getElementById("ws-dot");
+  let ws;
+
+  function connect() {
+    ws = new WebSocket(WS_URL);
+
+    ws.onopen = () => { dot.className = "connected"; };
+
+    ws.onmessage = (e) => {
+      try { processModel(frameToUIModel(JSON.parse(e.data))); }
+      catch (_) {}
+    };
+
+    ws.onclose = () => {
+      dot.className = "disconnected";
+      setTimeout(connect, 2000);
+    };
+
+    ws.onerror = () => ws.close();
+  }
+
+  connect();
+  setInterval(() => {
+    if (ws && ws.readyState === WebSocket.OPEN) ws.send("ping");
+  }, 25000);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   DEMO SCENARIOS
+   Remove everything below this line in production
+   ═══════════════════════════════════════════════════════════ */
+const DEMO = [
+  {
+    id:"safe", label:"Safe",
+    frame:{ intelligence:{confidence:0.92}, hazard_memory:{nearby:[]},
+            decision:{action:"MAINTAIN"} }
+  },
+  {
+    id:"caution", label:"Caution 22m",
+    frame:{ intelligence:{confidence:0.87},
+            hazard_memory:{ nearby:[{type:"ROAD",distance:22,sev:"CAUTION",effective_severity:0.52}] },
+            decision:{action:"ALERT_DRIVER"} }
+  },
+  {
+    id:"warning_road", label:"Warning 14m",
+    frame:{ intelligence:{confidence:0.85},
+            hazard_memory:{ nearby:[{type:"ROAD",distance:14,sev:"WARNING",effective_severity:0.74}] },
+            decision:{action:"SLOW_DOWN"} }
+  },
+  {
+    id:"critical_road", label:"Brake — road",
+    frame:{ intelligence:{confidence:0.91},
+            hazard_memory:{ nearby:[{type:"ROAD",distance:7,sev:"CRITICAL",effective_severity:0.89}] },
+            decision:{action:"AUTO_BRAKE"} }
+  },
+  {
+    id:"critical_ped", label:"Brake — pedestrian",
+    frame:{ intelligence:{confidence:0.94},
+            hazard_memory:{ nearby:[{type:"HUMAN",distance:8,sev:"CRITICAL",effective_severity:0.92}] },
+            decision:{action:"AUTO_BRAKE"} }
+  },
+  {
+    id:"traffic", label:"Traffic",
+    frame:{ intelligence:{confidence:0.82},
+            hazard_memory:{ nearby:[{type:"TRAFFIC",distance:19,sev:"WARNING",effective_severity:0.63}] },
+            decision:{action:"REDUCE_SPEED"} }
+  },
+  {
+    id:"lane", label:"Lane",
+    frame:{ intelligence:{confidence:0.88}, hazard_memory:{nearby:[]},
+            decision:{action:"STEER_CORRECT"} }
+  },
+  {
+    id:"low_conf", label:"Low confidence",
+    frame:{ intelligence:{confidence:0.32}, hazard_memory:{nearby:[]},
+            decision:{action:"ALERT_DRIVER"} }
+  },
+  {
+    id:"low_conf_hazard", label:"Low conf + hazard",
+    frame:{ intelligence:{confidence:0.28},
+            hazard_memory:{ nearby:[{type:"ROAD",distance:11,sev:"WARNING",effective_severity:0.71}] },
+            decision:{action:"SLOW_DOWN"} }
+  },
+];
+
+function buildDemoControls() {
+  const wrap = document.getElementById("controls");
+  let html = "";
+  DEMO.forEach((sc, i) => {
+    html += `<button class="sc-btn${i===0?" active":""}" data-id="${sc.id}"
+               onclick="demoSelect('${sc.id}')">${sc.label}</button>`;
+  });
+  html += `<button id="audio-btn" onclick="toggleAudio()">Audio off</button>`;
+  wrap.innerHTML = html;
+}
+
+function demoSelect(id) {
+  document.querySelectorAll(".sc-btn").forEach(b =>
+    b.classList.toggle("active", b.dataset.id === id)
+  );
+  const sc = DEMO.find(s => s.id === id);
+  if (sc) processModel(frameToUIModel(sc.frame));
+}
+
+function toggleAudio() {
+  audioOn = !audioOn;
+  const btn = document.getElementById("audio-btn");
+  btn.textContent = audioOn ? "Audio on" : "Audio off";
+  btn.classList.toggle("snd-on", audioOn);
+  // Reset lastSpoken so the current alert speaks immediately on enable
+  if (audioOn) lastSpoken = null;
+}
+
+/* ── Init ──────────────────────────────────────────────── */
+if (DEMO_MODE) {
+  buildDemoControls();
+  demoSelect("safe");
+} else {
+  document.getElementById("controls").style.display = "none";
+  startWebSocket();
+}
+</script>
+</body>
+</html>

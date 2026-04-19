@@ -1,0 +1,27 @@
+{
+  "cpu": {
+    "usage_percent": 0.0,
+    "cores": 4
+  },
+  "memory": {
+    "total": 6213693440,
+    "used": 2220417024,
+    "percent": 35.7
+  },
+  "storage": {
+    "total": 52518420480,
+    "used": 29454696448,
+    "percent": 59.1
+  },
+  "temperature": null,
+  "metadata": {
+    "os": "linux",
+    "collected_at": "2026-01-22T13:22:22.321113+00:00",
+    "ttl_seconds": 120
+  },
+  "posture": {
+    "posture": null,
+    "confidence": 0.0,
+    "reason": "inference_error: 'SystemPostureResult' object has no attribute 'confidence'"
+  }
+}

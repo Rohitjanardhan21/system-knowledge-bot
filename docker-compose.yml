@@ -1,0 +1,191 @@
+# CVIS v9 — Production Docker Compose
+# Usage:
+#   cp .env.example .env && edit DOMAIN, CVIS_API_KEY, CVIS_ADMIN_PASS
+#   docker compose up -d
+#   docker compose logs -f backend
+
+services:
+
+  # ── FastAPI / Gunicorn backend ────────────────────────
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    image: cvis-backend:9.0
+    container_name: cvis-backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - PORT=8000
+      - POLL_INTERVAL_S=${POLL_INTERVAL_S:-1}
+      - AUTOSAVE_INTERVAL_S=${AUTOSAVE_INTERVAL_S:-300}
+      - LOG_LEVEL=${LOG_LEVEL:-warning}
+      - LOG_DIR=/app/logs
+      - LOKI_URL=${LOKI_URL:-}
+      - ENV=${ENV:-prod}
+      - JWT_SECRET=${JWT_SECRET}
+      - CVIS_API_KEY=${CVIS_API_KEY}
+      - CVIS_ADMIN_USER=${CVIS_ADMIN_USER:-admin}
+      - CVIS_ADMIN_PASS=${CVIS_ADMIN_PASS}
+      - JWT_ACCESS_TTL_S=${JWT_ACCESS_TTL_S:-900}
+      - JWT_REFRESH_TTL_S=${JWT_REFRESH_TTL_S:-604800}
+      - REDIS_URL=redis://redis:6379/0
+      - GUNICORN_WORKERS=${GUNICORN_WORKERS:-}
+    volumes:
+      - model_data:/app/model_versions
+      - log_data:/app/logs
+      - db_data:/app/data
+    networks:
+      - cvis-internal
+    ports:
+      - "8000:8000"
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    deploy:
+      resources:
+        limits:   { cpus: "4.0", memory: "4G" }
+        reservations: { cpus: "0.5", memory: "512M" }
+
+  # ── nginx (TLS + frontend + reverse proxy) ────────────
+  frontend:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+    image: cvis-nginx:9.0
+    container_name: cvis-nginx
+    restart: unless-stopped
+    environment:
+      - DOMAIN=${DOMAIN:-localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "4430:4430"
+    volumes:
+      - letsencrypt:/etc/letsencrypt
+      - certbot_www:/var/www/certbot
+      - ./frontend/ops:/usr/share/nginx/html:ro
+      - nginx_log:/var/log/nginx
+    networks:
+      - cvis-internal
+      - cvis-public
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/nginx-health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ── Redis ─────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: cvis-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+        --maxmemory 256mb
+        --maxmemory-policy allkeys-lru
+        --save 60 100
+        --appendonly yes
+        --appendfilename "cvis.aof"
+   # ports:
+   #   - "127.0.0.1:6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - cvis-internal
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:   { cpus: "0.5", memory: "512M" }
+        reservations: { memory: "64M" }
+
+  # ── Certbot ───────────────────────────────────────────
+  certbot:
+    image: certbot/certbot:latest
+    container_name: cvis-certbot
+    restart: "no"
+    volumes:
+      - letsencrypt:/etc/letsencrypt
+      - certbot_www:/var/www/certbot
+    entrypoint: /bin/sh -c "trap exit TERM; while :; do certbot renew --quiet; sleep 12h & wait $${!}; done"
+    networks:
+      - cvis-public
+
+  # ── Prometheus ────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.48.0
+    container_name: cvis-prometheus
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    networks:
+      - cvis-internal
+    ports:
+      - "127.0.0.1:9090:9090"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ── Grafana ───────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:10.2.0
+    container_name: cvis-grafana
+    restart: unless-stopped
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASS:-changeme}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_ROOT_URL=https://${DOMAIN:-localhost}/grafana/
+      - GF_SERVER_SERVE_FROM_SUB_PATH=true
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana-datasource.yml:/etc/grafana/provisioning/datasources/prometheus.yml:ro
+      - ./monitoring/grafana-dashboard.yml:/etc/grafana/provisioning/dashboards/cvis.yml:ro
+    networks:
+      - cvis-internal
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - prometheus
+
+volumes:
+  model_data:
+  log_data:
+  redis_data:
+  letsencrypt:
+  certbot_www:
+  nginx_log:
+  prometheus_data:
+  grafana_data:
+  db_data:
+
+networks:
+  cvis-internal:
+    name: cvis-internal
+    driver: bridge
+    internal: false
+  cvis-public:
+    name: cvis-public
+    driver: bridge

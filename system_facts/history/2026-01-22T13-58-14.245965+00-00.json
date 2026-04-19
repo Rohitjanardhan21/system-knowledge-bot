@@ -1,0 +1,27 @@
+{
+  "cpu": {
+    "usage_percent": 20.0,
+    "cores": 4
+  },
+  "memory": {
+    "total": 6213693440,
+    "used": 2128031744,
+    "percent": 34.2
+  },
+  "storage": {
+    "total": 52518420480,
+    "used": 29455089664,
+    "percent": 59.1
+  },
+  "temperature": null,
+  "metadata": {
+    "os": "linux",
+    "collected_at": "2026-01-22T13:58:14.245965+00:00",
+    "ttl_seconds": 120
+  },
+  "posture": {
+    "posture": "idle-capable",
+    "recommended_posture": null,
+    "explanation": null
+  }
+}

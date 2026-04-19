@@ -9,56 +9,47 @@
     "cpu_cores": 4
   },
   "metrics": {
-    "cpu": 62.0,
-    "memory": 54.5,
-    "disk": 80.6,
+    "cpu": 21.2,
+    "memory": 92.3,
+    "disk": 84.1,
     "processes": [
       {
-        "pid": 7959,
+        "pid": 5288,
         "name": "browser",
-        "cpu": 22.27,
-        "memory": 11.42,
+        "cpu": 19.12,
+        "memory": 77.08,
         "node": "rohit-janardhan-VirtualBox",
-        "cmd": "/snap/firefox/7967/usr/lib/firefox/firefox -contentproc -isForBrowser -prefsHandle 0:44171 -prefMapHandle 1:279494 -jsInitHandle 2:227672 -parentBuildID 20260309231353 -sandboxReporter 3 -chrootClient 4 -ipcHandle 5 -initialChannelId {a56107ec-e7d2-4605-8629-8ece36ddf8f0} -parentPid 7346 -crashReporter 6 -crashHelper 7 -greomni /snap/firefox/7967/usr/lib/firefox/omni.ja -appomni /snap/firefox/7967/usr/lib/firefox/browser/omni.ja -appDir /snap/firefox/7967/usr/lib/firefox/browser 6 tab",
+        "cmd": "/snap/firefox/8054/usr/lib/firefox/firefox -contentproc -isForBrowser -prefsHandle 0:43557 -prefMapHandle 1:284288 -jsInitHandle 2:156136 -parentBuildID 20260324124100 -sandboxReporter 3 -chrootClient 4 -ipcHandle 5 -initialChannelId {1caba599-393a-49b8-9709-4d5b282b3a14} -parentPid 4496 -crashReporter 6 -crashHelper 7 -greomni /snap/firefox/8054/usr/lib/firefox/omni.ja -appomni /snap/firefox/8054/usr/lib/firefox/browser/omni.ja -appDir /snap/firefox/8054/usr/lib/firefox/browser 7 tab",
         "category": "browser"
       },
       {
-        "pid": 7346,
-        "name": "browser",
-        "cpu": 14.57,
-        "memory": 8.61,
-        "node": "rohit-janardhan-VirtualBox",
-        "cmd": "/snap/firefox/7967/usr/lib/firefox/firefox",
-        "category": "browser"
-      },
-      {
-        "pid": 2758,
+        "pid": 2777,
         "name": "gnome-shell",
-        "cpu": 12.3,
-        "memory": 6.13,
+        "cpu": 1.7,
+        "memory": 1.19,
         "node": "rohit-janardhan-VirtualBox",
         "cmd": "/usr/bin/gnome-shell",
         "category": "system_ui"
       },
       {
-        "pid": 4540,
+        "pid": 4495,
         "name": "python",
-        "cpu": 1.6,
-        "memory": 0.47,
+        "cpu": 0.72,
+        "memory": 0.3,
         "node": "rohit-janardhan-VirtualBox",
         "cmd": "python system_collector/collect_system.py",
         "category": "development"
       },
       {
-        "pid": 4033,
+        "pid": 4496,
         "name": "browser",
-        "cpu": 0.9,
-        "memory": 8.8,
+        "cpu": 0.72,
+        "memory": 2.87,
         "node": "rohit-janardhan-VirtualBox",
-        "cmd": "/home/rohit-janardhan/system-knowledge-bot/venv/bin/python3 -c from multiprocessing.spawn import spawn_main; spawn_main(tracker_fd=5, pipe_handle=7) --multiprocessing-fork",
+        "cmd": "/snap/firefox/8054/usr/lib/firefox/firefox",
         "category": "browser"
       }
     ]
   },
-  "timestamp": "2026-03-31T08:11:51.205166+00:00"
+  "timestamp": "2026-04-13T12:21:03.355710+00:00"
 }

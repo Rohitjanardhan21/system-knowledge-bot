@@ -1,0 +1,38 @@
+{
+  "cpu": {
+    "usage_percent": 2.4,
+    "cores": 4
+  },
+  "memory": {
+    "total": 6213693440,
+    "used": 2147741696,
+    "percent": 34.6
+  },
+  "storage": {
+    "total": 52518420480,
+    "used": 29501022208,
+    "percent": 59.2
+  },
+  "temperature": null,
+  "metadata": {
+    "os": "linux",
+    "collected_at": "2026-01-22T16:56:52.834931+00:00",
+    "ttl_seconds": 120
+  },
+  "_meta": {
+    "collector_version": "0.4",
+    "runtime_seconds": 0.106
+  },
+  "probes": {
+    "cpu": "unsupported",
+    "memory": "unsupported",
+    "disk": "unsupported",
+    "network": "unsupported",
+    "gpu": "unsupported"
+  },
+  "posture": {
+    "posture": "idle-capable",
+    "recommended_posture": null,
+    "explanation": null
+  }
+}

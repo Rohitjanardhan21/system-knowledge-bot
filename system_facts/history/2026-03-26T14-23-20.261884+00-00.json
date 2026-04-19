@@ -1,0 +1,56 @@
+{
+  "node": "rohit-janardhan-VirtualBox",
+  "hostname": "rohit-janardhan-VirtualBox",
+  "metrics": {
+    "cpu": 35.4,
+    "memory": 71.1,
+    "disk": 99.25714285714285,
+    "processes": [
+      {
+        "pid": 4905,
+        "name": "Isolated Web Co",
+        "cpu": 100.2,
+        "memory": 35.94
+      },
+      {
+        "pid": 2742,
+        "name": "gnome-shell",
+        "cpu": 37.1,
+        "memory": 5.44
+      },
+      {
+        "pid": 3588,
+        "name": "gnome-terminal-server",
+        "cpu": 8.7,
+        "memory": 0.85
+      },
+      {
+        "pid": 4133,
+        "name": "firefox",
+        "cpu": 3.5,
+        "memory": 5.1
+      },
+      {
+        "pid": 9891,
+        "name": "kworker/u19:2-events_power_efficient",
+        "cpu": 2.8,
+        "memory": 0.0
+      }
+    ],
+    "network": {
+      "bytes_sent": 4114856,
+      "bytes_recv": 6445706,
+      "throughput": 4.114856
+    },
+    "disk_io": {
+      "read_bytes": 16719592448,
+      "write_bytes": 2552221696
+    }
+  },
+  "probes": {
+    "cpu": "ok",
+    "memory": "ok",
+    "disk": "ok"
+  },
+  "timestamp": "2026-03-26T14:23:20.261884+00:00"
+}

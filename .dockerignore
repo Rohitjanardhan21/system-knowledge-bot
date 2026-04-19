@@ -1,11 +1,17 @@
-# Ignore everything by default
+# Ignore everything
 *
 
-# Allow app code
+# Allow backend
 !backend/**
-!chat/**
-!knowledge/**
-!system_facts/**
+
+# Allow frontend (FIX)
+!frontend/**
+
+# Allow nginx (VERY IMPORTANT)
+!nginx/**
+
+# Allow required files
 !Dockerfile
-!Jenkinsfile
+!docker-compose.yml
 !requirements.txt
+!gunicorn_conf.py

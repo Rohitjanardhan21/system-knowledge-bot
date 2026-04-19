@@ -1,0 +1,252 @@
+{
+  "hostname": "rohit-janardhan-VirtualBox",
+  "os": "Linux-6.14.0-37-generic-x86_64-with-glibc2.39",
+  "metrics": {
+    "cpu": {
+      "usage_percent": 0.5,
+      "usage": 0.5,
+      "per_core_percent": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "core_count": 4
+    },
+    "memory": {
+      "total": 6213693440,
+      "used": 2645684224,
+      "available": 3568009216,
+      "percent": 42.6,
+      "usage": 42.6
+    },
+    "disk": [
+      {
+        "device": "/dev/sda2",
+        "mount": "/",
+        "percent": 59.2,
+        "total": 52518420480,
+        "used": 29516271616,
+        "free": 20301176832
+      },
+      {
+        "device": "/dev/loop0",
+        "mount": "/snap/bare/5",
+        "percent": 100.0,
+        "total": 131072,
+        "used": 131072,
+        "free": 0
+      },
+      {
+        "device": "/dev/loop1",
+        "mount": "/snap/code/212",
+        "percent": 100.0,
+        "total": 346423296,
+        "used": 346423296,
+        "free": 0
+      },
+      {
+        "device": "/dev/loop2",
+        "mount": "/snap/core20/2686",
+        "percent": 100.0,
+        "total": 66977792,
+        "used": 66977792,
+        "free": 0
+      },
+      {
+        "device": "/dev/loop3",
+        "mount": "/snap/code/219",
+        "percent": 100.0,
+        "total": 348389376,
+        "used": 348389376,
+        "free": 0
+      },
+      {
+        "device": "/dev/loop4",
+        "mount": "/snap/core24/1243",
+        "percent": 100.0,
+        "total": 70123520,
+        "used": 70123520,
+        "free": 0
+      },
+      {
+        "device": "/dev/loop6",
+        "mount": "/snap/core22/2193",
+        "percent": 100.0,
+        "total": 77594624,
+        "used": 77594624,
+        "free": 0
+      },
+      {
+        "device": "/dev/loop5",
+        "mount": "/snap/core22/2216",
+        "percent": 100.0,
+        "total": 77594624,
+        "used": 77594624,
+        "free": 0
+      },
+      {
+        "device": "/dev/loop7",
+        "mount": "/snap/firefox/7633",
+        "percent": 100.0,
+        "total": 264372224,
+        "used": 264372224,
+        "free": 0
+      },
+      {
+        "device": "/dev/loop8",
+        "mount": "/snap/firmware-updater/167",
+        "percent": 100.0,
+        "total": 11796480,
+        "used": 11796480,
+        "free": 0
+      },
+      {
+        "device": "/dev/loop9",
+        "mount": "/snap/firmware-updater/210",
+        "percent": 100.0,
+        "total": 19398656,
+        "used": 19398656,
+        "free": 0
+      },
+      {
+        "device": "/dev/loop10",
+        "mount": "/snap/firefox/7672",
+        "percent": 100.0,
+        "total": 263979008,
+        "used": 263979008,
+        "free": 0
+      },
+      {
+        "device": "/dev/loop11",
+        "mount": "/snap/gnome-42-2204/202",
+        "percent": 100.0,
+        "total": 541196288,
+        "used": 541196288,
+        "free": 0
+      },
+      {
+        "device": "/dev/loop12",
+        "mount": "/snap/core20/2682",
+        "percent": 100.0,
+        "total": 66977792,
+        "used": 66977792,
+        "free": 0
+      },
+      {
+        "device": "/dev/loop15",
+        "mount": "/snap/gtk-common-themes/1535",
+        "percent": 100.0,
+        "total": 96206848,
+        "used": 96206848,
+        "free": 0
+      },
+      {
+        "device": "/dev/loop17",
+        "mount": "/snap/gnome-42-2204/226",
+        "percent": 100.0,
+        "total": 541327360,
+        "used": 541327360,
+        "free": 0
+      },
+      {
+        "device": "/dev/loop14",
+        "mount": "/snap/htop/5382",
+        "percent": 100.0,
+        "total": 10878976,
+        "used": 10878976,
+        "free": 0
+      },
+      {
+        "device": "/dev/loop16",
+        "mount": "/snap/htop/5181",
+        "percent": 100.0,
+        "total": 10616832,
+        "used": 10616832,
+        "free": 0
+      },
+      {
+        "device": "/dev/loop13",
+        "mount": "/snap/core24/1267",
+        "percent": 100.0,
+        "total": 70123520,
+        "used": 70123520,
+        "free": 0
+      },
+      {
+        "device": "/dev/loop19",
+        "mount": "/snap/snapd-desktop-integration/315",
+        "percent": 100.0,
+        "total": 655360,
+        "used": 655360,
+        "free": 0
+      },
+      {
+        "device": "/dev/loop20",
+        "mount": "/snap/tree/54",
+        "percent": 100.0,
+        "total": 4718592,
+        "used": 4718592,
+        "free": 0
+      },
+      {
+        "device": "/dev/loop18",
+        "mount": "/snap/snapd/25577",
+        "percent": 100.0,
+        "total": 53477376,
+        "used": 53477376,
+        "free": 0
+      },
+      {
+        "device": "/dev/loop21",
+        "mount": "/snap/snap-store/1270",
+        "percent": 100.0,
+        "total": 11403264,
+        "used": 11403264,
+        "free": 0
+      },
+      {
+        "device": "/dev/loop22",
+        "mount": "/snap/snapd/25935",
+        "percent": 100.0,
+        "total": 50462720,
+        "used": 50462720,
+        "free": 0
+      },
+      {
+        "device": "/dev/sr0",
+        "mount": "/media/rohit-janardhan/VBox_GAs_7.2.42",
+        "percent": 100.0,
+        "total": 53153792,
+        "used": 53153792,
+        "free": 0
+      }
+    ],
+    "network": {
+      "bytes_sent": 4094649,
+      "bytes_recv": 34736004,
+      "packets_sent": 30210,
+      "packets_recv": 49158
+    }
+  },
+  "probes": {
+    "cpu": "ok",
+    "memory": "ok",
+    "disk": "ok",
+    "network": "ok",
+    "gpu": "unsupported"
+  },
+  "metadata": {
+    "collected_at": "2026-01-23T05:23:43.508541+00:00"
+  },
+  "_meta": {
+    "collector_version": "0.6-agent-compatible",
+    "runtime_seconds": 0.607
+  },
+  "posture": {
+    "posture": "idle-capable",
+    "recommended_posture": null,
+    "explanation": null
+  },
+  "posture_value": "idle-capable"
+}

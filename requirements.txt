@@ -1,0 +1,30 @@
+# CVIS v9 — Python dependencies
+# Core API
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+pydantic==2.9.2
+
+# HTTP client (async webhooks)
+httpx==0.28.0
+
+# OS metrics
+psutil==6.1.0
+
+# ML — classical
+scikit-learn==1.5.2
+numpy==1.26.4
+
+# ML — deep learning (optional but recommended)
+# CPU-only wheel (~250 MB). Remove for minimal image; JS fallback activates automatically.
+torch==2.4.1+cpu
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+# Monitoring
+prometheus-client==0.21.0    # /metrics endpoint (Prometheus text format)
+
+redis
+
+aiosqlite
+
+PyJWT
+

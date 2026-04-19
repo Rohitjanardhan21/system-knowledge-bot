@@ -1,0 +1,56 @@
+{
+  "node": "rohit-janardhan-VirtualBox",
+  "hostname": "rohit-janardhan-VirtualBox",
+  "metrics": {
+    "cpu": 63.9,
+    "memory": 94.2,
+    "disk": 99.25714285714285,
+    "processes": [
+      {
+        "pid": 74,
+        "name": "kswapd0",
+        "cpu": 73.8,
+        "memory": 0.0
+      },
+      {
+        "pid": 4905,
+        "name": "Isolated Web Co",
+        "cpu": 40.5,
+        "memory": 75.1
+      },
+      {
+        "pid": 11254,
+        "name": "python3",
+        "cpu": 17.4,
+        "memory": 3.23
+      },
+      {
+        "pid": 12272,
+        "name": "kworker/2:1H-kblockd",
+        "cpu": 8.9,
+        "memory": 0.0
+      },
+      {
+        "pid": 12031,
+        "name": "kworker/0:0H+kblockd",
+        "cpu": 7.4,
+        "memory": 0.0
+      }
+    ],
+    "network": {
+      "bytes_sent": 4389844,
+      "bytes_recv": 6740101,
+      "throughput": 4.389844
+    },
+    "disk_io": {
+      "read_bytes": 26877779968,
+      "write_bytes": 10341081088
+    }
+  },
+  "probes": {
+    "cpu": "ok",
+    "memory": "ok",
+    "disk": "ok"
+  },
+  "timestamp": "2026-03-26T14:54:24.168952+00:00"
+}

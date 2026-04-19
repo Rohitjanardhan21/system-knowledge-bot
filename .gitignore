@@ -1,4 +1,63 @@
-venv/
+# ── Secrets — NEVER commit these ─────────────────────────
+.env
+.env.*
+!.env.example          # the template IS safe to commit
+*.key
+*.pem
+*.p12
+*.pfx
+selfsigned.*
+nginx/certs/
+
+# ── Model weights (large, use Docker volumes instead) ────
+model_versions/
+*.pt
+*.pth
+*.pkl
+*.safetensors
+
+# ── Logs ─────────────────────────────────────────────────
+logs/
+*.log
+*.log.*
+
+# ── Python ───────────────────────────────────────────────
 __pycache__/
-system_facts/history/
-system_facts/current.json
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+.venv/
+venv/
+env/
+.cache/
+
+# ── Test / coverage ──────────────────────────────────────
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml
+*.cover
+
+# ── OS / editor ──────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ── Docker ───────────────────────────────────────────────
+.dockerignore.local
+
+# ── CI artifacts ─────────────────────────────────────────
+trivy.sarif
