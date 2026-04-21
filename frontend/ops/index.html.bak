@@ -121,16 +121,6 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:1
     <div class="mc"><div class="mc-lbl">Health Score</div><div class="mc-val" id="v-health">—</div><div class="mc-bar"><div class="mc-bar-fill" id="b-health"></div></div><div class="mc-sub" id="s-health">loading…</div><div class="mc-delta" id="d-health"></div></div>
   </div>
 
-  <!-- Severity Banner — driven by backend explain_and_act() -->
-  <div id="sev-banner" style="border-radius:8px;border:1px solid rgba(52,211,153,.3);background:rgba(52,211,153,.05);padding:14px 18px;display:flex;align-items:center;gap:14px;transition:all .4s">
-    <div id="sev-icon" style="font-size:26px;flex-shrink:0">✓</div>
-    <div style="flex:1">
-      <div id="sev-level" style="font-size:16px;font-weight:700;letter-spacing:.06em;margin-bottom:2px;color:var(--green)">LOW — System Stable</div>
-      <div id="sev-reason" style="font-size:12px;color:#aaa">No action needed</div>
-    </div>
-    <div id="sev-actions" style="font-size:11px;color:var(--muted);text-align:right;max-width:260px;line-height:1.6"></div>
-  </div>
-
   <div class="card">
     <div class="card-title">Root Cause Analysis <span id="rca-ts" style="font-weight:400;color:var(--muted);text-transform:none;font-family:var(--mono);font-size:9px"></span></div>
     <div id="rca-panel" class="rca-panel" style="border-color:rgba(52,211,153,.3);background:rgba(52,211,153,.04)">
@@ -244,32 +234,11 @@ async function poll(){
   try{
     const[os,ml,h,al]=await Promise.all([fetch_('/os/status'),fetch_('/ml/status'),fetch_('/health'),fetch_('/alerts/history?limit=8')]);
     let pr={by_cpu:[],by_mem:[]};try{pr=await fetch_('/os/processes')}catch{}
-    snap={cpu_percent:os.cpu_percent||0,memory:os.memory||0,disk_percent:os.disk_percent||0,health_score:os.health_score||100,ensemble_score:ml.ensemble_score||0,if_score:ml.if_score||0,vae_score:ml.vae_score||0,lstm_score:ml.lstm_score||0,model_fitted:ml.model_fitted||false,steps_lstm:ml.steps_lstm||0,steps_vae:ml.steps_vae||0,redis:h.redis||{},db:h.db||{},alerts:Array.isArray(al)?al:[],processes:pr,
-      // Pull explainability fields from /health
-      reason:h.reason||'',actions:h.actions||[],severity:h.severity||'LOW'};
+    snap={cpu_percent:os.cpu_percent||0,memory:os.memory||0,disk_percent:os.disk_percent||0,health_score:os.health_score||100,ensemble_score:ml.ensemble_score||0,if_score:ml.if_score||0,vae_score:ml.vae_score||0,lstm_score:ml.lstm_score||0,model_fitted:ml.model_fitted||false,steps_lstm:ml.steps_lstm||0,steps_vae:ml.steps_vae||0,redis:h.redis||{},db:h.db||{},alerts:Array.isArray(al)?al:[],processes:pr};
     if(offline){offline=false;$('conn-warn').style.display='none';$('live-dot').style.background='var(--green)';$('live-dot').style.boxShadow='0 0 8px var(--green)';}
   }catch{offline=true;snap=demoSnap();$('conn-warn').style.display='block';$('live-dot').style.background='var(--yellow)';$('live-dot').style.boxShadow='0 0 8px var(--yellow)';}
   hist.push({...snap,t:Date.now()});if(hist.length>HISTORY_LEN)hist.shift();
   render();
-}
-
-/* SSE — subscribe to event: metrics stream for real-time updates */
-function connectSSE(){
-  const es=new EventSource(API+'/stream');
-  es.addEventListener('metrics',e=>{
-    try{
-      const d=JSON.parse(e.data);
-      // Merge SSE payload into snap (keeps processes/alerts from poll)
-      snap={...snap,...d};
-      hist.push({...snap,t:d.timestamp?d.timestamp*1000:Date.now()});
-      if(hist.length>HISTORY_LEN)hist.shift();
-      render();
-    }catch{}
-  });
-  es.onerror=()=>{
-    // SSE failed — polling fallback already running, just reconnect quietly
-    setTimeout(connectSSE,5000);
-  };
 }
 
 /* Temporal engine */
@@ -296,24 +265,6 @@ function pearson(k1,k2){
 
 /* Root cause engine */
 function rca(){
-  // Backend is source of truth — use its explain_and_act() output when available
-  if(snap.reason && snap.reason !== ''){
-    const sevMap={CRITICAL:'critical',HIGH:'critical',MEDIUM:'warning',LOW:'ok'};
-    const cMap={CRITICAL:'var(--red)',HIGH:'var(--orange)',MEDIUM:'var(--yellow)',LOW:'var(--green)'};
-    const iMap={CRITICAL:'⚠',HIGH:'◉',MEDIUM:'◐',LOW:'✓'};
-    const sev=snap.severity||'LOW';
-    const actions=snap.actions||[];
-    return{
-      title:snap.reason,
-      desc:actions.filter(a=>a!=='No action needed').join(' · ')||'Operating within baseline parameters.',
-      chain:[],
-      action:actions[0]&&actions[0]!=='No action needed'?{t:actions[0],c:cMap[sev],i:iMap[sev]}:null,
-      conf:sev==='CRITICAL'?0.88:sev==='HIGH'?0.80:sev==='MEDIUM'?0.70:0.95,
-      sev:sevMap[sev]||'ok',
-    };
-  }
-
-  // Fallback: local inference (used when backend is offline / demo mode)
   const s=snap,cpu=s.cpu_percent,mem=s.memory,ens=s.ensemble_score;
   const if_=s.if_score,vae=s.vae_score,lstm=s.lstm_score;
   const procs=s.processes?.by_cpu||[];
@@ -355,20 +306,6 @@ const tc=t=>({rising:'var(--yellow)',spiking:'var(--red)',falling:'var(--blue)',
 function render(){
   const s=snap, now=new Date();
   $('tb-time').textContent=now.toLocaleTimeString('en-US',{hour12:false});
-
-  // === Severity Banner (backend-driven) ===
-  const sevCols={LOW:'var(--green)',MEDIUM:'var(--yellow)',HIGH:'var(--orange)',CRITICAL:'var(--red)'};
-  const sevIcons={LOW:'✓',MEDIUM:'◐',HIGH:'◉',CRITICAL:'⚠'};
-  const sevBg={LOW:'rgba(52,211,153,.05)',MEDIUM:'rgba(251,191,36,.06)',HIGH:'rgba(251,146,60,.07)',CRITICAL:'rgba(248,113,113,.09)'};
-  const sevBorder={LOW:'rgba(52,211,153,.3)',MEDIUM:'rgba(251,191,36,.3)',HIGH:'rgba(251,146,60,.35)',CRITICAL:'rgba(248,113,113,.5)'};
-  const sev=s.severity||'LOW', sevC=sevCols[sev]||'var(--green)';
-  const banner=$('sev-banner');
-  banner.style.borderColor=sevBorder[sev]; banner.style.background=sevBg[sev];
-  $('sev-icon').textContent=sevIcons[sev]||'✓';
-  $('sev-level').textContent=`${sev} — ${s.reason||'System stable'}`; $('sev-level').style.color=sevC;
-  $('sev-reason').textContent=`Anomaly: ${(s.ensemble_score||0).toFixed(3)} · CPU: ${(s.cpu_percent||0).toFixed(1)}% · Mem: ${(s.memory||0).toFixed(1)}%`;
-  const acts=s.actions||[];
-  $('sev-actions').innerHTML=acts.length&&acts[0]!=='No action needed'?acts.map(a=>`<div style="color:${sevC};margin-bottom:2px">→ ${a}</div>`).join(''):'<span style="color:var(--muted)">No action needed</span>';
 
   const mkeys=[['cpu','cpu_percent',s.cpu_percent,'Normal','Elevated','Critical'],['mem','memory',s.memory,'Normal','Moderate','High usage'],['disk','disk_percent',s.disk_percent,'Normal','Heavy I/O','Saturated'],['health','health_score',s.health_score,'All ok','Fair','Degraded']];
   mkeys.forEach(([id,key,val,ok,mid,bad])=>{
@@ -541,7 +478,6 @@ $('ch-in').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.pre
 
 poll();
 setInterval(poll,POLL_MS);
-connectSSE();
 </script>
 </body>
 </html>

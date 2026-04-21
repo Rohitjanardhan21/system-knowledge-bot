@@ -73,7 +73,7 @@ services:
     volumes:
       - letsencrypt:/etc/letsencrypt
       - certbot_www:/var/www/certbot
-      - ./frontend/ops:/usr/share/nginx/html:ro
+      - ./frontend/ops:/usr/share/nginx/html
       - nginx_log:/var/log/nginx
     networks:
       - cvis-internal
