@@ -26,7 +26,7 @@ class JsonFormatter(logging.Formatter):
     """
     def format(self, record: logging.LogRecord) -> str:
         doc = {
-            "time":    self.formatTime(record, "%Y-%m-%dT%H:%M:%S.%03dZ"),
+            "time":    self.formatTime(record, "%Y-%m-%dT%H:%M:%SZ"),
             "level":   record.levelname,
             "logger":  record.name,
             "pid":     record.process,
