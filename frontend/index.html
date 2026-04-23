@@ -247,7 +247,7 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:1
 const API='', POLL_MS=2000, HISTORY_LEN=60;
 const apiKey=localStorage.getItem('cvis_key')||'test123';
 const startTime=Date.now();
-let snap={}, hist=[], offline=false, chatHistory=[];
+let snap={}, hist=[], offline=false, chatHistory=[], tickCount=0;
 
 /* AR(2) demo */
 class AR{constructor(mu,p1,p2,s){this.mu=mu;this.p1=p1;this.p2=p2;this.s=s;this.v1=mu;this.v2=mu;}next(inj){const n=Math.sqrt(-2*Math.log(Math.random()))*Math.cos(2*Math.PI*Math.random());const v=Math.max(0,Math.min(100,inj!==undefined?this.v1*.3+inj*.7+n*this.s*.5:this.mu+this.p1*(this.v1-this.mu)+this.p2*(this.v2-this.mu)+n*this.s));this.v2=this.v1;this.v1=v;return v;}}

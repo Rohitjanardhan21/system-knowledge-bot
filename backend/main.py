@@ -718,6 +718,22 @@ async def get_events(limit: int = 60):
     return rows or []
 
 
+# ── Serve frontend (standalone mode) ─────────────────────
+import os as _os_static
+_frontend = _os_static.path.join(
+    _os_static.path.dirname(_os_static.path.dirname(_os_static.path.abspath(__file__))),
+    "frontend"
+)
+if _os_static.path.exists(_frontend):
+    from fastapi.staticfiles import StaticFiles
+    from fastapi.responses import FileResponse as _FR
+
+    @app.get("/", include_in_schema=False)
+    async def _root():
+        return _FR(_os_static.path.join(_frontend, "index.html"))
+
+    app.mount("/assets", StaticFiles(directory=_frontend), name="frontend")
+
 if __name__ == "__main__":
     import uvicorn
     print("=" * 60)
