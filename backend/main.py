@@ -43,6 +43,17 @@ import logging
 setup_logging()
 log = logging.getLogger("cvis.main")
 
+# ── Cognitive intelligence layer ──────────────────────────
+try:
+    from backend.core.cognitive.failure_dna import get_dna_engine
+    from backend.core.cognitive.forecaster   import get_forecaster
+    from backend.core.cognitive.notifier     import get_notifier
+    from backend.core.cognitive.black_box    import get_black_box
+    COGNITIVE_OK = True
+except Exception as _ce:
+    log.warning("Cognitive layer unavailable: %s", _ce)
+    COGNITIVE_OK = False
+
 # Event loop reference — set in lifespan, used by collector thread for SSE broadcast
 _event_loop: asyncio.AbstractEventLoop = None
 
@@ -113,6 +124,59 @@ def _collect():
                     _push_and_persist(merged, scores), _event_loop
                 )
 
+            # ── Cognitive intelligence layer ─────────────
+            if COGNITIVE_OK:
+                try:
+                    m = dict(_last_metrics)
+                    dna = get_dna_engine()
+                    fcast = get_forecaster()
+                    bb = get_black_box()
+                    notifier = get_notifier()
+
+                    # Feed all engines
+                    dna.ingest(m)
+                    fcast.ingest(m)
+
+                    # Record to black box
+                    procs = m.get("processes", {})
+                    proc_list = procs.get("by_cpu", []) if isinstance(procs, dict) else []
+                    reason = m.get("reason", "")
+                    severity = m.get("severity", "LOW")
+                    bb.record(m, proc_list, reason, severity)
+
+                    # Check for predictions
+                    prediction = dna.predict(m)
+                    if prediction and not prediction.acknowledged:
+                        notifier.send_prediction(prediction)
+
+                    # Health score notifications
+                    health_data = dna.get_health_score(m)
+                    if health_data["score"] < 400:
+                        notifier.send_health_alert(health_data["score"], health_data["grade"])
+
+                    # Anomaly notifications
+                    if severity in ("HIGH", "CRITICAL") and reason:
+                        notifier.send_anomaly_alert(reason, severity)
+
+                    # Store cognitive state in shared metrics
+                    with _lock:
+                        _last_metrics["health_credit_score"] = health_data["score"]
+                        _last_metrics["health_grade"] = health_data["grade"]
+                        if prediction:
+                            _last_metrics["active_prediction"] = {
+                                "id":      prediction.prediction_id,
+                                "type":    prediction.failure_type,
+                                "eta_min": round(prediction.minutes_remaining, 1),
+                                "message": prediction.plain_message,
+                                "action":  prediction.plain_action,
+                                "severity": prediction.severity,
+                                "confidence": round(prediction.confidence * 100, 0),
+                            }
+                        else:
+                            _last_metrics["active_prediction"] = None
+                except Exception as _cog_err:
+                    pass  # never let cognitive layer crash the collector
+
             # Auto-save model version
             if time.time() - last_save > AUTOSAVE_INTERVAL and scores.steps_lstm > 50:
                 registry.save_version(
@@ -137,15 +201,29 @@ def _build_feature_vector():
         mem  = 45 + 10 * abs(math.sin(t / 90 + 1))
         disk = 25 +  5 * abs(math.sin(t / 120 + 2))
         net  = 30 + 15 * abs(math.sin(t / 45 + 3))
-        health = max(0, 100 - max(0, cpu-70)*0.35 - max(0, mem-60)*0.25)
-        raw = {"cpu_percent": round(float(cpu), 2), "memory": round(float(mem), 2),
-               "disk_percent": round(float(disk), 2), "network_percent": round(float(net), 2),
-               "health_score": round(float(health), 2), "collected_at": time.time()}
     else:
-        from backend.core.system_adapter import get_metrics
-        raw = get_metrics()
-        raw["collected_at"] = time.time()
-        cpu, mem, disk, net = raw["cpu_percent"], raw["memory"], raw["disk_percent"], raw["network_percent"]
+        cpu  = psutil.cpu_percent(interval=0.05)
+        mem  = psutil.virtual_memory().percent
+        try:
+            d    = psutil.disk_io_counters()
+            disk = min(100, (d.read_bytes + d.write_bytes) / 1e8 * 5)
+        except Exception:
+            disk = 0.0
+        try:
+            n   = psutil.net_io_counters()
+            net = min(100, (n.bytes_sent + n.bytes_recv) / 1e8 * 10)
+        except Exception:
+            net = 0.0
+
+    health = max(0, 100 - max(0, cpu-70)*0.35 - max(0, mem-60)*0.25)
+    raw = {
+        "cpu_percent":      round(float(cpu),    2),
+        "memory":           round(float(mem),    2),
+        "disk_percent":     round(float(disk),   2),
+        "network_percent":  round(float(net),    2),
+        "health_score":     round(float(health), 2),
+        "collected_at":     time.time(),
+    }
     feat = np.array([cpu/100, mem/100, disk/100, net/100, 0.0], dtype=np.float32)
     return feat, raw
 
@@ -329,6 +407,10 @@ async def sse_stream(request: Request):
                     "actions":          explain["actions"],
                     "severity":         explain["severity"],
                     "timestamp":        time.time(),
+                    # Cognitive fields
+                    "health_credit_score": m.get("health_credit_score"),
+                    "health_grade":        m.get("health_grade"),
+                    "active_prediction":   m.get("active_prediction"),
                 }
                 yield f"event: metrics\ndata: {_json.dumps(payload)}\n\n"
             except Exception:
@@ -374,25 +456,25 @@ async def refresh(req: RefreshRequest):
             "token_type": "bearer", "expires_in": pair.expires_in}
 
 @app.post("/auth/api-keys", tags=["Auth"])
-async def create_key(req: ApiKeyRequest):
+async def create_key(req: ApiKeyRequest, principal=Depends(require_scope("admin"))):
     key = await create_api_key(req.name, req.scope)
     return {"key": key, "name": req.name, "scope": req.scope,
             "note": "Store this key securely — it will not be shown again"}
 
 @app.delete("/auth/api-keys/{key_hash}", tags=["Auth"])
-async def delete_key(key_hash: str):
+async def delete_key(key_hash: str, principal=Depends(require_scope("admin"))):
     await revoke_api_key(key_hash)
     return {"revoked": key_hash}
 
 
 # ── OS endpoints (scope: read) ────────────────────────────
 @app.get("/os/status", tags=["OS"])
-async def os_status():
+async def os_status(principal=Depends(require_scope("read"))):
     cached = await get_cached_metrics()
     return cached or {**_last_metrics, "ps_available": PS_OK}
 
 @app.get("/os/processes", tags=["OS"])
-async def os_processes():
+async def os_processes(principal=Depends(require_scope("read"))):
     if not PS_OK:
         return {"by_cpu": [], "by_mem": []}
     procs = []
@@ -413,7 +495,7 @@ class FeatRequest(BaseModel):
     features: list[float] = Field(..., min_length=5, max_length=5)
 
 @app.post("/ml/scores", tags=["ML"])
-async def ml_scores(req: FeatRequest):
+async def ml_scores(req: FeatRequest, principal=Depends(require_scope("read"))):
     feat = np.array(req.features, dtype=np.float32)
     m = get_engine().score(feat)
     return {
@@ -426,7 +508,7 @@ async def ml_scores(req: FeatRequest):
     }
 
 @app.get("/ml/status", tags=["ML"])
-async def ml_status():
+async def ml_status(principal=Depends(require_scope("read"))):
     m = get_engine().metrics
     return {
         "backend":        m.backend,
@@ -457,7 +539,7 @@ class SaveVersionRequest(BaseModel):
     tag:         str = ""
 
 @app.post("/models/save", tags=["Versioning"])
-async def save_version(req: SaveVersionRequest):
+async def save_version(req: SaveVersionRequest, principal=Depends(require_scope("admin"))):
     engine = get_engine(); m = engine.metrics
     entry  = get_registry().save_version(
         req.model_name, engine.state_dict(),
@@ -467,38 +549,38 @@ async def save_version(req: SaveVersionRequest):
     return {"version_id": entry.version_id, "saved": True}
 
 @app.get("/models/versions", tags=["Versioning"])
-async def list_versions(model_name: Optional[str] = None):
+async def list_versions(model_name: Optional[str] = None, principal=Depends(require_scope("read"))):
     return get_registry().list_versions(model_name)
 
 @app.post("/models/activate/{model_name}/{version_id}", tags=["Versioning"])
-async def activate_version(model_name: str, version_id: str):
+async def activate_version(model_name: str, version_id: str, principal=Depends(require_scope("admin"))):
     state = get_registry().activate(model_name, version_id)
     if not state: raise HTTPException(404, "Version not found")
     get_engine().load_state_dict(state)
     return {"activated": version_id}
 
 @app.post("/models/rollback/{model_name}", tags=["Versioning"])
-async def rollback(model_name: str):
+async def rollback(model_name: str, principal=Depends(require_scope("admin"))):
     result = get_registry().rollback(model_name)
     if not result: raise HTTPException(404, "No previous version")
     vid, state = result; get_engine().load_state_dict(state)
     return {"rolled_back_to": vid}
 
 @app.post("/models/rollback_best/{model_name}", tags=["Versioning"])
-async def rollback_best(model_name: str):
+async def rollback_best(model_name: str, principal=Depends(require_scope("admin"))):
     result = get_registry().rollback_to_best(model_name)
     if not result: raise HTTPException(404, "No best version recorded")
     vid, state = result; get_engine().load_state_dict(state)
     return {"rolled_back_to_best": vid}
 
 @app.delete("/models/{model_name}/{version_id}", tags=["Versioning"])
-async def delete_version(model_name: str, version_id: str):
+async def delete_version(model_name: str, version_id: str, principal=Depends(require_scope("admin"))):
     if not get_registry().delete_version(model_name, version_id):
         raise HTTPException(404, "Version not found or is active")
     return {"deleted": version_id}
 
 @app.get("/models/stats", tags=["Versioning"])
-async def version_stats():
+async def version_stats(principal=Depends(require_scope("read"))):
     return get_registry().stats()
 
 
@@ -516,26 +598,27 @@ class RuleRequest(BaseModel):
     message_tpl: str = "{metric} is {value:.2f} (threshold: {threshold})"
 
 @app.post("/alerts/webhooks", tags=["Alerts"])
-async def add_webhook(req: WebhookRequest):
+async def add_webhook(req: WebhookRequest, principal=Depends(require_scope("write"))):
     wh = get_alert_engine().add_webhook(req.url, req.name, req.secret)
     return {"id": wh.id, "name": wh.name}
 
 @app.delete("/alerts/webhooks/{wh_id}", tags=["Alerts"])
-async def remove_webhook(wh_id: str):
+async def remove_webhook(wh_id: str, principal=Depends(require_scope("admin"))):
     if not get_alert_engine().remove_webhook(wh_id): raise HTTPException(404, "Not found")
     return {"deleted": wh_id}
 
 @app.post("/alerts/webhooks/{wh_id}/test", tags=["Alerts"])
-async def test_webhook(wh_id: str):
+async def test_webhook(wh_id: str, principal=Depends(require_scope("write"))):
     return {"success": await get_alert_engine().test_webhook(wh_id)}
 
 @app.put("/alerts/email", tags=["Alerts"])
-async def configure_email(req: EmailRequest):
+async def configure_email(req: EmailRequest, principal=Depends(require_scope("admin"))):
     cfg = get_alert_engine().configure_email(**req.dict(), enabled=True)
     return {"configured": True, "to": cfg.to_addrs}
 
 @app.get("/alerts/history", tags=["Alerts"])
-async def alert_history(limit: int = 50, severity: Optional[str] = None):
+async def alert_history(limit: int = 50, severity: Optional[str] = None,
+                        principal=Depends(require_scope("read"))):
     # Try SQLite first; fall back to in-memory deque
     db_rows = await load_alerts(limit=limit, severity=severity)
     if db_rows:
@@ -543,7 +626,7 @@ async def alert_history(limit: int = 50, severity: Optional[str] = None):
     return get_alert_engine().get_history(limit, severity)
 
 @app.get("/alerts/stats", tags=["Alerts"])
-async def alert_stats():
+async def alert_stats(principal=Depends(require_scope("read"))):
     total = 0
     from backend.core.storage.redis_store import get_client
     c = await get_client()
@@ -555,23 +638,23 @@ async def alert_stats():
     return stats
 
 @app.get("/alerts/rules", tags=["Alerts"])
-async def list_rules():
+async def list_rules(principal=Depends(require_scope("read"))):
     return [vars(r) for r in get_alert_engine().rules.values()]
 
 @app.post("/alerts/rules", tags=["Alerts"])
-async def add_rule(req: RuleRequest):
+async def add_rule(req: RuleRequest, principal=Depends(require_scope("admin"))):
     import uuid as _u
     rule = AlertRule(rule_id=_u.uuid4().hex[:8], **req.dict())
     get_alert_engine().add_rule(rule); return vars(rule)
 
 @app.delete("/alerts/rules/{rule_id}", tags=["Alerts"])
-async def delete_rule(rule_id: str):
+async def delete_rule(rule_id: str, principal=Depends(require_scope("admin"))):
     if not get_alert_engine().delete_rule(rule_id): raise HTTPException(404, "Not found")
     return {"deleted": rule_id}
 
 @app.patch("/alerts/rules/{rule_id}", tags=["Alerts"])
 async def patch_rule(rule_id: str, enabled: Optional[bool] = None,
-                     threshold: Optional[float] = None):
+                     threshold: Optional[float] = None, principal=Depends(require_scope("admin"))):
     kw: dict[str, object] = {}
     if enabled   is not None: kw["enabled"]   = enabled
     if threshold is not None: kw["threshold"] = threshold
@@ -632,58 +715,145 @@ async def prometheus_metrics():
 
 
 
-# ── Multi-device agent endpoint ───────────────────────────
-from typing import Any
+# ── Cognitive Intelligence Endpoints ─────────────────────
 
-# In-memory device registry {device_id: latest_payload}
-_devices: dict[str, dict] = {}
+@app.get("/cognitive/health-score", tags=["Cognitive"])
+async def cognitive_health_score():
+    """Single health score (0-1000) for this machine — like a credit score."""
+    if not COGNITIVE_OK:
+        return {"score": None, "error": "Cognitive layer not available"}
+    m = dict(_last_metrics)
+    return get_dna_engine().get_health_score(m)
 
-class DeviceMetricsPayload(BaseModel):
-    device_id:   str
-    device_name: str
-    os:          str
-    os_version:  str = ""
-    hostname:    str = ""
-    timestamp:   float
-    metrics:     dict[str, Any]
-    processes:   list[dict] = []
+@app.get("/cognitive/forecast", tags=["Cognitive"])
+async def cognitive_forecast():
+    """60-minute forward forecast in plain English."""
+    if not COGNITIVE_OK:
+        return {"error": "Cognitive layer not available"}
+    m = dict(_last_metrics)
+    return get_forecaster().get_plain_timeline(m)
 
-@app.post("/devices/{device_id}/metrics", tags=["Devices"])
-async def receive_device_metrics(device_id: str, payload: DeviceMetricsPayload):
-    """Receive metrics pushed by a remote CVIS agent."""
-    _devices[device_id] = {
-        **payload.dict(),
-        "last_seen": time.time(),
-        "status": "online",
+@app.get("/cognitive/predictions", tags=["Cognitive"])
+async def cognitive_predictions():
+    """Active failure predictions being tracked right now."""
+    if not COGNITIVE_OK:
+        return []
+    preds = get_dna_engine().get_active_predictions()
+    return [
+        {
+            "id":           p.prediction_id,
+            "type":         p.failure_type,
+            "eta_minutes":  round(p.minutes_remaining, 1),
+            "confidence":   round(p.confidence * 100, 0),
+            "message":      p.plain_message,
+            "action":       p.plain_action,
+            "severity":     p.severity,
+            "acknowledged": p.acknowledged,
+        }
+        for p in preds
+    ]
+
+@app.post("/cognitive/predictions/{pred_id}/acknowledge", tags=["Cognitive"])
+async def acknowledge_prediction(pred_id: str):
+    """User acknowledged a prediction."""
+    if COGNITIVE_OK:
+        get_dna_engine().acknowledge_prediction(pred_id, user_acted=True)
+    return {"acknowledged": pred_id}
+
+@app.post("/cognitive/predictions/{pred_id}/resolve", tags=["Cognitive"])
+async def resolve_prediction(pred_id: str, was_correct: bool = True):
+    """Mark a prediction as resolved — helps the system learn."""
+    if COGNITIVE_OK:
+        get_dna_engine().resolve_prediction(pred_id, was_correct)
+    return {"resolved": pred_id, "was_correct": was_correct}
+
+@app.get("/cognitive/dna", tags=["Cognitive"])
+async def cognitive_dna():
+    """This machine's learned failure DNA — all known failure patterns."""
+    if not COGNITIVE_OK:
+        return {"patterns": 0}
+    return get_dna_engine().get_dna_summary()
+
+@app.get("/cognitive/blackbox", tags=["Cognitive"])
+async def cognitive_blackbox():
+    """Black box status and recent frames."""
+    if not COGNITIVE_OK:
+        return {"recording": False}
+    bb = get_black_box()
+    return {
+        "status": bb.get_status(),
+        "recent_frames": bb.get_recent_frames(minutes=5),
     }
-    return {"accepted": True, "device_id": device_id}
 
-@app.get("/devices", tags=["Devices"])
-async def list_devices():
-    """List all devices currently reporting to this server."""
-    now = time.time()
-    result = []
-    for dev_id, dev in _devices.items():
-        age = now - dev.get("last_seen", 0)
-        result.append({
-            "device_id":   dev_id,
-            "device_name": dev.get("device_name", "unknown"),
-            "os":          dev.get("os", "unknown"),
-            "hostname":    dev.get("hostname", ""),
-            "status":      "online" if age < 30 else "offline",
-            "last_seen_s": round(age, 1),
-            "metrics":     dev.get("metrics", {}),
-        })
-    return sorted(result, key=lambda x: x["last_seen_s"])
+@app.post("/cognitive/incident", tags=["Cognitive"])
+async def mark_incident(incident_type: str, description: str = ""):
+    """Manually mark an incident — extracts surrounding black box data."""
+    if not COGNITIVE_OK:
+        return {"error": "Cognitive layer not available"}
+    bb = get_black_box()
+    dna = get_dna_engine()
+    incident_id = bb.mark_incident(incident_type, description or incident_type)
+    dna.record_failure(incident_type, description or incident_type)
+    return {"incident_id": incident_id, "recorded": True}
 
-@app.get("/devices/{device_id}", tags=["Devices"])
-async def get_device(device_id: str):
-    """Get latest metrics for a specific device."""
-    if device_id not in _devices:
-        raise HTTPException(404, "Device not found")
-    dev = _devices[device_id]
-    age = time.time() - dev.get("last_seen", 0)
-    return {**dev, "status": "online" if age < 30 else "offline", "last_seen_s": round(age, 1)}
+@app.get("/cognitive/incidents", tags=["Cognitive"])
+async def list_incidents():
+    """List all recorded incidents."""
+    if not COGNITIVE_OK:
+        return []
+    return get_black_box().get_incidents()
+
+@app.get("/cognitive/incidents/{incident_id}", tags=["Cognitive"])
+async def get_incident(incident_id: str):
+    """Get full incident data including playback timeline."""
+    if not COGNITIVE_OK:
+        return {"error": "not available"}
+    incident = get_black_box().get_incident(incident_id)
+    if not incident:
+        raise HTTPException(404, "Incident not found")
+    postmortem = get_dna_engine().generate_postmortem(incident_id)
+    return {**incident, "postmortem": postmortem}
+
+@app.get("/cognitive/postmortem/{event_id}", tags=["Cognitive"])
+async def get_postmortem(event_id: str):
+    """Plain English post-mortem for a failure event."""
+    if not COGNITIVE_OK:
+        return {"error": "not available"}
+    return get_dna_engine().generate_postmortem(event_id)
+
+@app.get("/cognitive/notifications", tags=["Cognitive"])
+async def notification_history():
+    """History of all sent notifications."""
+    if not COGNITIVE_OK:
+        return []
+    return get_notifier().get_history()
+
+@app.post("/cognitive/notifications/config", tags=["Cognitive"])
+async def configure_notifications(enabled: bool = True, min_severity: str = "MEDIUM"):
+    """Configure notification settings."""
+    if COGNITIVE_OK:
+        n = get_notifier()
+        n.set_enabled(enabled)
+        n.set_min_severity(min_severity)
+    return {"enabled": enabled, "min_severity": min_severity}
+
+@app.get("/cognitive/status", tags=["Cognitive"])
+async def cognitive_status():
+    """Full cognitive layer status."""
+    if not COGNITIVE_OK:
+        return {"available": False}
+    m = dict(_last_metrics)
+    dna = get_dna_engine()
+    bb = get_black_box()
+    notifier = get_notifier()
+    return {
+        "available":      True,
+        "health_score":   dna.get_health_score(m),
+        "dna":            dna.get_dna_summary(),
+        "black_box":      bb.get_status(),
+        "notifications":  notifier.get_status(),
+        "active_predictions": len(dna.get_active_predictions()),
+    }
 
 # ── Health (public — no auth) ─────────────────────────────
 @app.get("/health", tags=["System"])
@@ -707,32 +877,16 @@ async def health():
     }
 
 @app.get("/db/snapshots", tags=["System"])
-async def get_snapshots(hours: float = 1.0):
+async def get_snapshots(hours: float = 1.0, principal=Depends(require_scope("read"))):
     """Historical metric snapshots from SQLite (up to 24h)."""
     return await load_snapshots(hours=min(hours, 24.0))
 
 @app.get("/db/events", tags=["System"])
-async def get_events(limit: int = 60):
+async def get_events(limit: int = 60, principal=Depends(require_scope("read"))):
     """Persisted event log from SQLite."""
     rows = await load_events(limit=limit)
     return rows or []
 
-
-# ── Serve frontend (standalone mode) ─────────────────────
-import os as _os_static
-_frontend = _os_static.path.join(
-    _os_static.path.dirname(_os_static.path.dirname(_os_static.path.abspath(__file__))),
-    "frontend"
-)
-if _os_static.path.exists(_frontend):
-    from fastapi.staticfiles import StaticFiles
-    from fastapi.responses import FileResponse as _FR
-
-    @app.get("/", include_in_schema=False)
-    async def _root():
-        return _FR(_os_static.path.join(_frontend, "index.html"))
-
-    app.mount("/assets", StaticFiles(directory=_frontend), name="frontend")
 
 if __name__ == "__main__":
     import uvicorn

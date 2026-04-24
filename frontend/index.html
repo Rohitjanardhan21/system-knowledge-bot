@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CVIS · AIOps Monitor</title>
+<title>CVIS · Cognitive AIOps</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap');
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
   --bg:#0a0a0f;--surface:#111118;
-  --border:rgba(255,255,255,0.06);--border2:rgba(255,255,255,0.1);
+  --border:rgba(255,255,255,0.06);
   --text:#e8e8f0;--muted:#555570;
   --accent:#7c6af7;--accent-dim:rgba(124,106,247,0.1);
   --green:#34d399;--yellow:#fbbf24;--red:#f87171;--blue:#60a5fa;--orange:#fb923c;
@@ -18,6 +18,7 @@
 body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:100vh;font-size:14px;line-height:1.5}
 #app{display:grid;grid-template-columns:1fr 360px;grid-template-rows:52px auto 1fr;height:100vh;overflow:hidden}
 #topbar{grid-column:1/-1;display:flex;align-items:center;gap:14px;padding:0 24px;border-bottom:1px solid var(--border);background:var(--surface)}
+#device-bar{grid-column:1/-1;display:flex;align-items:center;gap:8px;padding:6px 24px;background:rgba(0,0,0,.3);border-bottom:1px solid var(--border);overflow-x:auto;flex-shrink:0}
 #main{overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:14px}
 #main::-webkit-scrollbar{width:3px}#main::-webkit-scrollbar-thumb{background:var(--border)}
 #sidebar{border-left:1px solid var(--border);display:flex;flex-direction:column;background:var(--surface);overflow:hidden}
@@ -28,8 +29,34 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:1
 .tb-badge{font-family:var(--mono);font-size:11px;font-weight:600;padding:3px 10px;border-radius:3px;border:1px solid}
 .tb-time{font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:auto}
 #conn-warn{font-size:11px;padding:3px 10px;border-radius:3px;background:rgba(251,191,36,.1);border:1px solid rgba(251,191,36,.2);color:var(--yellow);display:none}
+.dev-btn{font-family:var(--mono);font-size:11px;padding:3px 10px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;transition:all .2s;white-space:nowrap}
+.dev-btn.active{border-color:var(--accent);color:var(--accent);background:var(--accent-dim)}
+.dev-dot{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:4px}
 .card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:18px 20px}
 .card-title{font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:14px;display:flex;align-items:center;justify-content:space-between}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+/* Health Score */
+.hs-number{font-family:var(--mono);font-size:52px;font-weight:600;line-height:1;flex-shrink:0}
+.hs-bar-track{height:6px;border-radius:3px;background:rgba(255,255,255,.05);overflow:hidden;margin-bottom:10px;width:100%}
+.hs-bar-fill{height:100%;border-radius:3px;transition:width 1s ease}
+/* Prediction Banner */
+#pred-banner{border-radius:8px;border:1px solid;padding:16px 20px;display:none;transition:all .4s}
+.pred-header{display:flex;align-items:flex-start;gap:14px}
+.pred-icon{font-size:28px;flex-shrink:0}
+.pred-title{font-size:16px;font-weight:700;margin-bottom:4px}
+.pred-desc{font-size:12px;color:#bbb;line-height:1.6}
+.pred-eta{font-family:var(--mono);font-size:32px;font-weight:600;margin-left:auto;text-align:right;flex-shrink:0}
+.pred-eta-lbl{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;text-align:right}
+.pred-action{margin-top:12px;padding:10px 14px;border-radius:6px;display:flex;align-items:center;justify-content:space-between;gap:12px;background:rgba(248,113,113,.07);border:1px solid rgba(248,113,113,.2)}
+.pred-btn{font-size:11px;font-weight:600;padding:5px 14px;border-radius:5px;border:none;cursor:pointer;font-family:var(--sans)}
+/* Forecast */
+.fc-summary{font-size:12px;color:#aaa;line-height:1.6;margin-bottom:12px;padding:10px 12px;border-radius:6px;background:rgba(0,0,0,.2)}
+.fc-bar-row{display:flex;align-items:center;gap:10px;padding:6px 10px;border-radius:5px;margin-bottom:5px;font-size:11px}
+.fc-time{font-family:var(--mono);color:var(--muted);width:44px;flex-shrink:0}
+.fc-track{flex:1;height:5px;border-radius:3px;background:rgba(255,255,255,.05);overflow:hidden}
+.fc-fill{height:100%;border-radius:3px;transition:width .6s}
+.fc-risk{min-width:80px;text-align:right;font-weight:600}
+/* Metrics */
 .metrics-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
 .mc{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px 16px}
 .mc-lbl{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
@@ -38,6 +65,9 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:1
 .mc-bar-fill{height:100%;border-radius:2px;transition:width .6s ease}
 .mc-sub{font-size:11px;color:var(--muted)}
 .mc-delta{font-size:11px;font-family:var(--mono);margin-top:3px;font-weight:600}
+/* Sev banner */
+#sev-banner{border-radius:8px;border:1px solid;padding:14px 18px;display:flex;align-items:center;gap:14px;transition:all .4s}
+/* RCA */
 .rca-panel{border-radius:8px;border:1px solid;padding:16px 18px;transition:all .4s}
 .rca-header{display:flex;align-items:flex-start;gap:14px}
 .rca-icon{font-size:22px;flex-shrink:0;margin-top:2px}
@@ -50,12 +80,13 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:1
 .chain-arrow{color:var(--muted)}
 .rca-conf{margin-left:auto;font-size:11px;color:var(--muted)}
 .rca-action{margin-top:12px;padding:10px 14px;border-radius:6px;font-size:12px;border:1px solid;display:flex;align-items:center;gap:10px}
-.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+/* ML */
 .ml-row{display:flex;align-items:center;gap:10px;margin-bottom:9px}
 .ml-name{font-size:11px;color:var(--muted);width:150px;flex-shrink:0}
 .ml-track{flex:1;height:4px;border-radius:2px;background:rgba(255,255,255,.05);overflow:hidden}
-.ml-fill{height:100%;border-radius:2px;transition:width .6s}
+.ml-fill{height:100%;border-radius:3px;transition:width .6s}
 .ml-val{font-family:var(--mono);font-size:12px;font-weight:600;width:44px;text-align:right}
+/* Trends */
 .trend-row{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:6px;background:rgba(0,0,0,.2);margin-bottom:7px;font-size:12px}
 .trend-metric{width:80px;color:var(--muted);font-size:11px;letter-spacing:.06em;text-transform:uppercase}
 .trend-arrow{font-size:16px;width:20px;text-align:center}
@@ -63,6 +94,7 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:1
 .trend-bar{flex:1;height:3px;border-radius:2px;background:rgba(255,255,255,.05);overflow:hidden}
 .trend-fill{height:100%;border-radius:2px;transition:width .6s}
 .trend-lbl{font-size:11px;color:var(--muted);margin-left:auto;min-width:50px;text-align:right}
+/* Process */
 .ptable{width:100%;border-collapse:collapse}
 .ptable th{font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);padding:0 10px 10px;text-align:left;border-bottom:1px solid var(--border)}
 .ptable td{padding:8px 10px;border-bottom:1px solid rgba(255,255,255,.03);font-family:var(--mono);font-size:12px}
@@ -71,12 +103,19 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:1
 .pbar{height:4px;border-radius:2px;background:rgba(255,255,255,.05);overflow:hidden;width:70px}
 .pbar-fill{height:100%;border-radius:2px;transition:width .5s}
 .badge{font-size:9px;font-weight:700;padding:2px 7px;border-radius:3px;letter-spacing:.06em;border:1px solid;white-space:nowrap}
+/* Alerts */
 .alert-row{display:flex;gap:10px;padding:9px 12px;border-radius:6px;border-left:2px solid;margin-bottom:7px;background:rgba(0,0,0,.2)}
 .a-sev{font-size:9px;font-weight:700;letter-spacing:.08em;width:62px;flex-shrink:0;margin-top:2px}
+/* Stat boxes */
 .stat-box{background:rgba(0,0,0,.2);border-radius:6px;padding:11px 14px}
 .stat-lbl{font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:4px}
 .stat-val{font-family:var(--mono);font-size:18px;font-weight:600}
 .stat-sub{font-size:10px;color:var(--muted);margin-top:2px}
+/* DNA */
+.dna-row{padding:10px 12px;border-radius:6px;background:rgba(0,0,0,.2);margin-bottom:8px}
+/* BB frames */
+.bb-frame{display:flex;align-items:center;gap:8px;padding:5px 10px;border-radius:4px;font-size:11px;font-family:var(--mono);border-left:2px solid;margin-bottom:3px}
+/* Chat */
 #ch-head{padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-shrink:0}
 #ch-msgs{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px}
 #ch-msgs::-webkit-scrollbar{width:3px}#ch-msgs::-webkit-scrollbar-thumb{background:var(--border)}
@@ -97,38 +136,91 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:1
 #ch-form{display:flex;gap:8px}
 #ch-in{flex:1;background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--sans);font-size:13px;padding:8px 12px;outline:none;transition:border-color .2s}
 #ch-in:focus{border-color:var(--accent)}
-#ch-send{background:var(--accent);border:none;border-radius:6px;color:#fff;cursor:pointer;padding:0 14px;font-size:13px;font-weight:600;transition:opacity .15s;font-family:var(--sans)}
+#ch-send{background:var(--accent);border:none;border-radius:6px;color:#fff;cursor:pointer;padding:0 14px;font-size:13px;font-weight:600;font-family:var(--sans)}
 #ch-send:hover{opacity:.85}#ch-send:disabled{opacity:.35;cursor:not-allowed}
-
-#device-bar{grid-column:1/-1;display:flex;align-items:center;gap:8px;padding:8px 24px;background:rgba(0,0,0,.3);border-bottom:1px solid var(--border);overflow-x:auto;flex-shrink:0}
-.dev-btn{font-family:var(--mono);font-size:11px;padding:4px 12px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;white-space:nowrap;transition:all .2s}
-.dev-btn:hover{border-color:var(--accent);color:var(--accent)}
-.dev-btn.active{border-color:var(--accent);color:var(--accent);background:var(--accent-dim)}
-.dev-btn .dev-dot{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:5px}
 </style>
 </head>
 <body>
 <div id="app">
 
 <header id="topbar">
-  <div class="logo">CVIS <span>/ AIOps</span></div>
+  <div class="logo">CVIS <span>/ Cognitive</span></div>
   <div class="pulse" id="live-dot"></div>
   <div id="conn-warn">Demo mode — backend offline</div>
   <div id="tb-badge" class="tb-badge" style="color:var(--green);border-color:rgba(52,211,153,.3);background:rgba(52,211,153,.07)">OPTIMAL</div>
   <div class="tb-time" id="tb-time"></div>
 </header>
 
-
 <div id="device-bar">
   <span style="font-size:10px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;flex-shrink:0">Devices</span>
-  <button class="dev-btn active" id="dev-local" onclick="selectDevice(null)">
-    <span class="dev-dot" style="background:var(--green)"></span>localhost
-  </button>
+  <button class="dev-btn active" id="dev-local" onclick="selectDevice(null,event)"><span class="dev-dot" style="background:var(--green)"></span>localhost</button>
   <div id="dev-list" style="display:flex;gap:8px"></div>
-  <span id="dev-count" style="font-size:10px;color:var(--muted);margin-left:auto;white-space:nowrap"></span>
+  <span id="dev-count" style="font-size:10px;color:var(--muted);margin-left:auto"></span>
 </div>
+
 <main id="main">
 
+  <!-- Health Credit Score -->
+  <div class="card" style="display:flex;align-items:center;gap:28px">
+    <div style="flex:1">
+      <div style="font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:8px">System Health Score</div>
+      <div style="display:flex;align-items:baseline;gap:14px;margin-bottom:8px">
+        <div class="hs-number" id="hs-number" style="color:var(--green)">—</div>
+        <div>
+          <div style="font-size:18px;font-weight:600" id="hs-grade" style="color:var(--green)">Loading…</div>
+          <div style="font-size:11px;color:var(--muted)">out of 1000</div>
+        </div>
+      </div>
+      <div class="hs-bar-track"><div class="hs-bar-fill" id="hs-bar" style="width:0%;background:var(--green)"></div></div>
+      <div style="font-size:11px;color:var(--muted);line-height:1.8" id="hs-improve"></div>
+    </div>
+    <div style="text-align:right;flex-shrink:0">
+      <div style="margin-bottom:14px">
+        <div style="font-size:9px;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;margin-bottom:4px">Patterns Learned</div>
+        <div style="font-family:var(--mono);font-size:28px;font-weight:600;color:var(--accent)" id="hs-patterns">0</div>
+        <div style="font-size:10px;color:var(--muted)">failure signatures</div>
+      </div>
+      <div>
+        <div style="font-size:9px;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;margin-bottom:4px">Failures Prevented</div>
+        <div style="font-family:var(--mono);font-size:28px;font-weight:600;color:var(--green)" id="hs-prevented">0</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Prediction Banner -->
+  <div id="pred-banner" style="background:rgba(248,113,113,.07);border-color:rgba(248,113,113,.4)">
+    <div class="pred-header">
+      <div class="pred-icon">⚠️</div>
+      <div style="flex:1">
+        <div class="pred-title" id="pred-title" style="color:var(--red)">Failure Predicted</div>
+        <div class="pred-desc" id="pred-desc"></div>
+      </div>
+      <div>
+        <div class="pred-eta" id="pred-eta" style="color:var(--red)">—</div>
+        <div class="pred-eta-lbl">minutes remaining</div>
+        <div style="font-size:10px;color:var(--muted);text-align:right;margin-top:2px" id="pred-conf"></div>
+      </div>
+    </div>
+    <div class="pred-action">
+      <div style="font-size:12px;color:#eee;flex:1" id="pred-action-text"></div>
+      <div style="display:flex;gap:8px">
+        <button class="pred-btn" onclick="actOnPrediction()" style="background:var(--red);color:#fff">Fix it now</button>
+        <button class="pred-btn" onclick="dismissPrediction()" style="background:rgba(255,255,255,.08);color:var(--muted)">Dismiss</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Severity Banner -->
+  <div id="sev-banner" style="border-color:rgba(52,211,153,.3);background:rgba(52,211,153,.05)">
+    <div id="sev-icon" style="font-size:26px;flex-shrink:0">✓</div>
+    <div style="flex:1">
+      <div id="sev-level" style="font-size:16px;font-weight:700;letter-spacing:.06em;margin-bottom:2px;color:var(--green)">LOW — System Stable</div>
+      <div id="sev-reason" style="font-size:12px;color:#aaa">No action needed</div>
+    </div>
+    <div id="sev-actions" style="font-size:11px;text-align:right;max-width:260px;line-height:1.6"></div>
+  </div>
+
+  <!-- Metrics -->
   <div class="metrics-grid">
     <div class="mc"><div class="mc-lbl">CPU Usage</div><div class="mc-val" id="v-cpu">—</div><div class="mc-bar"><div class="mc-bar-fill" id="b-cpu"></div></div><div class="mc-sub" id="s-cpu">loading…</div><div class="mc-delta" id="d-cpu"></div></div>
     <div class="mc"><div class="mc-lbl">Memory</div><div class="mc-val" id="v-mem">—</div><div class="mc-bar"><div class="mc-bar-fill" id="b-mem"></div></div><div class="mc-sub" id="s-mem">loading…</div><div class="mc-delta" id="d-mem"></div></div>
@@ -136,35 +228,28 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:1
     <div class="mc"><div class="mc-lbl">Health Score</div><div class="mc-val" id="v-health">—</div><div class="mc-bar"><div class="mc-bar-fill" id="b-health"></div></div><div class="mc-sub" id="s-health">loading…</div><div class="mc-delta" id="d-health"></div></div>
   </div>
 
-  <!-- Severity Banner — driven by backend explain_and_act() -->
-  <div id="sev-banner" style="border-radius:8px;border:1px solid rgba(52,211,153,.3);background:rgba(52,211,153,.05);padding:14px 18px;display:flex;align-items:center;gap:14px;transition:all .4s">
-    <div id="sev-icon" style="font-size:26px;flex-shrink:0">✓</div>
-    <div style="flex:1">
-      <div id="sev-level" style="font-size:16px;font-weight:700;letter-spacing:.06em;margin-bottom:2px;color:var(--green)">LOW — System Stable</div>
-      <div id="sev-reason" style="font-size:12px;color:#aaa">No action needed</div>
+  <!-- Forecast + RCA -->
+  <div class="grid2">
+    <div class="card">
+      <div class="card-title">60-Min Forecast <span style="font-weight:400;color:var(--muted);text-transform:none;font-family:var(--mono);font-size:9px" id="fc-conf"></span></div>
+      <div id="fc-summary" class="fc-summary">Analyzing trends…</div>
+      <div id="fc-timeline"></div>
     </div>
-    <div id="sev-actions" style="font-size:11px;color:var(--muted);text-align:right;max-width:260px;line-height:1.6"></div>
-  </div>
-
-  <div class="card">
-    <div class="card-title">Root Cause Analysis <span id="rca-ts" style="font-weight:400;color:var(--muted);text-transform:none;font-family:var(--mono);font-size:9px"></span></div>
-    <div id="rca-panel" class="rca-panel" style="border-color:rgba(52,211,153,.3);background:rgba(52,211,153,.04)">
-      <div class="rca-header">
-        <div class="rca-icon" id="rca-icon">✓</div>
-        <div>
-          <div class="rca-title" id="rca-title">System Normal</div>
-          <div class="rca-desc" id="rca-desc">No anomalies — ML ensemble within baseline</div>
+    <div class="card">
+      <div class="card-title">Root Cause Analysis <span id="rca-ts" style="font-weight:400;color:var(--muted);text-transform:none;font-family:var(--mono);font-size:9px"></span></div>
+      <div id="rca-panel" class="rca-panel" style="border-color:rgba(52,211,153,.3);background:rgba(52,211,153,.04)">
+        <div class="rca-header">
+          <div class="rca-icon" id="rca-icon">✓</div>
+          <div><div class="rca-title" id="rca-title">System Normal</div><div class="rca-desc" id="rca-desc">No anomalies — ML ensemble within baseline</div></div>
+          <div><div class="rca-score" id="rca-score">0.000</div><div class="rca-score-lbl">ensemble</div></div>
         </div>
-        <div>
-          <div class="rca-score" id="rca-score">0.000</div>
-          <div class="rca-score-lbl">ensemble</div>
-        </div>
+        <div class="chain" id="rca-chain" style="display:none"></div>
+        <div class="rca-action" id="rca-action" style="display:none"></div>
       </div>
-      <div class="chain" id="rca-chain" style="display:none"></div>
-      <div class="rca-action" id="rca-action" style="display:none"></div>
     </div>
   </div>
 
+  <!-- Trends + ML -->
   <div class="grid2">
     <div class="card">
       <div class="card-title">Temporal Trends <span style="font-weight:400;color:var(--muted);font-family:var(--mono);text-transform:none;font-size:9px">2-min window</span></div>
@@ -179,6 +264,7 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:1
     </div>
   </div>
 
+  <!-- Processes -->
   <div class="card">
     <div class="card-title">Top Resource Consumers</div>
     <table class="ptable">
@@ -187,6 +273,7 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:1
     </table>
   </div>
 
+  <!-- Correlations + Alerts -->
   <div class="grid2">
     <div class="card">
       <div class="card-title">Signal Correlations <span style="font-weight:400;text-transform:none;font-family:var(--mono);font-size:9px">(Pearson, 2-min)</span></div>
@@ -198,6 +285,23 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:1
     </div>
   </div>
 
+  <!-- DNA + Black Box -->
+  <div class="grid2">
+    <div class="card">
+      <div class="card-title">Failure DNA <span style="font-weight:400;color:var(--muted);text-transform:none;font-size:9px">machine's learned breakdown signatures</span></div>
+      <div id="dna-list"><div style="color:var(--muted);font-size:12px;text-align:center;padding:20px">No patterns learned yet.<br>Patterns appear after you record incidents.</div></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Black Box Recorder <span style="font-weight:400;color:var(--muted);text-transform:none;font-size:9px" id="bb-status-lbl">● recording</span></div>
+      <div id="bb-frames"><div style="color:var(--muted);font-size:12px;text-align:center;padding:16px">Continuously recording last 2 hours…</div></div>
+      <div style="margin-top:10px;display:flex;gap:8px">
+        <button onclick="markIncident()" style="font-size:11px;padding:5px 12px;border-radius:5px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;font-family:var(--sans)">⚑ Mark Incident</button>
+        <button onclick="loadBlackBox()" style="font-size:11px;padding:5px 12px;border-radius:5px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;font-family:var(--sans)">↻ Refresh</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Infrastructure -->
   <div class="card">
     <div class="card-title">Infrastructure</div>
     <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px">
@@ -216,23 +320,23 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:1
     <div style="width:28px;height:28px;border-radius:6px;background:var(--accent-dim);border:1px solid rgba(124,106,247,.3);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0">◈</div>
     <div>
       <div style="font-size:12px;font-weight:600;letter-spacing:.04em">Cognitive Assistant</div>
-      <div style="font-size:10px;color:var(--muted)">Live context · root cause · Claude</div>
+      <div style="font-size:10px;color:var(--muted)">Predicts · Explains · Acts · Claude</div>
     </div>
   </div>
   <div id="ch-msgs">
     <div class="msg msg-ai">
-      <div class="bubble">I have live access to metrics, processes, ML signals, temporal trends, and correlation data. I reason across all layers.<br><br>Try: <em>"why is the anomaly rising?"</em> or <em>"what should I do?"</em></div>
+      <div class="bubble">I know your machine's failure history, current trends, and what's predicted to happen next.<br><br>Ask me anything — I reason across past, present, and future.</div>
       <div class="mtime">System</div>
     </div>
   </div>
   <div id="ch-input-area">
     <div id="ch-sugg">
-      <button class="sugg" onclick="sugg(this)">Why is anomaly high?</button>
-      <button class="sugg" onclick="sugg(this)">What's causing the spike?</button>
-      <button class="sugg" onclick="sugg(this)">Is this a real incident?</button>
+      <button class="sugg" onclick="sugg(this)">Will my computer crash?</button>
+      <button class="sugg" onclick="sugg(this)">What's happening right now?</button>
+      <button class="sugg" onclick="sugg(this)">Is the trend getting worse?</button>
       <button class="sugg" onclick="sugg(this)">What should I do?</button>
-      <button class="sugg" onclick="sugg(this)">Explain the ML signals</button>
-      <button class="sugg" onclick="sugg(this)">Is the trend worsening?</button>
+      <button class="sugg" onclick="sugg(this)">Show me the forecast</button>
+      <button class="sugg" onclick="sugg(this)">Why is memory high?</button>
     </div>
     <div id="ch-form">
       <input id="ch-in" type="text" placeholder="Ask about your system…">
@@ -242,380 +346,298 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:1
 </aside>
 
 </div>
-
 <script>
-const API='', POLL_MS=2000, HISTORY_LEN=60;
+const API='',POLL_MS=3000,HISTORY_LEN=60;
 const apiKey=localStorage.getItem('cvis_key')||'test123';
 const startTime=Date.now();
-let snap={}, hist=[], offline=false, chatHistory=[], tickCount=0;
+let snap={},hist=[],offline=false,chatHistory=[],tickCount=0;
+let selectedDevice=null,activePredId=null,forecast=null,dnaData=null;
 
-/* AR(2) demo */
-class AR{constructor(mu,p1,p2,s){this.mu=mu;this.p1=p1;this.p2=p2;this.s=s;this.v1=mu;this.v2=mu;}next(inj){const n=Math.sqrt(-2*Math.log(Math.random()))*Math.cos(2*Math.PI*Math.random());const v=Math.max(0,Math.min(100,inj!==undefined?this.v1*.3+inj*.7+n*this.s*.5:this.mu+this.p1*(this.v1-this.mu)+this.p2*(this.v2-this.mu)+n*this.s));this.v2=this.v1;this.v1=v;return v;}}
+class AR{constructor(mu,p1,p2,s){this.mu=mu;this.p1=p1;this.p2=p2;this.s=s;this.v1=mu;this.v2=mu;}next(){const n=Math.sqrt(-2*Math.log(Math.random()))*Math.cos(2*Math.PI*Math.random());const v=Math.max(0,Math.min(100,this.mu+this.p1*(this.v1-this.mu)+this.p2*(this.v2-this.mu)+n*this.s));this.v2=this.v1;this.v1=v;return v;}}
 const arC=new AR(35,.72,.14,4),arM=new AR(48,.80,.09,3),arD=new AR(28,.62,.18,2.5);
-function demoSnap(){const c=arC.next(),m=arM.next(),d=arD.next(),h=Math.max(50,100-Math.max(0,c-70)*.45-Math.max(0,m-65)*.3),a=Math.max(0,Math.min(1,(c-30)/130+(m-40)/160));return{cpu_percent:c,memory:m,disk_percent:d,health_score:h,ensemble_score:a,if_score:a*.9,vae_score:a*.85,lstm_score:a*.7,model_fitted:false,steps_lstm:0,steps_vae:0,redis:{available:false},db:{available:false,alerts:0},processes:{by_cpu:[{name:'python3',pid:1234,cpu:c*.32,mem:14.2},{name:'uvicorn',pid:1235,cpu:c*.18,mem:8.3},{name:'redis-server',pid:890,cpu:c*.05,mem:3.1},{name:'nginx',pid:456,cpu:c*.03,mem:1.9},{name:'systemd',pid:1,cpu:.2,mem:.6}]},alerts:[]};}
+function demoSnap(){const c=arC.next(),m=arM.next(),d=arD.next(),h=Math.max(50,100-Math.max(0,c-70)*.45-Math.max(0,m-65)*.3),a=Math.max(0,Math.min(1,(c-30)/130+(m-40)/160));return{cpu_percent:c,memory:m,disk_percent:d,health_score:h,ensemble_score:a,if_score:a*.9,vae_score:a*.85,lstm_score:a*.7,model_fitted:false,steps_lstm:0,steps_vae:0,redis:{available:false},db:{available:false,alerts:0},processes:{by_cpu:[{name:'python3',pid:1234,cpu:c*.32,mem:14.2},{name:'uvicorn',pid:1235,cpu:c*.18,mem:8.3},{name:'redis',pid:890,cpu:c*.05,mem:3.1},{name:'nginx',pid:456,cpu:c*.03,mem:1.9}]},alerts:[],reason:'Demo mode — backend offline',actions:['Start backend to enable live data'],severity:'LOW',health_credit_score:780,health_grade:'Good',active_prediction:null};}
 
 async function fetch_(p){const r=await fetch(API+p,{headers:{'X-API-Key':apiKey}});if(!r.ok)throw new Error(r.status);return r.json();}
 
-/* ── Device selector ── */
-let selectedDevice = null;  // null = local backend
-
-async function loadDevices(){
-  try{
-    const devs = await fetch_('/devices').then(r=>r.json());
-    const list = document.getElementById('dev-list');
-    if(!list) return;
-    list.innerHTML = devs.map(d => {
-      const online = d.status === 'online';
-      const col = online ? 'var(--green)' : 'var(--red)';
-      const active = selectedDevice === d.device_id ? 'active' : '';
-      return `<button class="dev-btn ${active}" onclick="selectDevice('${d.device_id}','${d.device_name}')">
-        <span class="dev-dot" style="background:${col}"></span>${d.device_name}
-        <span style="font-size:9px;color:var(--muted);margin-left:4px">${d.os}</span>
-      </button>`;
-    }).join('');
-    const count = document.getElementById('dev-count');
-    if(count) count.textContent = `${devs.filter(d=>d.status==='online').length}/${devs.length} online`;
-  }catch{}
-}
-
-function selectDevice(id, name){
-  selectedDevice = id;
-  // Update active button
-  document.querySelectorAll('.dev-btn').forEach(b => b.classList.remove('active'));
-  event?.target?.classList.add('active');
-  if(!id) document.getElementById('dev-local')?.classList.add('active');
-  // Update header
-  const badge = document.getElementById('tb-badge');
-  if(badge && name) badge.title = `Monitoring: ${name}`;
-}
-
-async function fetchDeviceData(){
-  if(!selectedDevice) return null;
-  try{
-    const d = await fetch_(`/devices/${selectedDevice}`);
-    return await d.json();
-  }catch{ return null; }
-}
-
 async function poll(){
-  // Load device list every 5 ticks
-  if(tickCount % 5 === 0 || tickCount === 0) loadDevices();
+  if(tickCount%5===0)loadDevices();
   tickCount++;
-
-  // If a remote device is selected, use its data
   if(selectedDevice){
-    try{
-      const dev = await fetchDeviceData();
-      if(dev && dev.metrics){
-        const m = dev.metrics;
-        snap={
-          cpu_percent:m.cpu_percent||0, memory:m.memory||0,
-          disk_percent:m.disk_percent||0, health_score:m.health_score||100,
-          network_percent:m.network_percent||0,
-          ensemble_score:0, if_score:0, vae_score:0, lstm_score:0,
-          model_fitted:false, steps_lstm:0, steps_vae:0,
-          redis:{available:true}, db:{available:true,alerts:0},
-          alerts:[], processes:{by_cpu:dev.processes||[]},
-          reason:`Remote device: ${dev.device_name} (${dev.os})`,
-          actions:[`Last seen ${dev.last_seen_s?.toFixed(0)}s ago`],
-          severity: m.cpu_percent>80||m.memory>80 ? 'HIGH' : m.cpu_percent>60 ? 'MEDIUM' : 'LOW',
-        };
-        hist.push({...snap,t:Date.now()});
-        if(hist.length>HISTORY_LEN)hist.shift();
-        render();
-      }
-    }catch{}
-    return;
+    try{const dev=await fetch_(`/devices/${selectedDevice}`);if(dev?.metrics){const m=dev.metrics;snap={cpu_percent:m.cpu_percent||0,memory:m.memory||0,disk_percent:m.disk_percent||0,health_score:m.health_score||100,network_percent:m.network_percent||0,ensemble_score:0,if_score:0,vae_score:0,lstm_score:0,model_fitted:false,steps_lstm:0,steps_vae:0,redis:{available:true},db:{available:true,alerts:0},alerts:[],processes:{by_cpu:dev.processes||[]},reason:`Remote: ${dev.device_name} (${dev.os})`,actions:[`Last seen ${dev.last_seen_s?.toFixed(0)}s ago`],severity:m.cpu_percent>80||m.memory>80?'HIGH':m.cpu_percent>60?'MEDIUM':'LOW',health_credit_score:null,health_grade:null,active_prediction:null};hist.push({...snap,t:Date.now()});if(hist.length>HISTORY_LEN)hist.shift();render();}}catch{}return;
   }
-
   try{
     const[os,ml,h,al]=await Promise.all([fetch_('/os/status'),fetch_('/ml/status'),fetch_('/health'),fetch_('/alerts/history?limit=8')]);
     let pr={by_cpu:[],by_mem:[]};try{pr=await fetch_('/os/processes')}catch{}
-    snap={cpu_percent:os.cpu_percent||0,memory:os.memory||0,disk_percent:os.disk_percent||0,health_score:os.health_score||100,ensemble_score:ml.ensemble_score||0,if_score:ml.if_score||0,vae_score:ml.vae_score||0,lstm_score:ml.lstm_score||0,model_fitted:ml.model_fitted||false,steps_lstm:ml.steps_lstm||0,steps_vae:ml.steps_vae||0,redis:h.redis||{},db:h.db||{},alerts:Array.isArray(al)?al:[],processes:pr,
-      // Pull explainability fields from /health
-      reason:h.reason||'',actions:h.actions||[],severity:h.severity||'LOW'};
+    snap={cpu_percent:os.cpu_percent||0,memory:os.memory||0,disk_percent:os.disk_percent||0,health_score:os.health_score||100,ensemble_score:ml.ensemble_score||0,if_score:ml.if_score||0,vae_score:ml.vae_score||0,lstm_score:ml.lstm_score||0,model_fitted:ml.model_fitted||false,steps_lstm:ml.steps_lstm||0,steps_vae:ml.steps_vae||0,redis:h.redis||{},db:h.db||{},alerts:Array.isArray(al)?al:[],processes:pr,reason:h.reason||'',actions:h.actions||[],severity:h.severity||'LOW',health_credit_score:h.health_credit_score,health_grade:h.health_grade,active_prediction:h.active_prediction};
     if(offline){offline=false;$('conn-warn').style.display='none';$('live-dot').style.background='var(--green)';$('live-dot').style.boxShadow='0 0 8px var(--green)';}
   }catch{offline=true;snap=demoSnap();$('conn-warn').style.display='block';$('live-dot').style.background='var(--yellow)';$('live-dot').style.boxShadow='0 0 8px var(--yellow)';}
   hist.push({...snap,t:Date.now()});if(hist.length>HISTORY_LEN)hist.shift();
   render();
+  if(tickCount%10===0)loadCognitive();
 }
 
-/* SSE — subscribe to event: metrics stream for real-time updates */
 function connectSSE(){
   const es=new EventSource(API+'/stream');
   es.addEventListener('metrics',e=>{
-    try{
-      const d=JSON.parse(e.data);
-      // Merge SSE payload into snap (keeps processes/alerts from poll)
-      snap={...snap,...d};
-      hist.push({...snap,t:d.timestamp?d.timestamp*1000:Date.now()});
-      if(hist.length>HISTORY_LEN)hist.shift();
-      render();
-    }catch{}
+    try{const d=JSON.parse(e.data);snap={...snap,...d};hist.push({...snap,t:d.timestamp?d.timestamp*1000:Date.now()});if(hist.length>HISTORY_LEN)hist.shift();render();}catch{}
   });
-  es.onerror=()=>{
-    // SSE failed — polling fallback already running, just reconnect quietly
-    setTimeout(connectSSE,5000);
-  };
+  es.onerror=()=>{setTimeout(connectSSE,5000);};
 }
 
-/* Temporal engine */
-function temporal(key){
-  if(hist.length<5)return{delta:0,trend:'stable',velocity:0};
-  const v=hist.map(h=>h[key]||0),n=v.length;
-  const delta=v[n-1]-v[Math.max(0,n-16)];
-  const vel=v[n-1]-v[Math.max(0,n-6)];
-  let trend='stable';
-  if(Math.abs(delta)>4)trend=delta>0?'rising':'falling';
-  if(Math.abs(delta)>12)trend=delta>0?'spiking':'dropping';
-  return{delta,trend,velocity:vel,now:v[n-1]};
+async function loadCognitive(){
+  try{
+    const[f,dna]=await Promise.all([fetch_('/cognitive/forecast').catch(()=>null),fetch_('/cognitive/dna').catch(()=>null)]);
+    if(f)forecast=f;
+    if(dna)dnaData=dna;
+    renderCognitive();
+  }catch{}
 }
 
-/* Correlation */
-function pearson(k1,k2){
-  if(hist.length<8)return 0;
-  const x=hist.map(h=>h[k1]||0),y=hist.map(h=>h[k2]||0),n=x.length;
-  const mx=x.reduce((s,v)=>s+v,0)/n,my=y.reduce((s,v)=>s+v,0)/n;
-  let num=0,sx=0,sy=0;
-  for(let i=0;i<n;i++){const dx=x[i]-mx,dy=y[i]-my;num+=dx*dy;sx+=dx*dx;sy+=dy*dy;}
-  return sx&&sy?num/Math.sqrt(sx*sy):0;
+async function loadBlackBox(){
+  try{const bb=await fetch_('/cognitive/blackbox');renderBlackBox(bb);}catch{}
 }
 
-/* Root cause engine */
+async function markIncident(){
+  const type=prompt('Incident type (OOM/CRASH/FREEZE/THERMAL/DISK_FULL):','MANUAL')||'MANUAL';
+  const desc=prompt('Describe what happened:','')||type;
+  try{
+    await fetch(API+`/cognitive/incident?incident_type=${type}&description=${encodeURIComponent(desc)}`,{method:'POST',headers:{'X-API-Key':apiKey}});
+    loadCognitive();
+    appendMsg('ai',`Incident recorded: "${desc}". The system will learn from this pattern. Next time it sees the same pre-conditions, it will warn you in advance.`);
+  }catch{appendMsg('ai','Could not record incident — backend may be offline.');}
+}
+
+function actOnPrediction(){
+  if(!activePredId)return;
+  fetch(API+'/cognitive/predictions/'+activePredId+'/acknowledge',{method:'POST',headers:{'X-API-Key':apiKey}}).catch(()=>{});
+  $('ch-in').value='What should I do right now to prevent this predicted failure?';
+  sendChat();
+}
+function dismissPrediction(){
+  $('pred-banner').style.display='none';
+  if(activePredId)fetch(API+'/cognitive/predictions/'+activePredId+'/acknowledge',{method:'POST',headers:{'X-API-Key':apiKey}}).catch(()=>{});
+  activePredId=null;
+}
+
+async function loadDevices(){
+  try{
+    const devs=await fetch_('/devices');
+    const list=$('dev-list');if(!list)return;
+    list.innerHTML=devs.map(d=>{const online=d.status==='online';const col=online?'var(--green)':'var(--red)';const active=selectedDevice===d.device_id?'active':'';return`<button class="dev-btn ${active}" onclick="selectDevice('${d.device_id}','${d.device_name}',event)"><span class="dev-dot" style="background:${col}"></span>${d.device_name}<span style="font-size:9px;color:var(--muted);margin-left:4px">${d.os}</span></button>`;}).join('');
+    const cnt=$('dev-count');if(cnt)cnt.textContent=`${devs.filter(d=>d.status==='online').length}/${devs.length} online`;
+  }catch{}
+}
+function selectDevice(id,name,evt){selectedDevice=id;document.querySelectorAll('.dev-btn').forEach(b=>b.classList.remove('active'));if(evt?.target)evt.target.closest('.dev-btn')?.classList.add('active');if(!id)$('dev-local')?.classList.add('active');}
+
+function temporal(key){if(hist.length<5)return{delta:0,trend:'stable',velocity:0};const v=hist.map(h=>h[key]||0),n=v.length;const delta=v[n-1]-v[Math.max(0,n-16)];let trend='stable';if(Math.abs(delta)>4)trend=delta>0?'rising':'falling';if(Math.abs(delta)>12)trend=delta>0?'spiking':'dropping';return{delta,trend,velocity:v[n-1]-v[Math.max(0,n-6)],now:v[n-1]};}
+function pearson(k1,k2){if(hist.length<8)return 0;const x=hist.map(h=>h[k1]||0),y=hist.map(h=>h[k2]||0),n=x.length;const mx=x.reduce((s,v)=>s+v,0)/n,my=y.reduce((s,v)=>s+v,0)/n;let num=0,sx=0,sy=0;for(let i=0;i<n;i++){const dx=x[i]-mx,dy=y[i]-my;num+=dx*dy;sx+=dx*dx;sy+=dy*dy;}return sx&&sy?num/Math.sqrt(sx*sy):0;}
+
 function rca(){
-  // Backend is source of truth — use its explain_and_act() output when available
-  if(snap.reason && snap.reason !== ''){
-    const sevMap={CRITICAL:'critical',HIGH:'critical',MEDIUM:'warning',LOW:'ok'};
-    const cMap={CRITICAL:'var(--red)',HIGH:'var(--orange)',MEDIUM:'var(--yellow)',LOW:'var(--green)'};
-    const iMap={CRITICAL:'⚠',HIGH:'◉',MEDIUM:'◐',LOW:'✓'};
-    const sev=snap.severity||'LOW';
-    const actions=snap.actions||[];
-    return{
-      title:snap.reason,
-      desc:actions.filter(a=>a!=='No action needed').join(' · ')||'Operating within baseline parameters.',
-      chain:[],
-      action:actions[0]&&actions[0]!=='No action needed'?{t:actions[0],c:cMap[sev],i:iMap[sev]}:null,
-      conf:sev==='CRITICAL'?0.88:sev==='HIGH'?0.80:sev==='MEDIUM'?0.70:0.95,
-      sev:sevMap[sev]||'ok',
-    };
-  }
-
-  // Fallback: local inference (used when backend is offline / demo mode)
-  const s=snap,cpu=s.cpu_percent,mem=s.memory,ens=s.ensemble_score;
-  const if_=s.if_score,vae=s.vae_score,lstm=s.lstm_score;
-  const procs=s.processes?.by_cpu||[];
-  const top=procs[0]||{name:'unknown',cpu:0,mem:0,pid:'?'};
-  const tC=temporal('cpu_percent'),tM=temporal('memory'),tE=temporal('ensemble_score');
-
-  if(ens>0.7){
-    if(if_>0.5&&vae>0.5&&lstm>0.5){
-      return{title:`Multi-model anomaly — ${top.name} likely driver`,desc:`Statistical outlier (IF=${if_.toFixed(2)}), pattern deviation (VAE=${vae.toFixed(2)}), and time-series break (LSTM=${lstm.toFixed(2)}) all elevated together. High-confidence genuine event. ${top.name} at ${top.cpu.toFixed(1)}% CPU accounts for ${(top.cpu/(cpu||1)*100).toFixed(0)}% of total load.`,chain:[{l:top.name,c:'var(--red)'},{arrow:true},{l:'CPU pressure',c:'var(--red)'},{arrow:true},{l:'All 3 models',c:'var(--red)'}],action:{t:`Investigate ${top.name} (PID ${top.pid}). Check logs, profile the process, or consider restart.`,c:'var(--red)',i:'⚡'},conf:.88,sev:'critical'};
-    }
-    if(vae>if_*1.4&&vae>lstm*1.4){
-      return{title:'Pattern anomaly — structural shift, not a spike',desc:`VAE reconstruction high (${vae.toFixed(2)}) but IF and LSTM are lower (${if_.toFixed(2)}, ${lstm.toFixed(2)}). The feature proportions look unusual but the sequence is normal. Likely a new workload type or config change — not a transient spike.`,chain:[{l:'Feature ratio shift',c:'var(--accent)'},{arrow:true},{l:'VAE confused',c:'var(--accent)'},{l:'IF+LSTM normal',c:'var(--green)'}],action:{t:'Check for recent deployments or config changes. Not urgent — no time-series anomaly.',c:'var(--yellow)',i:'◐'},conf:.74,sev:'warning'};
-    }
-    if(lstm>if_*1.4&&lstm>vae*1.4){
-      return{title:'Temporal break — abnormal sequence, normal values',desc:`LSTM detects an unusual time-sequence (${lstm.toFixed(2)}) but VAE and IF are lower (${vae.toFixed(2)}, ${if_.toFixed(2)}). Something changed abruptly in how metrics evolved, but current absolute values are normal. Could be a service restart or batch job.`,chain:[{l:'Abrupt change',c:'var(--yellow)'},{arrow:true},{l:'LSTM error',c:'var(--yellow)'},{l:'VAE+IF OK',c:'var(--green)'}],action:{t:'Look for recent restarts, cron jobs, or deployments. Low urgency.',c:'var(--yellow)',i:'◑'},conf:.71,sev:'warning'};
-    }
-  }
-
-  if(ens>0.4){
-    if(cpu>70&&tC.trend==='rising'){
-      return{title:`CPU pressure building — ${top.name} driving it`,desc:`CPU at ${cpu.toFixed(1)}% and trending +${tC.delta.toFixed(1)}% over 30s. ${top.name} (${top.cpu.toFixed(1)}%) is responsible for ${(top.cpu/(cpu||1)*100).toFixed(0)}% of load. Anomaly at ${ens.toFixed(3)} — elevated but not critical yet.`,chain:[{l:top.name,c:'var(--yellow)'},{arrow:true},{l:'CPU rising',c:'var(--yellow)'},{arrow:true},{l:'Anomaly elevated',c:'var(--yellow)'}],action:{t:`Monitor ${top.name}. If CPU exceeds 85%, consider profiling or restart.`,c:'var(--yellow)',i:'◐'},conf:.78,sev:'warning'};
-    }
-    if(mem>75&&tM.trend==='rising'){
-      const memTop=[...procs].sort((a,b)=>b.mem-a.mem)[0]||top;
-      return{title:'Memory pressure — possible heap retention',desc:`Memory at ${mem.toFixed(1)}% and rising +${tM.delta.toFixed(1)}% over 30s. Rising memory without matching CPU increase is a classic leak pattern. ${memTop.name} uses most RAM at ${memTop.mem.toFixed(1)}%.`,chain:[{l:'Heap not freed',c:'var(--orange)'},{arrow:true},{l:'Memory rising',c:'var(--orange)'},{arrow:true},{l:'VAE detects shift',c:'var(--accent)'}],action:{t:`Check ${memTop.name} for memory leaks. Restart if memory exceeds 90%.`,c:'var(--orange)',i:'◈'},conf:.72,sev:'warning'};
-    }
-    return{title:'Elevated activity — models partially diverge',desc:`Anomaly ${ens.toFixed(3)}: IF=${if_.toFixed(2)}, VAE=${vae.toFixed(2)}, LSTM=${lstm.toFixed(2)}. Models disagree slightly — likely normal workload variance or warming-up phase. No dominant cause identified.`,chain:[],action:{t:'Continue monitoring. No action required unless trend continues upward.',c:'var(--blue)',i:'◉'},conf:.65,sev:'elevated'};
-  }
-
-  return{title:'System Normal',desc:`All three ML models agree: IF=${if_.toFixed(2)}, VAE=${vae.toFixed(2)}, LSTM=${lstm.toFixed(2)}. Operating within learned baseline. No anomalous process, pattern, or time-sequence detected.`,chain:[],action:null,conf:.95,sev:'ok'};
+  if(snap.reason&&snap.reason!==''){const sevMap={CRITICAL:'critical',HIGH:'critical',MEDIUM:'warning',LOW:'ok'};const cMap={CRITICAL:'var(--red)',HIGH:'var(--orange)',MEDIUM:'var(--yellow)',LOW:'var(--green)'};const iMap={CRITICAL:'⚠',HIGH:'◉',MEDIUM:'◐',LOW:'✓'};const sev=snap.severity||'LOW',actions=snap.actions||[];return{title:snap.reason,desc:actions.filter(a=>a!=='No action needed').join(' · ')||'Operating within baseline.',chain:[],action:actions[0]&&actions[0]!=='No action needed'?{t:actions[0],c:cMap[sev],i:iMap[sev]}:null,conf:sev==='CRITICAL'?0.88:sev==='HIGH'?0.80:sev==='MEDIUM'?0.70:0.95,sev:sevMap[sev]||'ok'};}
+  const s=snap,cpu=s.cpu_percent,mem=s.memory,ens=s.ensemble_score,if_=s.if_score,vae=s.vae_score,lstm=s.lstm_score;
+  const procs=s.processes?.by_cpu||[],top=procs[0]||{name:'unknown',cpu:0,mem:0,pid:'?'};
+  if(ens>0.7&&if_>0.5&&vae>0.5&&lstm>0.5)return{title:`Multi-model anomaly — ${top.name} likely driver`,desc:`All three models elevated. ${top.name} at ${(top.cpu||0).toFixed(1)}% CPU.`,chain:[{l:top.name,c:'var(--red)'},{arrow:true},{l:'All 3 models',c:'var(--red)'}],action:{t:`Investigate ${top.name}`,c:'var(--red)',i:'⚡'},conf:.88,sev:'critical'};
+  if(ens>0.4&&cpu>70)return{title:`CPU pressure — ${top.name} driving it`,desc:`CPU at ${(cpu||0).toFixed(1)}% trending ${temporal('cpu_percent').trend}.`,chain:[{l:top.name,c:'var(--yellow)'},{arrow:true},{l:'CPU rising',c:'var(--yellow)'}],action:{t:`Monitor ${top.name}`,c:'var(--yellow)',i:'◐'},conf:.78,sev:'warning'};
+  return{title:'System Normal',desc:`IF=${(if_||0).toFixed(2)}, VAE=${(vae||0).toFixed(2)}, LSTM=${(lstm||0).toFixed(2)}. All within baseline.`,chain:[],action:null,conf:.95,sev:'ok'};
 }
 
-/* Render */
 const $=id=>document.getElementById(id);
 const col=v=>v>80?'var(--red)':v>60?'var(--yellow)':'var(--green)';
 const arr=t=>({rising:'↑',spiking:'↑↑',falling:'↓',dropping:'↓↓',stable:'→'}[t]||'→');
 const tc=t=>({rising:'var(--yellow)',spiking:'var(--red)',falling:'var(--blue)',dropping:'var(--blue)',stable:'var(--muted)'}[t]||'var(--muted)');
 
 function render(){
-  const s=snap, now=new Date();
+  const s=snap,now=new Date();
   $('tb-time').textContent=now.toLocaleTimeString('en-US',{hour12:false});
 
-  // === Severity Banner (backend-driven) ===
+  // Health credit score
+  const hcs=s.health_credit_score;
+  if(hcs!=null){
+    const hcol=hcs>=700?'var(--green)':hcs>=500?'var(--yellow)':hcs>=350?'var(--orange)':'var(--red)';
+    $('hs-number').textContent=hcs; $('hs-number').style.color=hcol;
+    $('hs-grade').textContent=s.health_grade||'—'; $('hs-grade').style.color=hcol;
+    $('hs-bar').style.width=(hcs/10)+'%'; $('hs-bar').style.background=hcol;
+  }
+
+  // Prediction banner
+  const pred=s.active_prediction;
+  if(pred&&!pred.acknowledged){
+    activePredId=pred.id;
+    $('pred-banner').style.display='block';
+    $('pred-title').textContent=`${pred.type} failure predicted — ${Math.ceil(pred.eta_min||0)} minutes`;
+    $('pred-desc').textContent=pred.message||'';
+    $('pred-eta').textContent=Math.ceil(pred.eta_min||0);
+    $('pred-conf').textContent=`${pred.confidence||0}% confidence`;
+    $('pred-action-text').textContent=pred.action||'';
+  }else if(!pred){$('pred-banner').style.display='none';}
+
+  // Severity banner
   const sevCols={LOW:'var(--green)',MEDIUM:'var(--yellow)',HIGH:'var(--orange)',CRITICAL:'var(--red)'};
   const sevIcons={LOW:'✓',MEDIUM:'◐',HIGH:'◉',CRITICAL:'⚠'};
   const sevBg={LOW:'rgba(52,211,153,.05)',MEDIUM:'rgba(251,191,36,.06)',HIGH:'rgba(251,146,60,.07)',CRITICAL:'rgba(248,113,113,.09)'};
   const sevBorder={LOW:'rgba(52,211,153,.3)',MEDIUM:'rgba(251,191,36,.3)',HIGH:'rgba(251,146,60,.35)',CRITICAL:'rgba(248,113,113,.5)'};
-  const sev=s.severity||'LOW', sevC=sevCols[sev]||'var(--green)';
-  const banner=$('sev-banner');
-  banner.style.borderColor=sevBorder[sev]; banner.style.background=sevBg[sev];
+  const sev=s.severity||'LOW',sevC=sevCols[sev]||'var(--green)';
+  $('sev-banner').style.borderColor=sevBorder[sev]; $('sev-banner').style.background=sevBg[sev];
   $('sev-icon').textContent=sevIcons[sev]||'✓';
   $('sev-level').textContent=`${sev} — ${s.reason||'System stable'}`; $('sev-level').style.color=sevC;
   $('sev-reason').textContent=`Anomaly: ${(s.ensemble_score||0).toFixed(3)} · CPU: ${(s.cpu_percent||0).toFixed(1)}% · Mem: ${(s.memory||0).toFixed(1)}%`;
   const acts=s.actions||[];
   $('sev-actions').innerHTML=acts.length&&acts[0]!=='No action needed'?acts.map(a=>`<div style="color:${sevC};margin-bottom:2px">→ ${a}</div>`).join(''):'<span style="color:var(--muted)">No action needed</span>';
 
-  const mkeys=[['cpu','cpu_percent',s.cpu_percent,'Normal','Elevated','Critical'],['mem','memory',s.memory,'Normal','Moderate','High usage'],['disk','disk_percent',s.disk_percent,'Normal','Heavy I/O','Saturated'],['health','health_score',s.health_score,'All ok','Fair','Degraded']];
-  mkeys.forEach(([id,key,val,ok,mid,bad])=>{
-    const v=id==='health'?100-val+20:val;
-    const c=col(v);
+  // Metrics
+  [['cpu','cpu_percent',s.cpu_percent,'Normal','Elevated','Critical'],['mem','memory',s.memory,'Normal','Moderate','High usage'],['disk','disk_percent',s.disk_percent,'Normal','Heavy I/O','Saturated'],['health','health_score',s.health_score,'All ok','Fair','Degraded']].forEach(([id,key,val,ok,mid,bad])=>{
+    if(val==null)return;
+    const v=id==='health'?100-val+20:val,c=col(v);
     $('v-'+id).textContent=val.toFixed(1)+'%'; $('v-'+id).style.color=c;
     $('b-'+id).style.width=Math.min(100,val).toFixed(0)+'%'; $('b-'+id).style.background=c;
     $('s-'+id).textContent=val>(id==='health'?80:60)?val>(id==='health'?90:80)?bad:mid:ok;
-    const t=temporal(key);
-    const de=$('d-'+id);
-    if(Math.abs(t.delta)>0.4){
-      const sign=t.delta>0?'+':'';
-      const isHealth=id==='health';
-      de.textContent=`${arr(t.trend)} ${sign}${t.delta.toFixed(1)}% / 30s`;
-      de.style.color=isHealth?(t.delta<0?'var(--red)':'var(--green)'):tc(t.trend);
-    }else{de.textContent='→ stable';de.style.color='var(--muted)';}
+    const t=temporal(key),de=$('d-'+id),isH=id==='health';
+    if(Math.abs(t.delta)>0.4){de.textContent=`${arr(t.trend)} ${t.delta>0?'+':''}${t.delta.toFixed(1)}% / 30s`;de.style.color=isH?(t.delta<0?'var(--red)':'var(--green)'):tc(t.trend);}
+    else{de.textContent='→ stable';de.style.color='var(--muted)';}
   });
 
-  const hb=$('tb-badge');
-  if(s.health_score<60){hb.textContent='DEGRADED';hb.style.color='var(--red)';hb.style.borderColor='rgba(248,113,113,.3)';hb.style.background='rgba(248,113,113,.07)';}
-  else if(s.health_score<80){hb.textContent='FAIR';hb.style.color='var(--yellow)';hb.style.borderColor='rgba(251,191,36,.3)';hb.style.background='rgba(251,191,36,.07)';}
+  const hb=$('tb-badge'),sc=s.health_score||100;
+  if(sc<60){hb.textContent='DEGRADED';hb.style.color='var(--red)';hb.style.borderColor='rgba(248,113,113,.3)';hb.style.background='rgba(248,113,113,.07)';}
+  else if(sc<80){hb.textContent='FAIR';hb.style.color='var(--yellow)';hb.style.borderColor='rgba(251,191,36,.3)';hb.style.background='rgba(251,191,36,.07)';}
   else{hb.textContent='OPTIMAL';hb.style.color='var(--green)';hb.style.borderColor='rgba(52,211,153,.3)';hb.style.background='rgba(52,211,153,.07)';}
 
-  /* RCA */
+  // Forecast
+  if(forecast){
+    $('fc-summary').textContent=forecast.summary||'Analyzing…';
+    $('fc-conf').textContent=`${Math.round((forecast.confidence||0)*100)}% confidence`;
+    const rc={SAFE:'var(--green)',ELEVATED:'var(--blue)',HIGH:'var(--yellow)',CRITICAL:'var(--red)'};
+    $('fc-timeline').innerHTML=(forecast.points||[]).map(p=>{const c=rc[p.risk]||'var(--muted)';return`<div class="fc-bar-row"><div class="fc-time">+${p.t}m</div><div class="fc-track"><div class="fc-fill" style="width:${Math.min(100,p.memory||0)}%;background:${c}"></div></div><div class="fc-risk" style="color:${c}">${p.risk}</div></div>`;}).join('');
+  }
+
+  // RCA
   const r=rca();
   const sevStyles={ok:['rgba(52,211,153,.04)','rgba(52,211,153,.3)'],elevated:['rgba(96,165,250,.05)','rgba(96,165,250,.3)'],warning:['rgba(251,191,36,.06)','rgba(251,191,36,.4)'],critical:['rgba(248,113,113,.07)','rgba(248,113,113,.5)']};
-  const p=$('rca-panel');
-  p.style.background=sevStyles[r.sev][0]; p.style.borderColor=sevStyles[r.sev][1];
+  const p=$('rca-panel');p.style.background=sevStyles[r.sev][0];p.style.borderColor=sevStyles[r.sev][1];
   $('rca-icon').textContent=r.sev==='critical'?'⚠':r.sev==='warning'?'◐':r.sev==='elevated'?'◑':'✓';
   $('rca-title').textContent=r.title; $('rca-desc').textContent=r.desc;
-  $('rca-score').textContent=s.ensemble_score.toFixed(3);
+  $('rca-score').textContent=(s.ensemble_score||0).toFixed(3);
   $('rca-score').style.color=r.sev==='critical'?'var(--red)':r.sev==='warning'?'var(--yellow)':r.sev==='elevated'?'var(--blue)':'var(--green)';
   $('rca-ts').textContent=now.toLocaleTimeString('en-US',{hour12:false});
   const ch=$('rca-chain');
-  if(r.chain.length){ch.style.display='flex';ch.innerHTML=r.chain.map(n=>n.arrow?`<span class="chain-arrow">→</span>`:`<span class="chain-node" style="color:${n.c};border-color:${n.c}50">${n.l}</span>`).join('')+`<span class="rca-conf">confidence ${(r.conf*100).toFixed(0)}%</span>`;}else{ch.style.display='none';}
+  if(r.chain.length){ch.style.display='flex';ch.innerHTML=r.chain.map(n=>n.arrow?`<span class="chain-arrow">→</span>`:`<span class="chain-node" style="color:${n.c};border-color:${n.c}50">${n.l}</span>`).join('')+`<span class="rca-conf">confidence ${(r.conf*100).toFixed(0)}%</span>`;}else ch.style.display='none';
   const ac=$('rca-action');
-  if(r.action){ac.style.display='flex';ac.style.borderColor=r.action.c+'50';ac.innerHTML=`<span style="font-size:16px">${r.action.i}</span><span style="color:${r.action.c};font-size:12px">${r.action.t}</span>`;}else{ac.style.display='none';}
+  if(r.action){ac.style.display='flex';ac.style.borderColor=r.action.c+'50';ac.innerHTML=`<span style="font-size:16px">${r.action.i}</span><span style="color:${r.action.c};font-size:12px">${r.action.t}</span>`;}else ac.style.display='none';
 
-  /* Temporal trends */
-  const tks=[{key:'cpu_percent',lbl:'CPU',col:'var(--green)'},{key:'memory',lbl:'Memory',col:'var(--blue)'},{key:'ensemble_score',lbl:'Anomaly',col:'var(--yellow)'},{key:'health_score',lbl:'Health',col:'var(--accent)'}];
-  $('trend-list').innerHTML=tks.map(({key,lbl,col:vc})=>{
-    const t=temporal(key), sign=t.delta>0?'+':'', isH=key==='health_score';
+  // Trends
+  $('trend-list').innerHTML=[{key:'cpu_percent',lbl:'CPU'},{key:'memory',lbl:'Memory'},{key:'ensemble_score',lbl:'Anomaly'},{key:'health_score',lbl:'Health'}].map(({key,lbl})=>{
+    const t=temporal(key),sign=t.delta>0?'+':'',isH=key==='health_score';
     const cc=isH?(t.delta<0?'var(--red)':'var(--green)'):tc(t.trend);
-    return `<div class="trend-row">
-      <div class="trend-metric">${lbl}</div>
-      <div class="trend-arrow" style="color:${cc}">${arr(isH?{rising:'falling',falling:'rising',spiking:'dropping',dropping:'spiking',stable:'stable'}[t.trend]||t.trend:t.trend)}</div>
-      <div class="trend-change" style="color:${cc}">${sign}${t.delta.toFixed(1)}%</div>
-      <div class="trend-bar"><div class="trend-fill" style="width:${Math.min(100,Math.abs(t.delta)*3).toFixed(0)}%;background:${cc}"></div></div>
-      <div class="trend-lbl" style="color:${cc}">${t.trend}</div>
-    </div>`;
+    return`<div class="trend-row"><div class="trend-metric">${lbl}</div><div class="trend-arrow" style="color:${cc}">${arr(isH?{rising:'falling',falling:'rising',spiking:'dropping',dropping:'spiking',stable:'stable'}[t.trend]||t.trend:t.trend)}</div><div class="trend-change" style="color:${cc}">${sign}${t.delta.toFixed(1)}%</div><div class="trend-bar"><div class="trend-fill" style="width:${Math.min(100,Math.abs(t.delta)*3).toFixed(0)}%;background:${cc}"></div></div><div class="trend-lbl" style="color:${cc}">${t.trend}</div></div>`;
   }).join('');
 
-  /* ML */
-  [['if',s.if_score,'var(--blue)'],['vae',s.vae_score,'var(--accent)'],['lstm',s.lstm_score,'var(--yellow)']].forEach(([id,v,c])=>{$(`mf-${id}`).style.width=(v*100).toFixed(0)+'%';$(`mf-${id}`).style.background=c;$(`mv-${id}`).textContent=v.toFixed(3);$(`mv-${id}`).style.color=c;});
-  const if_=s.if_score,vae=s.vae_score,lstm=s.lstm_score;
+  // ML
+  [['if',s.if_score,'var(--blue)'],['vae',s.vae_score,'var(--accent)'],['lstm',s.lstm_score,'var(--yellow)']].forEach(([id,v,c])=>{const val=v||0;$(`mf-${id}`).style.width=(val*100).toFixed(0)+'%';$(`mf-${id}`).style.background=c;$(`mv-${id}`).textContent=val.toFixed(3);$(`mv-${id}`).style.color=c;});
+  const if_=s.if_score||0,vae=s.vae_score||0,lstm=s.lstm_score||0;
   let interp='';
-  if(if_>0.5&&vae>0.5&&lstm>0.5)interp=`<span style="color:var(--red)">All three models elevated — high confidence genuine anomaly.</span>`;
-  else if(vae>if_*1.4&&vae>lstm*1.4)interp=`<span style="color:var(--accent)">VAE dominates → structural/pattern anomaly, not statistical outlier or sequence break.</span>`;
-  else if(lstm>if_*1.4&&lstm>vae*1.4)interp=`<span style="color:var(--yellow)">LSTM dominates → temporal break. Sequence abnormal but current absolute values may be normal.</span>`;
-  else if(if_>vae*1.4&&if_>lstm*1.4)interp=`<span style="color:var(--blue)">IF dominates → statistical outlier. Feature values unusual but pattern/sequence normal. May be transient.</span>`;
-  else if(Math.max(if_,vae,lstm)<0.25)interp=`<span style="color:var(--green)">All models low — system within learned baseline.</span>`;
-  else interp=`<span style="color:var(--muted)">Mixed signals — models partially disagree. Possible warming-up or transitional state.</span>`;
+  if(if_>0.5&&vae>0.5&&lstm>0.5)interp=`<span style="color:var(--red)">All three models elevated — genuine anomaly.</span>`;
+  else if(vae>if_*1.4&&vae>lstm*1.4)interp=`<span style="color:var(--accent)">VAE dominates → structural pattern anomaly.</span>`;
+  else if(lstm>if_*1.4&&lstm>vae*1.4)interp=`<span style="color:var(--yellow)">LSTM dominates → temporal sequence break.</span>`;
+  else if(if_>vae*1.4&&if_>lstm*1.4)interp=`<span style="color:var(--blue)">IF dominates → statistical outlier.</span>`;
+  else if(Math.max(if_,vae,lstm)<0.25)interp=`<span style="color:var(--green)">All models low — within learned baseline.</span>`;
+  else interp=`<span style="color:var(--muted)">Mixed signals — transitional state.</span>`;
   $('ml-interp').innerHTML=interp;
 
-  /* Processes */
-  const procs=s.processes?.by_cpu||[];
-  const maxC=Math.max(...procs.map(p=>p.cpu),1), totC=procs.reduce((s,p)=>s+p.cpu,0)||1;
+  // Processes
+  const procs=s.processes?.by_cpu||[],maxC=Math.max(...procs.map(p=>p.cpu),1),totC=procs.reduce((s,p)=>s+p.cpu,0)||1;
   $('proc-body').innerHTML=procs.slice(0,8).map(p=>{
     const cc=col(p.cpu),mc=col(p.mem);
     const flag=p.cpu>60?`<span class="badge" style="color:var(--red);border-color:rgba(248,113,113,.3)">HIGH CPU</span>`:p.mem>70?`<span class="badge" style="color:var(--yellow);border-color:rgba(251,191,36,.3)">HIGH MEM</span>`:`<span class="badge" style="color:var(--muted);border-color:var(--border)">OK</span>`;
-    return `<tr><td class="pname" style="color:var(--text)">${p.name}</td><td style="color:var(--muted)">${p.pid}</td><td style="color:${cc};font-weight:600">${p.cpu.toFixed(1)}%</td><td><div class="pbar"><div class="pbar-fill" style="width:${(p.cpu/maxC*100).toFixed(0)}%;background:${cc}"></div></div></td><td style="color:${mc}">${p.mem.toFixed(1)}%</td><td style="color:var(--muted);font-family:var(--mono)">${(p.cpu/totC*100).toFixed(0)}%</td><td>${flag}</td></tr>`;
+    return`<tr><td class="pname" style="color:var(--text)">${p.name}</td><td style="color:var(--muted)">${p.pid}</td><td style="color:${cc};font-weight:600">${(p.cpu||0).toFixed(1)}%</td><td><div class="pbar"><div class="pbar-fill" style="width:${(p.cpu/maxC*100).toFixed(0)}%;background:${cc}"></div></div></td><td style="color:${mc}">${(p.mem||0).toFixed(1)}%</td><td style="color:var(--muted);font-family:var(--mono)">${(p.cpu/totC*100).toFixed(0)}%</td><td>${flag}</td></tr>`;
   }).join('')||'<tr><td colspan="7" style="color:var(--muted);text-align:center;padding:14px">No data</td></tr>';
 
-  /* Correlations */
-  const pairs=[['cpu_percent','ensemble_score','CPU → Anomaly'],['memory','ensemble_score','Memory → Anomaly'],['cpu_percent','memory','CPU ↔ Memory'],['memory','health_score','Memory → Health']];
-  $('corr-list').innerHTML=pairs.map(([k1,k2,lbl])=>{
-    const r=pearson(k1,k2),abs=Math.abs(r),sign=r>0?'+':r<0?'−':'';
+  // Correlations
+  $('corr-list').innerHTML=[['cpu_percent','ensemble_score','CPU → Anomaly'],['memory','ensemble_score','Memory → Anomaly'],['cpu_percent','memory','CPU ↔ Memory'],['memory','health_score','Memory → Health']].map(([k1,k2,lbl])=>{
+    const rv=pearson(k1,k2),abs=Math.abs(rv),sign=rv>0?'+':rv<0?'−':'';
     const strength=abs>0.7?'strong':abs>0.4?'moderate':abs>0.2?'weak':'none';
     const c2=abs>0.6?'var(--red)':abs>0.35?'var(--yellow)':'var(--muted)';
-    return `<div style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px"><span style="color:var(--muted)">${lbl}</span><span style="font-family:var(--mono);color:${c2}">${sign}${abs.toFixed(2)} <span style="color:var(--muted)">${strength}</span></span></div><div style="height:3px;border-radius:2px;background:rgba(255,255,255,.05);overflow:hidden"><div style="height:100%;border-radius:2px;width:${(abs*100).toFixed(0)}%;background:${c2};transition:width .6s"></div></div></div>`;
+    return`<div style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px"><span style="color:var(--muted)">${lbl}</span><span style="font-family:var(--mono);color:${c2}">${sign}${abs.toFixed(2)} <span style="color:var(--muted)">${strength}</span></span></div><div style="height:3px;border-radius:2px;background:rgba(255,255,255,.05);overflow:hidden"><div style="height:100%;border-radius:2px;width:${(abs*100).toFixed(0)}%;background:${c2};transition:width .6s"></div></div></div>`;
   }).join('');
 
-  /* Alerts */
-  if(s.alerts?.length){
-    const crit=s.alerts.filter(a=>a.severity==='CRITICAL').length;
-    $('alert-badge').textContent=crit>0?`${crit} CRITICAL`:`${s.alerts.length} recent`;
-    $('alert-badge').style.color=crit>0?'var(--red)':'var(--muted)';
-    $('alert-list').innerHTML=s.alerts.slice(0,5).map(a=>{const ago=Math.round((Date.now()/1000-a.fired_at)/60);const ac=a.severity==='CRITICAL'?'var(--red)':a.severity==='WARNING'?'var(--yellow)':'var(--blue)';return`<div class="alert-row" style="border-color:${ac}"><div class="a-sev" style="color:${ac}">${a.severity}</div><div style="font-size:12px;color:#aaa;flex:1">${a.message}</div><div style="font-family:var(--mono);font-size:10px;color:var(--muted);white-space:nowrap">${ago}m ago</div></div>`;}).join('');
-  }else{$('alert-list').innerHTML='<div style="color:var(--muted);font-size:12px;text-align:center;padding:14px">No recent alerts</div>';$('alert-badge').textContent='0';}
+  // Alerts
+  if(s.alerts?.length){const crit=s.alerts.filter(a=>a.severity==='CRITICAL').length;$('alert-badge').textContent=crit>0?`${crit} CRITICAL`:`${s.alerts.length} recent`;$('alert-badge').style.color=crit>0?'var(--red)':'var(--muted)';$('alert-list').innerHTML=s.alerts.slice(0,5).map(a=>{const ago=Math.round((Date.now()/1000-a.fired_at)/60);const ac=a.severity==='CRITICAL'?'var(--red)':a.severity==='WARNING'?'var(--yellow)':'var(--blue)';return`<div class="alert-row" style="border-color:${ac}"><div class="a-sev" style="color:${ac}">${a.severity}</div><div style="font-size:12px;color:#aaa;flex:1">${a.message}</div><div style="font-family:var(--mono);font-size:10px;color:var(--muted);white-space:nowrap">${ago}m ago</div></div>`;}).join('');}
+  else{$('alert-list').innerHTML='<div style="color:var(--muted);font-size:12px;text-align:center;padding:14px">No recent alerts</div>';$('alert-badge').textContent='0';}
 
-  /* Infra */
-  $('st-ml').textContent=s.model_fitted?'FITTED':'WARMING'; $('st-ml').style.color=s.model_fitted?'var(--green)':'var(--yellow)';
+  // Infra
+  $('st-ml').textContent=s.model_fitted?'FITTED':'WARMING';$('st-ml').style.color=s.model_fitted?'var(--green)':'var(--yellow)';
   $('st-ml-s').textContent=`${(s.steps_lstm||0)+(s.steps_vae||0)} steps`;
-  $('st-redis').textContent=s.redis?.available?'UP':'—'; $('st-redis').style.color=s.redis?.available?'var(--green)':'var(--muted)';
-  $('st-db').textContent=s.db?.available?'UP':'—'; $('st-db').style.color=s.db?.available?'var(--green)':'var(--muted)';
+  $('st-redis').textContent=s.redis?.available?'UP':'—';$('st-redis').style.color=s.redis?.available?'var(--green)':'var(--muted)';
+  $('st-db').textContent=s.db?.available?'UP':'—';$('st-db').style.color=s.db?.available?'var(--green)':'var(--muted)';
   $('st-db-s').textContent=s.db?.available?`${s.db.alerts||0} alerts`:'SQLite';
   $('st-alerts').textContent=s.db?.alerts||'—';
   const up=Math.floor((Date.now()-startTime)/1000);
   $('st-uptime').textContent=`${String(Math.floor(up/3600)).padStart(2,'0')}:${String(Math.floor(up%3600/60)).padStart(2,'0')}:${String(up%60).padStart(2,'0')}`;
 }
 
-/* Chat */
+function renderCognitive(){
+  if(dnaData){
+    $('hs-patterns').textContent=dnaData.patterns||0;
+    $('hs-prevented').textContent=dnaData.prevented||0;
+    const patterns=dnaData.pattern_list||[];
+    if(patterns.length){
+      $('dna-list').innerHTML=patterns.map(p=>`<div class="dna-row"><div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-weight:600">${p.type}</span><span style="font-family:var(--mono);font-size:11px;color:var(--accent)">${p.accuracy}% accurate</span></div><div style="font-size:11px;color:var(--muted);margin-bottom:6px">${p.description}</div><div style="display:flex;gap:16px;font-size:11px;font-family:var(--mono)"><span style="color:var(--muted)">Seen: <span style="color:var(--text)">${p.seen}</span></span><span style="color:var(--muted)">Prevented: <span style="color:var(--green)">${p.prevented}</span></span><span style="color:var(--muted)">Lead time: <span style="color:var(--blue)">${p.lead_time}m</span></span></div></div>`).join('');
+    }
+  }
+  if(snap.health_credit_score!=null){
+    fetch_('/cognitive/health-score').then(d=>{
+      if(d.improvements?.length)$('hs-improve').innerHTML=d.improvements.map(i=>`<span style="color:var(--accent)">+${i.points}pts</span> ${i.action}`).join('<br>');
+    }).catch(()=>{});
+  }
+}
+
+function renderBlackBox(bb){
+  if(!bb)return;
+  const frames=bb.recent_frames||[],status=bb.status||{};
+  $('bb-status-lbl').textContent=`● ${status.coverage_minutes||0}min recorded · ${status.incidents_stored||0} incidents`;
+  if(frames.length){
+    $('bb-frames').innerHTML=frames.slice(-8).reverse().map(f=>{
+      const ago=Math.round((Date.now()/1000-f.timestamp)/60);
+      const c=f.severity==='CRITICAL'?'var(--red)':f.severity==='HIGH'?'var(--orange)':f.severity==='MEDIUM'?'var(--yellow)':'var(--border)';
+      return`<div class="bb-frame" style="border-color:${c}"><span style="color:var(--muted);width:40px;flex-shrink:0">${ago}m</span><span style="color:var(--muted);width:60px;flex-shrink:0">CPU ${(f.cpu||0).toFixed(0)}%</span><span style="color:var(--muted);width:60px;flex-shrink:0">MEM ${(f.memory||0).toFixed(0)}%</span><span style="flex:1;color:#aaa;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${f.reason||'—'}</span></div>`;
+    }).join('');
+  }
+}
+
 function buildCtx(){
-  const s=snap, r=rca();
-  const tC=temporal('cpu_percent'),tM=temporal('memory'),tE=temporal('ensemble_score'),tH=temporal('health_score');
-  const procs=(s.processes?.by_cpu||[]).slice(0,5);
-  return `LIVE SYSTEM CONTEXT ${new Date().toLocaleTimeString('en-US',{hour12:false})}:
-
-METRICS + TRENDS:
-- CPU: ${s.cpu_percent?.toFixed(1)}% | ${tC.trend} | Δ${tC.delta>0?'+':''}${tC.delta.toFixed(1)}% in 30s
-- Memory: ${s.memory?.toFixed(1)}% | ${tM.trend} | Δ${tM.delta>0?'+':''}${tM.delta.toFixed(1)}% in 30s
-- Health: ${s.health_score?.toFixed(1)}% | ${tH.trend}
-${offline?'- NOTE: Demo mode, simulated data\n':''}
-ML ANOMALY SIGNALS:
-- Ensemble: ${s.ensemble_score?.toFixed(3)} | Isolation Forest: ${s.if_score?.toFixed(3)} | β-VAE: ${s.vae_score?.toFixed(3)} | LSTM: ${s.lstm_score?.toFixed(3)}
-- Anomaly trend: ${tE.trend} | Δ${tE.delta>0?'+':''}${tE.delta.toFixed(3)} in 30s
-
-ROOT CAUSE ENGINE DIAGNOSIS:
-- "${r.title}"
-- ${r.desc}
-- Recommended action: ${r.action?.t||'none — system normal'}
-- Confidence: ${(r.conf*100).toFixed(0)}%
-
-CORRELATIONS (Pearson):
-- CPU↔Anomaly: r=${pearson('cpu_percent','ensemble_score').toFixed(2)}
-- Memory↔Anomaly: r=${pearson('memory','ensemble_score').toFixed(2)}
-- CPU↔Memory: r=${pearson('cpu_percent','memory').toFixed(2)}
-
-TOP PROCESSES:
-${procs.map(p=>`- ${p.name} PID=${p.pid}: CPU=${p.cpu.toFixed(1)}% MEM=${p.mem.toFixed(1)}%`).join('\n')}
-
-ALERTS: ${s.alerts?.length?s.alerts.slice(0,3).map(a=>`${a.severity}: ${a.message}`).join(' | '):'none'}`;
+  const s=snap,r=rca();
+  const tC=temporal('cpu_percent'),tM=temporal('memory'),tE=temporal('ensemble_score');
+  const pred=s.active_prediction,fc=forecast;
+  return `LIVE SYSTEM ${new Date().toLocaleTimeString('en-US',{hour12:false})}:
+HEALTH: ${s.health_credit_score||'?'}/1000 (${s.health_grade||'unknown'}) | SEVERITY: ${s.severity||'?'}
+CPU: ${(s.cpu_percent||0).toFixed(1)}% ${tC.trend} Δ${tC.delta>0?'+':''}${tC.delta.toFixed(1)}%/30s
+MEM: ${(s.memory||0).toFixed(1)}% ${tM.trend} Δ${tM.delta>0?'+':''}${tM.delta.toFixed(1)}%/30s
+ML: Ensemble=${(s.ensemble_score||0).toFixed(3)} IF=${(s.if_score||0).toFixed(3)} VAE=${(s.vae_score||0).toFixed(3)} LSTM=${(s.lstm_score||0).toFixed(3)}
+RCA: "${r.title}" — ${r.desc}
+${pred?`ACTIVE PREDICTION: ${pred.type} in ${Math.ceil(pred.eta_min||0)}min (${pred.confidence||0}% conf) — ${pred.message} → ${pred.action}`:'No active predictions.'}
+${fc?`FORECAST: ${fc.summary} | Direction: ${fc.direction} | Peak: ${fc.peak_risk}`:''}
+TOP PROCESSES: ${(s.processes?.by_cpu||[]).slice(0,4).map(p=>`${p.name}(${(p.cpu||0).toFixed(1)}%CPU,${(p.mem||0).toFixed(1)}%MEM)`).join(', ')}
+DNA: ${dnaData?.patterns||0} patterns, ${dnaData?.prevented||0} failures prevented`;
 }
 
 async function sendChat(){
-  const inp=$('ch-in'), msg=inp.value.trim();
-  if(!msg)return;
-  inp.value=''; $('ch-send').disabled=true;
-  appendMsg('user',msg);
-  const tid=appendTyping();
-  chatHistory.push({role:'user',content:msg});
+  const inp=$('ch-in'),msg=inp.value.trim();if(!msg)return;
+  inp.value='';$('ch-send').disabled=true;
+  appendMsg('user',msg);const tid=appendTyping();chatHistory.push({role:'user',content:msg});
   try{
-    const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:450,system:`You are the cognitive reasoning layer of an AIOps system called CVIS. You have live system data and a built-in root cause engine.\n\nReasoning style:\n- Cross-reference all three ML models (IF=statistical, VAE=pattern, LSTM=temporal) to explain what type of anomaly this is\n- Connect processes to metrics to anomaly scores — show causality\n- Use temporal trends to assess if situation is worsening or recovering\n- Be direct and actionable in 2-4 sentences\n- Use actual numbers and process names from context\n- When models disagree, explain what that means\n\n${buildCtx()}`,messages:chatHistory})});
-    if(!res.ok)throw new Error();
-    const d=await res.json(), reply=d.content[0].text;
-    chatHistory.push({role:'assistant',content:reply});
-    if(chatHistory.length>20)chatHistory=chatHistory.slice(-20);
-    removeTyping(tid); appendMsg('ai',reply);
+    const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:500,system:`You are the cognitive intelligence layer of CVIS — a system monitor that predicts failures before they happen. You have live metrics, ML signals, active failure predictions, 60-minute forecasts, and this machine's learned failure history.\n\nStyle:\n- Lead with the most important thing (prediction > problem > normal)\n- Connect metrics → causes → predictions — show the chain\n- Use actual numbers. Be direct: 2-4 sentences.\n- If a failure is predicted, make that your first sentence.\n- Speak like a knowledgeable friend.\n\n${buildCtx()}`,messages:chatHistory})});
+    if(!res.ok)throw new Error();const d=await res.json(),reply=d.content[0].text;
+    chatHistory.push({role:'assistant',content:reply});if(chatHistory.length>20)chatHistory=chatHistory.slice(-20);
+    removeTyping(tid);appendMsg('ai',reply);
   }catch{
     removeTyping(tid);
-    const r=rca(), s=snap, tC=temporal('cpu_percent'), tE=temporal('ensemble_score');
-    const lq=msg.toLowerCase();
-    let fallback='';
-    if(lq.includes('anomaly')||lq.includes('why')||lq.includes('cause'))fallback=`${r.title}. ${r.desc}${r.action?` → ${r.action.t}`:''}`;
-    else if(lq.includes('trend')||lq.includes('worsening'))fallback=`CPU ${tC.trend} (Δ${tC.delta.toFixed(1)}% / 30s), anomaly ${tE.trend}. ${tE.trend==='rising'||tE.trend==='spiking'?'Deteriorating — watch closely.':'No escalation detected.'}`;
-    else if(lq.includes('do')||lq.includes('action'))fallback=r.action?`${r.action.t} (${(r.conf*100).toFixed(0)}% confidence)`:'System normal — no action required.';
-    else if(lq.includes('ml')||lq.includes('signal'))fallback=`IF=${s.if_score?.toFixed(2)}, VAE=${s.vae_score?.toFixed(2)}, LSTM=${s.lstm_score?.toFixed(2)}. ${$('ml-interp').textContent}`;
-    else fallback=`${r.title}. Health ${s.health_score?.toFixed(0)}%, CPU ${s.cpu_percent?.toFixed(1)}%, Anomaly ${s.ensemble_score?.toFixed(3)}.`;
-    chatHistory.push({role:'assistant',content:fallback});
-    appendMsg('ai',fallback);
+    const r=rca(),s=snap,pred=s.active_prediction,lq=msg.toLowerCase();
+    let fb='';
+    if(pred&&(lq.includes('crash')||lq.includes('will')||lq.includes('predict')))fb=`${pred.message} — ${pred.action} (${pred.confidence}% confidence, ${Math.ceil(pred.eta_min||0)} min)`;
+    else if(lq.includes('forecast')||lq.includes('next'))fb=forecast?.summary||'Forecast not available yet.';
+    else if(lq.includes('why')||lq.includes('cause'))fb=`${r.title}. ${r.desc}${r.action?` → ${r.action.t}`:''}`;
+    else if(lq.includes('trend')||lq.includes('worsening')){const tE=temporal('ensemble_score');fb=`CPU ${temporal('cpu_percent').trend}, anomaly ${tE.trend}. ${tE.trend==='spiking'?'Deteriorating — act soon.':'No escalation detected.'}`;}
+    else if(lq.includes('do')||lq.includes('action'))fb=r.action?r.action.t:'System normal — no action required.';
+    else fb=`Health ${s.health_credit_score||'?'}/1000. ${r.title}. Severity: ${s.severity}.`;
+    chatHistory.push({role:'assistant',content:fb});appendMsg('ai',fb);
   }
   $('ch-send').disabled=false;
 }
@@ -629,6 +651,10 @@ $('ch-in').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.pre
 poll();
 setInterval(poll,POLL_MS);
 connectSSE();
+loadCognitive();
+setInterval(loadCognitive,30000);
+loadBlackBox();
+setInterval(loadBlackBox,60000);
 </script>
 </body>
 </html>
