@@ -24,7 +24,7 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-warning}
       - LOG_DIR=/app/logs
       - LOKI_URL=${LOKI_URL:-}
-      - ENV=${ENV:-prod}
+      - ENV=${ENV:-dev}
       - JWT_SECRET=${JWT_SECRET}
       - CVIS_API_KEY=${CVIS_API_KEY}
       - CVIS_ADMIN_USER=${CVIS_ADMIN_USER:-admin}
@@ -33,6 +33,7 @@ services:
       - JWT_REFRESH_TTL_S=${JWT_REFRESH_TTL_S:-604800}
       - REDIS_URL=redis://redis:6379/0
       - GUNICORN_WORKERS=${GUNICORN_WORKERS:-}
+      - DOCKER_CONTAINER=1
     volumes:
       - model_data:/app/model_versions
       - log_data:/app/logs
@@ -48,9 +49,14 @@ services:
       test: ["CMD", "python", "-c",
              "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 20s
+      timeout: 15s
+      retries: 5
+      start_period: 60s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     deploy:
       resources:
         limits:   { cpus: "4.0", memory: "4G" }
@@ -73,7 +79,7 @@ services:
     volumes:
       - letsencrypt:/etc/letsencrypt
       - certbot_www:/var/www/certbot
-      - ./frontend/ops:/usr/share/nginx/html
+      - ./frontend:/usr/share/nginx/html
       - nginx_log:/var/log/nginx
     networks:
       - cvis-internal
@@ -85,7 +91,12 @@ services:
       test: ["CMD", "wget", "-qO-", "http://localhost/nginx-health"]
       interval: 30s
       timeout: 5s
-      retries: 3
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
 
   # ── Redis ─────────────────────────────────────────────
   redis:
@@ -99,8 +110,6 @@ services:
         --save 60 100
         --appendonly yes
         --appendfilename "cvis.aof"
-   # ports:
-   #   - "127.0.0.1:6379:6379"
     volumes:
       - redis_data:/data
     networks:
@@ -109,7 +118,12 @@ services:
       test: ["CMD", "redis-cli", "ping"]
       interval: 20s
       timeout: 5s
-      retries: 3
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
     deploy:
       resources:
         limits:   { cpus: "0.5", memory: "512M" }
@@ -135,7 +149,7 @@ services:
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.path=/prometheus
-      - --storage.tsdb.retention.time=15d
+      - --storage.tsdb.retention.time=7d
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
@@ -147,7 +161,12 @@ services:
       test: ["CMD", "wget", "-qO-", "http://localhost:9090/-/healthy"]
       interval: 30s
       timeout: 5s
-      retries: 3
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
 
   # ── Grafana ───────────────────────────────────────────
   grafana:
@@ -169,6 +188,11 @@ services:
       - "127.0.0.1:3000:3000"
     depends_on:
       - prometheus
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
 
 volumes:
   model_data:

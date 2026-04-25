@@ -210,6 +210,16 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:1
     </div>
   </div>
 
+
+  <!-- Feedback Banner — appears after prediction resolves -->
+  <div id="feedback-banner" style="display:none;border-radius:8px;border:1px solid rgba(124,106,247,.3);background:rgba(124,106,247,.06);padding:12px 18px;display:none;align-items:center;gap:14px;font-size:12px">
+    <span style="font-size:18px">🎯</span>
+    <span style="flex:1;color:#bbb" id="feedback-text">Was our warning correct?</span>
+    <button onclick="sendFeedback(true)" style="font-size:11px;padding:4px 12px;border-radius:4px;border:1px solid rgba(52,211,153,.4);background:rgba(52,211,153,.08);color:var(--green);cursor:pointer;font-family:var(--sans)">✓ Yes, it was right</button>
+    <button onclick="sendFeedback(false)" style="font-size:11px;padding:4px 12px;border-radius:4px;border:1px solid rgba(248,113,113,.3);background:rgba(248,113,113,.07);color:var(--red);cursor:pointer;font-family:var(--sans)">✗ False alarm</button>
+    <button onclick="$('feedback-banner').style.display='none'" style="font-size:11px;padding:4px 10px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;font-family:var(--sans)">Skip</button>
+  </div>
+
   <!-- Severity Banner -->
   <div id="sev-banner" style="border-color:rgba(52,211,153,.3);background:rgba(52,211,153,.05)">
     <div id="sev-icon" style="font-size:26px;flex-shrink:0">✓</div>
@@ -373,6 +383,7 @@ async function poll(){
   }catch{offline=true;snap=demoSnap();$('conn-warn').style.display='block';$('live-dot').style.background='var(--yellow)';$('live-dot').style.boxShadow='0 0 8px var(--yellow)';}
   hist.push({...snap,t:Date.now()});if(hist.length>HISTORY_LEN)hist.shift();
   render();
+  checkPredictionExpiry();
   if(tickCount%10===0)loadCognitive();
 }
 

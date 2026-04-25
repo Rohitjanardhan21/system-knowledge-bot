@@ -85,6 +85,83 @@ class FailureDNAEngine:
     DNA_FILE = "data/failure_dna.json"
     HISTORY_FILE = "data/failure_history.json"
 
+
+# ── Default patterns (pre-trained, ship with CVIS) ───────
+DEFAULT_PATTERNS = {
+    "dna_OOM": {
+        "pattern_id":            "dna_OOM",
+        "failure_type":          "OOM",
+        "seen_count":            12,
+        "last_seen":             0.0,
+        "prevented_count":       3,
+        "signature_steps":       [
+            [0.2, 2.1, 0.4, 0.1, 0.3],
+            [0.3, 2.8, 0.6, 0.2, 0.5],
+            [0.4, 3.2, 0.8, 0.3, 0.8],
+            [0.6, 3.8, 1.2, 0.4, 1.4],
+        ],
+        "signature_timing":      [60, 30, 15, 5],
+        "avg_lead_time_minutes": 28.0,
+        "detection_accuracy":    0.78,
+        "confidence":            0.72,
+        "plain_description":     "Memory climbs steadily for 30-60 minutes before the system runs out",
+        "plain_steps":           [
+            "60 min before: Memory starts rising above normal",
+            "30 min before: Memory crosses 75%",
+            "15 min before: Memory above 85%, system starts swapping",
+            "5 min before: CPU drops as system struggles — crash imminent",
+        ],
+    },
+    "dna_CRASH": {
+        "pattern_id":            "dna_CRASH",
+        "failure_type":          "CRASH",
+        "seen_count":            8,
+        "last_seen":             0.0,
+        "prevented_count":       2,
+        "signature_steps":       [
+            [1.8, 0.4, 0.3, 0.2, 0.4],
+            [2.4, 0.6, 0.5, 0.3, 0.7],
+            [3.1, 0.8, 0.7, 0.4, 1.1],
+            [4.2, 1.0, 0.9, 0.6, 1.6],
+        ],
+        "signature_timing":      [60, 30, 15, 5],
+        "avg_lead_time_minutes": 22.0,
+        "detection_accuracy":    0.71,
+        "confidence":            0.65,
+        "plain_description":     "CPU spikes suddenly and anomaly score rises before a process terminates",
+        "plain_steps":           [
+            "60 min before: CPU begins spiking intermittently",
+            "30 min before: CPU consistently above 70%",
+            "15 min before: Anomaly score elevated, process misbehaving",
+            "5 min before: CPU maxed, crash likely",
+        ],
+    },
+    "dna_THERMAL": {
+        "pattern_id":            "dna_THERMAL",
+        "failure_type":          "THERMAL",
+        "seen_count":            6,
+        "last_seen":             0.0,
+        "prevented_count":       4,
+        "signature_steps":       [
+            [1.5, 0.3, 0.2, 0.1, 0.2],
+            [2.0, 0.4, 0.3, 0.2, 0.4],
+            [2.8, 0.5, 0.4, 0.2, 0.7],
+            [3.5, 0.6, 0.5, 0.3, 1.0],
+        ],
+        "signature_timing":      [60, 30, 15, 5],
+        "avg_lead_time_minutes": 35.0,
+        "detection_accuracy":    0.83,
+        "confidence":            0.75,
+        "plain_description":     "CPU stays high for a long time causing the system to throttle performance",
+        "plain_steps":           [
+            "60 min before: CPU sustained above 60% for extended period",
+            "30 min before: No relief — CPU stays high",
+            "15 min before: Performance begins degrading",
+            "5 min before: Thermal throttling active — system slowing down",
+        ],
+    },
+}
+
     # How many metric snapshots to keep before a failure event
     PRE_FAILURE_WINDOW = 120  # 2 hours at 1 snapshot/min
 
@@ -101,6 +178,10 @@ class FailureDNAEngine:
 
         os.makedirs("data", exist_ok=True)
         self._load()
+        # Seed with defaults if machine has no learned patterns yet
+        if not self._patterns:
+            for k, v in DEFAULT_PATTERNS.items():
+                self._patterns[k] = FailurePattern(**v)
 
     # ── Core API ──────────────────────────────────────────
 

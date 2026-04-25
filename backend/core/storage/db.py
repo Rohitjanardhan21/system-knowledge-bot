@@ -113,6 +113,12 @@ async def save_alert(alert) -> bool:
             )
         )
         await db.commit()
+        # Prune: keep only last 1000 alerts
+        await db.execute(
+            "DELETE FROM alerts WHERE id NOT IN "
+            "(SELECT id FROM alerts ORDER BY fired_at DESC LIMIT 1000)"
+        )
+        await db.commit()
         return True
     except Exception as e:
         log.error("save_alert: %s", e)
@@ -223,10 +229,14 @@ async def load_events(limit: int = 60) -> list[dict]:
 #  METRIC SNAPSHOTS  (sampled every 10s to keep DB small)
 # ─────────────────────────────────────────────────────────
 _last_snapshot_ts = 0.0
+_startup_ts = __import__("time").time()
+STARTUP_GRACE_S = 300  # 5 min warmup before saving snapshots
 
 async def maybe_save_snapshot(metrics: dict, interval_s: int = 10) -> bool:
     global _last_snapshot_ts
     now = time.time()
+    if now - _startup_ts < STARTUP_GRACE_S:  # warmup period
+        return False
     if now - _last_snapshot_ts < interval_s:
         return False
     _last_snapshot_ts = now

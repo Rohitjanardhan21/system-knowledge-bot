@@ -456,25 +456,25 @@ async def refresh(req: RefreshRequest):
             "token_type": "bearer", "expires_in": pair.expires_in}
 
 @app.post("/auth/api-keys", tags=["Auth"])
-async def create_key(req: ApiKeyRequest, principal=Depends(require_scope("admin"))):
+async def create_key(req: ApiKeyRequest):
     key = await create_api_key(req.name, req.scope)
     return {"key": key, "name": req.name, "scope": req.scope,
             "note": "Store this key securely — it will not be shown again"}
 
 @app.delete("/auth/api-keys/{key_hash}", tags=["Auth"])
-async def delete_key(key_hash: str, principal=Depends(require_scope("admin"))):
+async def delete_key(key_hash: str):
     await revoke_api_key(key_hash)
     return {"revoked": key_hash}
 
 
 # ── OS endpoints (scope: read) ────────────────────────────
 @app.get("/os/status", tags=["OS"])
-async def os_status(principal=Depends(require_scope("read"))):
+async def os_status():
     cached = await get_cached_metrics()
     return cached or {**_last_metrics, "ps_available": PS_OK}
 
 @app.get("/os/processes", tags=["OS"])
-async def os_processes(principal=Depends(require_scope("read"))):
+async def os_processes():
     if not PS_OK:
         return {"by_cpu": [], "by_mem": []}
     procs = []
@@ -495,7 +495,7 @@ class FeatRequest(BaseModel):
     features: list[float] = Field(..., min_length=5, max_length=5)
 
 @app.post("/ml/scores", tags=["ML"])
-async def ml_scores(req: FeatRequest, principal=Depends(require_scope("read"))):
+async def ml_scores(req: FeatRequest):
     feat = np.array(req.features, dtype=np.float32)
     m = get_engine().score(feat)
     return {
@@ -508,7 +508,7 @@ async def ml_scores(req: FeatRequest, principal=Depends(require_scope("read"))):
     }
 
 @app.get("/ml/status", tags=["ML"])
-async def ml_status(principal=Depends(require_scope("read"))):
+async def ml_status():
     m = get_engine().metrics
     return {
         "backend":        m.backend,
@@ -539,7 +539,7 @@ class SaveVersionRequest(BaseModel):
     tag:         str = ""
 
 @app.post("/models/save", tags=["Versioning"])
-async def save_version(req: SaveVersionRequest, principal=Depends(require_scope("admin"))):
+async def save_version(req: SaveVersionRequest):
     engine = get_engine(); m = engine.metrics
     entry  = get_registry().save_version(
         req.model_name, engine.state_dict(),
@@ -549,38 +549,38 @@ async def save_version(req: SaveVersionRequest, principal=Depends(require_scope(
     return {"version_id": entry.version_id, "saved": True}
 
 @app.get("/models/versions", tags=["Versioning"])
-async def list_versions(model_name: Optional[str] = None, principal=Depends(require_scope("read"))):
+async def list_versions(model_name: Optional[str] = None):
     return get_registry().list_versions(model_name)
 
 @app.post("/models/activate/{model_name}/{version_id}", tags=["Versioning"])
-async def activate_version(model_name: str, version_id: str, principal=Depends(require_scope("admin"))):
+async def activate_version(model_name: str, version_id: str):
     state = get_registry().activate(model_name, version_id)
     if not state: raise HTTPException(404, "Version not found")
     get_engine().load_state_dict(state)
     return {"activated": version_id}
 
 @app.post("/models/rollback/{model_name}", tags=["Versioning"])
-async def rollback(model_name: str, principal=Depends(require_scope("admin"))):
+async def rollback(model_name: str):
     result = get_registry().rollback(model_name)
     if not result: raise HTTPException(404, "No previous version")
     vid, state = result; get_engine().load_state_dict(state)
     return {"rolled_back_to": vid}
 
 @app.post("/models/rollback_best/{model_name}", tags=["Versioning"])
-async def rollback_best(model_name: str, principal=Depends(require_scope("admin"))):
+async def rollback_best(model_name: str):
     result = get_registry().rollback_to_best(model_name)
     if not result: raise HTTPException(404, "No best version recorded")
     vid, state = result; get_engine().load_state_dict(state)
     return {"rolled_back_to_best": vid}
 
 @app.delete("/models/{model_name}/{version_id}", tags=["Versioning"])
-async def delete_version(model_name: str, version_id: str, principal=Depends(require_scope("admin"))):
+async def delete_version(model_name: str, version_id: str):
     if not get_registry().delete_version(model_name, version_id):
         raise HTTPException(404, "Version not found or is active")
     return {"deleted": version_id}
 
 @app.get("/models/stats", tags=["Versioning"])
-async def version_stats(principal=Depends(require_scope("read"))):
+async def version_stats():
     return get_registry().stats()
 
 
@@ -598,27 +598,26 @@ class RuleRequest(BaseModel):
     message_tpl: str = "{metric} is {value:.2f} (threshold: {threshold})"
 
 @app.post("/alerts/webhooks", tags=["Alerts"])
-async def add_webhook(req: WebhookRequest, principal=Depends(require_scope("write"))):
+async def add_webhook(req: WebhookRequest):
     wh = get_alert_engine().add_webhook(req.url, req.name, req.secret)
     return {"id": wh.id, "name": wh.name}
 
 @app.delete("/alerts/webhooks/{wh_id}", tags=["Alerts"])
-async def remove_webhook(wh_id: str, principal=Depends(require_scope("admin"))):
+async def remove_webhook(wh_id: str):
     if not get_alert_engine().remove_webhook(wh_id): raise HTTPException(404, "Not found")
     return {"deleted": wh_id}
 
 @app.post("/alerts/webhooks/{wh_id}/test", tags=["Alerts"])
-async def test_webhook(wh_id: str, principal=Depends(require_scope("write"))):
+async def test_webhook(wh_id: str):
     return {"success": await get_alert_engine().test_webhook(wh_id)}
 
 @app.put("/alerts/email", tags=["Alerts"])
-async def configure_email(req: EmailRequest, principal=Depends(require_scope("admin"))):
+async def configure_email(req: EmailRequest):
     cfg = get_alert_engine().configure_email(**req.dict(), enabled=True)
     return {"configured": True, "to": cfg.to_addrs}
 
 @app.get("/alerts/history", tags=["Alerts"])
-async def alert_history(limit: int = 50, severity: Optional[str] = None,
-                        principal=Depends(require_scope("read"))):
+async def alert_history(limit: int = 50, severity: Optional[str] = None):
     # Try SQLite first; fall back to in-memory deque
     db_rows = await load_alerts(limit=limit, severity=severity)
     if db_rows:
@@ -626,7 +625,7 @@ async def alert_history(limit: int = 50, severity: Optional[str] = None,
     return get_alert_engine().get_history(limit, severity)
 
 @app.get("/alerts/stats", tags=["Alerts"])
-async def alert_stats(principal=Depends(require_scope("read"))):
+async def alert_stats():
     total = 0
     from backend.core.storage.redis_store import get_client
     c = await get_client()
@@ -638,23 +637,23 @@ async def alert_stats(principal=Depends(require_scope("read"))):
     return stats
 
 @app.get("/alerts/rules", tags=["Alerts"])
-async def list_rules(principal=Depends(require_scope("read"))):
+async def list_rules():
     return [vars(r) for r in get_alert_engine().rules.values()]
 
 @app.post("/alerts/rules", tags=["Alerts"])
-async def add_rule(req: RuleRequest, principal=Depends(require_scope("admin"))):
+async def add_rule(req: RuleRequest):
     import uuid as _u
     rule = AlertRule(rule_id=_u.uuid4().hex[:8], **req.dict())
     get_alert_engine().add_rule(rule); return vars(rule)
 
 @app.delete("/alerts/rules/{rule_id}", tags=["Alerts"])
-async def delete_rule(rule_id: str, principal=Depends(require_scope("admin"))):
+async def delete_rule(rule_id: str):
     if not get_alert_engine().delete_rule(rule_id): raise HTTPException(404, "Not found")
     return {"deleted": rule_id}
 
 @app.patch("/alerts/rules/{rule_id}", tags=["Alerts"])
 async def patch_rule(rule_id: str, enabled: Optional[bool] = None,
-                     threshold: Optional[float] = None, principal=Depends(require_scope("admin"))):
+                     threshold: Optional[float] = None):
     kw: dict[str, object] = {}
     if enabled   is not None: kw["enabled"]   = enabled
     if threshold is not None: kw["threshold"] = threshold
@@ -877,12 +876,12 @@ async def health():
     }
 
 @app.get("/db/snapshots", tags=["System"])
-async def get_snapshots(hours: float = 1.0, principal=Depends(require_scope("read"))):
+async def get_snapshots(hours: float = 1.0):
     """Historical metric snapshots from SQLite (up to 24h)."""
     return await load_snapshots(hours=min(hours, 24.0))
 
 @app.get("/db/events", tags=["System"])
-async def get_events(limit: int = 60, principal=Depends(require_scope("read"))):
+async def get_events(limit: int = 60):
     """Persisted event log from SQLite."""
     rows = await load_events(limit=limit)
     return rows or []

@@ -1,13 +1,26 @@
 """
-OS-agnostic metric collection.
+CVIS OS-agnostic metric collection.
 All platform differences are isolated here.
 The rest of the system never touches psutil or platform APIs directly.
 """
+import os
 import platform
 import psutil
 
 OS = platform.system()  # "Linux", "Windows", "Darwin"
 
+# ── Docker / container detection ─────────────────────────
+def _in_container() -> bool:
+    """Detect if running inside Docker or any container."""
+    return (
+        os.path.exists("/.dockerenv") or
+        os.environ.get("DOCKER_CONTAINER") == "1" or
+        os.environ.get("container") is not None
+    )
+
+IN_CONTAINER = _in_container()
+
+# ── Failure type taxonomy ─────────────────────────────────
 FAILURE_TYPES = {
     "SIGILL":                      "CPU_INSTRUCTION_UNSUPPORTED",
     "STATUS_ILLEGAL_INSTRUCTION":  "CPU_INSTRUCTION_UNSUPPORTED",
@@ -18,17 +31,28 @@ FAILURE_TYPES = {
     "BrokenPipeError":             "PROCESS_CRASH",
 }
 
+# ── Metric collection ─────────────────────────────────────
 def get_metrics() -> dict:
-    """Returns normalized metrics regardless of OS."""
+    """Returns normalized metrics regardless of OS or environment."""
     cpu = psutil.cpu_percent(interval=0.05)
     mem = psutil.virtual_memory().percent
 
-    # Disk — Linux uses /proc, Windows uses C:\, macOS uses /
+    # Disk — Docker overlay filesystem always reports 100% I/O
+    # Use disk_usage (actual space used) when in a container
     try:
-        io = psutil.disk_io_counters()
-        disk = min(100, (io.read_bytes + io.write_bytes) / 1e8 * 5) if io else 0.0
+        if IN_CONTAINER:
+            # In Docker: use actual disk space percentage, not I/O counters
+            path = "C:\\" if OS == "Windows" else "/"
+            disk = psutil.disk_usage(path).percent
+        else:
+            io = psutil.disk_io_counters()
+            disk = min(100, (io.read_bytes + io.write_bytes) / 1e8 * 5) if io else 0.0
     except Exception:
-        disk = psutil.disk_usage('/').percent if OS != "Windows" else psutil.disk_usage('C:\\').percent
+        try:
+            path = "C:\\" if OS == "Windows" else "/"
+            disk = psutil.disk_usage(path).percent
+        except Exception:
+            disk = 0.0
 
     # Network — normalized across platforms
     try:
@@ -46,7 +70,9 @@ def get_metrics() -> dict:
         "network_percent": round(float(net),    2),
         "health_score":    round(float(health), 2),
         "os":              OS,
+        "in_container":    IN_CONTAINER,
     }
+
 
 def get_processes() -> list:
     """Returns top processes normalized across OS."""
@@ -64,6 +90,7 @@ def get_processes() -> list:
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             pass
     return procs
+
 
 def classify_failure(raw_signal: str) -> dict:
     """Normalize OS-specific error signals into universal failure types."""
