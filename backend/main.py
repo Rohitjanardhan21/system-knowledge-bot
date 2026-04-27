@@ -205,8 +205,8 @@ def _build_feature_vector():
         cpu  = psutil.cpu_percent(interval=0.05)
         mem  = psutil.virtual_memory().percent
         try:
-            d    = psutil.disk_io_counters()
-            disk = min(100, (d.read_bytes + d.write_bytes) / 1e8 * 5)
+            from backend.core.system_adapter import get_metrics as _gm
+            disk = _gm()["disk_percent"]
         except Exception:
             disk = 0.0
         try:
