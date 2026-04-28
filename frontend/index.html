@@ -361,6 +361,7 @@ const API='',POLL_MS=3000,HISTORY_LEN=60;
 const apiKey=localStorage.getItem('cvis_key')||'test123';
 const startTime=Date.now();
 let snap={},hist=[],offline=false,chatHistory=[],tickCount=0;
+let _lastPredId=null,_predShownAt=null;
 let selectedDevice=null,activePredId=null,forecast=null,dnaData=null;
 
 class AR{constructor(mu,p1,p2,s){this.mu=mu;this.p1=p1;this.p2=p2;this.s=s;this.v1=mu;this.v2=mu;}next(){const n=Math.sqrt(-2*Math.log(Math.random()))*Math.cos(2*Math.PI*Math.random());const v=Math.max(0,Math.min(100,this.mu+this.p1*(this.v1-this.mu)+this.p2*(this.v2-this.mu)+n*this.s));this.v2=this.v1;this.v1=v;return v;}}
@@ -368,6 +369,15 @@ const arC=new AR(35,.72,.14,4),arM=new AR(48,.80,.09,3),arD=new AR(28,.62,.18,2.
 function demoSnap(){const c=arC.next(),m=arM.next(),d=arD.next(),h=Math.max(50,100-Math.max(0,c-70)*.45-Math.max(0,m-65)*.3),a=Math.max(0,Math.min(1,(c-30)/130+(m-40)/160));return{cpu_percent:c,memory:m,disk_percent:d,health_score:h,ensemble_score:a,if_score:a*.9,vae_score:a*.85,lstm_score:a*.7,model_fitted:false,steps_lstm:0,steps_vae:0,redis:{available:false},db:{available:false,alerts:0},processes:{by_cpu:[{name:'python3',pid:1234,cpu:c*.32,mem:14.2},{name:'uvicorn',pid:1235,cpu:c*.18,mem:8.3},{name:'redis',pid:890,cpu:c*.05,mem:3.1},{name:'nginx',pid:456,cpu:c*.03,mem:1.9}]},alerts:[],reason:'Demo mode — backend offline',actions:['Start backend to enable live data'],severity:'LOW',health_credit_score:780,health_grade:'Good',active_prediction:null};}
 
 async function fetch_(p){const r=await fetch(API+p,{headers:{'X-API-Key':apiKey}});if(!r.ok)throw new Error(r.status);return r.json();}
+
+function checkPredictionExpiry(){
+  const pred=snap.active_prediction;
+  if(_lastPredId&&(!pred||pred.id!==_lastPredId)){
+    const fb=$('feedback-banner');
+    if(fb){$('feedback-text').textContent='Was the warning we sent correct?';fb.style.display='flex';setTimeout(()=>{fb.style.display='none';},30000);}
+  }
+  if(pred){_lastPredId=pred.id;_predShownAt=Date.now();}
+}
 
 async function poll(){
   if(tickCount%5===0)loadDevices();

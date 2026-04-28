@@ -898,3 +898,52 @@ if __name__ == "__main__":
     uvicorn.run("backend.main:app", host="0.0.0.0",
                 port=int(os.environ.get("PORT", 8000)),
                 reload=False, log_level="warning", access_log=False)
+
+# ── Multi-device agent endpoint ───────────────────────────
+from typing import Any
+
+_devices: dict = {}
+
+class DeviceMetricsPayload(BaseModel):
+    device_id:   str
+    device_name: str
+    os:          str
+    os_version:  str = ""
+    hostname:    str = ""
+    timestamp:   float
+    metrics:     dict
+    processes:   list = []
+
+@app.post("/devices/{device_id}/metrics", tags=["Devices"])
+async def receive_device_metrics(device_id: str, payload: DeviceMetricsPayload):
+    _devices[device_id] = {
+        **payload.dict(),
+        "last_seen": time.time(),
+        "status": "online",
+    }
+    return {"accepted": True, "device_id": device_id}
+
+@app.get("/devices", tags=["Devices"])
+async def list_devices():
+    now = time.time()
+    return [
+        {
+            "device_id":   dev_id,
+            "device_name": dev.get("device_name", "unknown"),
+            "os":          dev.get("os", "unknown"),
+            "hostname":    dev.get("hostname", ""),
+            "status":      "online" if now - dev.get("last_seen", 0) < 30 else "offline",
+            "last_seen_s": round(now - dev.get("last_seen", 0), 1),
+            "metrics":     dev.get("metrics", {}),
+            "processes":   dev.get("processes", []),
+        }
+        for dev_id, dev in _devices.items()
+    ]
+
+@app.get("/devices/{device_id}", tags=["Devices"])
+async def get_device(device_id: str):
+    if device_id not in _devices:
+        raise HTTPException(404, "Device not found")
+    dev = _devices[device_id]
+    age = time.time() - dev.get("last_seen", 0)
+    return {**dev, "status": "online" if age < 30 else "offline", "last_seen_s": round(age, 1)}
