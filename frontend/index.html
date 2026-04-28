@@ -421,7 +421,18 @@ async function markIncident(){
 function actOnPrediction(){
   if(!activePredId)return;
   fetch(API+'/cognitive/predictions/'+activePredId+'/acknowledge',{method:'POST',headers:{'X-API-Key':apiKey}}).catch(()=>{});
-  $('ch-in').value='What should I do right now to prevent this predicted failure?';
+  const pred=snap.active_prediction;
+  const type=pred?.type||'UNKNOWN';
+  const eta=Math.ceil(pred?.eta_min||0);
+  // Build a specific question based on failure type
+  const questions={
+    'OOM':   `Memory failure predicted in ${eta} minutes. CPU=${snap.cpu_percent?.toFixed(1)}% MEM=${snap.memory?.toFixed(1)}%. Top process: ${snap.processes?.by_cpu?.[0]?.name||'unknown'} using ${snap.processes?.by_cpu?.[0]?.mem?.toFixed(1)||'?'}% RAM. What exact commands should I run right now to prevent this?`,
+    'CRASH': `Process crash predicted in ${eta} minutes. CPU=${snap.cpu_percent?.toFixed(1)}%. Top process: ${snap.processes?.by_cpu?.[0]?.name||'unknown'} at ${snap.processes?.by_cpu?.[0]?.cpu?.toFixed(1)||'?'}% CPU. What exact steps should I take right now?`,
+    'THERMAL': `Thermal failure predicted in ${eta} minutes. CPU has been at ${snap.cpu_percent?.toFixed(1)}% for a sustained period. What should I do right now to prevent throttling or shutdown?`,
+    'DISK_FULL': `Disk full failure predicted in ${eta} minutes. Disk at ${snap.disk_percent?.toFixed(1)}%. What exact commands should I run to free space right now?`,
+    'DISK_IO_SATURATION': `Disk I/O saturated at ${snap.disk_percent?.toFixed(1)}% predicted to cause failure in ${eta} minutes. What should I do right now?`,
+  };
+  $('ch-in').value = questions[type] || `${type} failure predicted in ${eta} minutes. What exact steps should I take right now to prevent it?`;
   sendChat();
 }
 function dismissPrediction(){
