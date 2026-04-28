@@ -31,22 +31,22 @@ async def get_client():
     global _client
     if not REDIS_OK:
         return None
-    if _client is None:
-        try:
+    try:
+        if _client is None:
             _client = aioredis.from_url(
                 REDIS_URL,
                 decode_responses=True,
                 socket_connect_timeout=3,
                 socket_timeout=3,
-                retry_on_timeout=True,
+                retry_on_timeout=False,
                 max_connections=20,
             )
-            await _client.ping()
-            log.info("Redis connected: %s", REDIS_URL)
-        except Exception as e:
-            log.warning("Redis unavailable (%s) — falling back to in-memory", e)
-            _client = None
-    return _client
+        await _client.ping()
+        return _client
+    except Exception as e:
+        log.warning("Redis unavailable (%s) — falling back to in-memory", e)
+        _client = None
+        return None
 
 
 async def is_healthy() -> bool:

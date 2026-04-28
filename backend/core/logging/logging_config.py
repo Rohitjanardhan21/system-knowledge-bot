@@ -168,10 +168,18 @@ class CorrelationIDMiddleware(BaseHTTPMiddleware):
         # Inject into all log records for this request
         old_factory = logging.getLogRecordFactory()
         def _factory(*args, **kwargs):
-            record = old_factory(*args, **kwargs)
+            if getattr(_factory, '_in_call', False):
+                return old_factory(*args, **kwargs)
+            _factory._in_call = True
+            try:
+                record = old_factory(*args, **kwargs)
+            finally:
+                _factory._in_call = False
             record.correlation_id = cid
             return record
-        logging.setLogRecordFactory(_factory)
+        if not getattr(logging, '_cvis_factory_set', False):
+            logging.setLogRecordFactory(_factory)
+            logging._cvis_factory_set = True
 
         try:
             response = await call_next(request)
