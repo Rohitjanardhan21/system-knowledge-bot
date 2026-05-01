@@ -35,9 +35,11 @@ WORKDIR /app
 RUN mkdir -p /app/data && chown -R cvis:cvis /app/data
 
 COPY --chown=cvis:cvis backend/ ./backend/
+COPY --chown=cvis:cvis frontend/ ./frontend/
 
 # 🔥 Copy FULL backend (includes gunicorn_conf.py, main.py, etc.)
 COPY --chown=cvis:cvis backend/ ./backend/
+COPY --chown=cvis:cvis frontend/ ./frontend/
 
 # Ensure Python can resolve modules
 ENV PYTHONPATH=/app
@@ -56,4 +58,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
 EXPOSE 8000
 
 # 🔥 FINAL ENTRYPOINT (correct path)
-CMD ["gunicorn", "-c", "backend/gunicorn_conf.py", "backend.main:app"]
+CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]

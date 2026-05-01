@@ -205,8 +205,8 @@ def _build_feature_vector():
         cpu  = psutil.cpu_percent(interval=0.05)
         mem  = psutil.virtual_memory().percent
         try:
-            from backend.core.system_adapter import get_metrics as _gm
-            disk = _gm()["disk_percent"]
+            d    = psutil.disk_io_counters()
+            disk = min(100, (d.read_bytes + d.write_bytes) / 1e8 * 5)
         except Exception:
             disk = 0.0
         try:
@@ -456,25 +456,25 @@ async def refresh(req: RefreshRequest):
             "token_type": "bearer", "expires_in": pair.expires_in}
 
 @app.post("/auth/api-keys", tags=["Auth"])
-async def create_key(req: ApiKeyRequest):
+async def create_key(req: ApiKeyRequest, principal=Depends(require_scope("admin"))):
     key = await create_api_key(req.name, req.scope)
     return {"key": key, "name": req.name, "scope": req.scope,
             "note": "Store this key securely — it will not be shown again"}
 
 @app.delete("/auth/api-keys/{key_hash}", tags=["Auth"])
-async def delete_key(key_hash: str):
+async def delete_key(key_hash: str, principal=Depends(require_scope("admin"))):
     await revoke_api_key(key_hash)
     return {"revoked": key_hash}
 
 
 # ── OS endpoints (scope: read) ────────────────────────────
 @app.get("/os/status", tags=["OS"])
-async def os_status():
+async def os_status(principal=Depends(require_scope("read"))):
     cached = await get_cached_metrics()
     return cached or {**_last_metrics, "ps_available": PS_OK}
 
 @app.get("/os/processes", tags=["OS"])
-async def os_processes():
+async def os_processes(principal=Depends(require_scope("read"))):
     if not PS_OK:
         return {"by_cpu": [], "by_mem": []}
     procs = []
@@ -495,7 +495,7 @@ class FeatRequest(BaseModel):
     features: list[float] = Field(..., min_length=5, max_length=5)
 
 @app.post("/ml/scores", tags=["ML"])
-async def ml_scores(req: FeatRequest):
+async def ml_scores(req: FeatRequest, principal=Depends(require_scope("read"))):
     feat = np.array(req.features, dtype=np.float32)
     m = get_engine().score(feat)
     return {
@@ -508,7 +508,7 @@ async def ml_scores(req: FeatRequest):
     }
 
 @app.get("/ml/status", tags=["ML"])
-async def ml_status():
+async def ml_status(principal=Depends(require_scope("read"))):
     m = get_engine().metrics
     return {
         "backend":        m.backend,
@@ -539,7 +539,7 @@ class SaveVersionRequest(BaseModel):
     tag:         str = ""
 
 @app.post("/models/save", tags=["Versioning"])
-async def save_version(req: SaveVersionRequest):
+async def save_version(req: SaveVersionRequest, principal=Depends(require_scope("admin"))):
     engine = get_engine(); m = engine.metrics
     entry  = get_registry().save_version(
         req.model_name, engine.state_dict(),
@@ -549,38 +549,38 @@ async def save_version(req: SaveVersionRequest):
     return {"version_id": entry.version_id, "saved": True}
 
 @app.get("/models/versions", tags=["Versioning"])
-async def list_versions(model_name: Optional[str] = None):
+async def list_versions(model_name: Optional[str] = None, principal=Depends(require_scope("read"))):
     return get_registry().list_versions(model_name)
 
 @app.post("/models/activate/{model_name}/{version_id}", tags=["Versioning"])
-async def activate_version(model_name: str, version_id: str):
+async def activate_version(model_name: str, version_id: str, principal=Depends(require_scope("admin"))):
     state = get_registry().activate(model_name, version_id)
     if not state: raise HTTPException(404, "Version not found")
     get_engine().load_state_dict(state)
     return {"activated": version_id}
 
 @app.post("/models/rollback/{model_name}", tags=["Versioning"])
-async def rollback(model_name: str):
+async def rollback(model_name: str, principal=Depends(require_scope("admin"))):
     result = get_registry().rollback(model_name)
     if not result: raise HTTPException(404, "No previous version")
     vid, state = result; get_engine().load_state_dict(state)
     return {"rolled_back_to": vid}
 
 @app.post("/models/rollback_best/{model_name}", tags=["Versioning"])
-async def rollback_best(model_name: str):
+async def rollback_best(model_name: str, principal=Depends(require_scope("admin"))):
     result = get_registry().rollback_to_best(model_name)
     if not result: raise HTTPException(404, "No best version recorded")
     vid, state = result; get_engine().load_state_dict(state)
     return {"rolled_back_to_best": vid}
 
 @app.delete("/models/{model_name}/{version_id}", tags=["Versioning"])
-async def delete_version(model_name: str, version_id: str):
+async def delete_version(model_name: str, version_id: str, principal=Depends(require_scope("admin"))):
     if not get_registry().delete_version(model_name, version_id):
         raise HTTPException(404, "Version not found or is active")
     return {"deleted": version_id}
 
 @app.get("/models/stats", tags=["Versioning"])
-async def version_stats():
+async def version_stats(principal=Depends(require_scope("read"))):
     return get_registry().stats()
 
 
@@ -598,26 +598,27 @@ class RuleRequest(BaseModel):
     message_tpl: str = "{metric} is {value:.2f} (threshold: {threshold})"
 
 @app.post("/alerts/webhooks", tags=["Alerts"])
-async def add_webhook(req: WebhookRequest):
+async def add_webhook(req: WebhookRequest, principal=Depends(require_scope("write"))):
     wh = get_alert_engine().add_webhook(req.url, req.name, req.secret)
     return {"id": wh.id, "name": wh.name}
 
 @app.delete("/alerts/webhooks/{wh_id}", tags=["Alerts"])
-async def remove_webhook(wh_id: str):
+async def remove_webhook(wh_id: str, principal=Depends(require_scope("admin"))):
     if not get_alert_engine().remove_webhook(wh_id): raise HTTPException(404, "Not found")
     return {"deleted": wh_id}
 
 @app.post("/alerts/webhooks/{wh_id}/test", tags=["Alerts"])
-async def test_webhook(wh_id: str):
+async def test_webhook(wh_id: str, principal=Depends(require_scope("write"))):
     return {"success": await get_alert_engine().test_webhook(wh_id)}
 
 @app.put("/alerts/email", tags=["Alerts"])
-async def configure_email(req: EmailRequest):
+async def configure_email(req: EmailRequest, principal=Depends(require_scope("admin"))):
     cfg = get_alert_engine().configure_email(**req.dict(), enabled=True)
     return {"configured": True, "to": cfg.to_addrs}
 
 @app.get("/alerts/history", tags=["Alerts"])
-async def alert_history(limit: int = 50, severity: Optional[str] = None):
+async def alert_history(limit: int = 50, severity: Optional[str] = None,
+                        principal=Depends(require_scope("read"))):
     # Try SQLite first; fall back to in-memory deque
     db_rows = await load_alerts(limit=limit, severity=severity)
     if db_rows:
@@ -625,7 +626,7 @@ async def alert_history(limit: int = 50, severity: Optional[str] = None):
     return get_alert_engine().get_history(limit, severity)
 
 @app.get("/alerts/stats", tags=["Alerts"])
-async def alert_stats():
+async def alert_stats(principal=Depends(require_scope("read"))):
     total = 0
     from backend.core.storage.redis_store import get_client
     c = await get_client()
@@ -637,23 +638,23 @@ async def alert_stats():
     return stats
 
 @app.get("/alerts/rules", tags=["Alerts"])
-async def list_rules():
+async def list_rules(principal=Depends(require_scope("read"))):
     return [vars(r) for r in get_alert_engine().rules.values()]
 
 @app.post("/alerts/rules", tags=["Alerts"])
-async def add_rule(req: RuleRequest):
+async def add_rule(req: RuleRequest, principal=Depends(require_scope("admin"))):
     import uuid as _u
     rule = AlertRule(rule_id=_u.uuid4().hex[:8], **req.dict())
     get_alert_engine().add_rule(rule); return vars(rule)
 
 @app.delete("/alerts/rules/{rule_id}", tags=["Alerts"])
-async def delete_rule(rule_id: str):
+async def delete_rule(rule_id: str, principal=Depends(require_scope("admin"))):
     if not get_alert_engine().delete_rule(rule_id): raise HTTPException(404, "Not found")
     return {"deleted": rule_id}
 
 @app.patch("/alerts/rules/{rule_id}", tags=["Alerts"])
 async def patch_rule(rule_id: str, enabled: Optional[bool] = None,
-                     threshold: Optional[float] = None):
+                     threshold: Optional[float] = None, principal=Depends(require_scope("admin"))):
     kw: dict[str, object] = {}
     if enabled   is not None: kw["enabled"]   = enabled
     if threshold is not None: kw["threshold"] = threshold
@@ -876,33 +877,26 @@ async def health():
     }
 
 @app.get("/db/snapshots", tags=["System"])
-async def get_snapshots(hours: float = 1.0):
+async def get_snapshots(hours: float = 1.0, principal=Depends(require_scope("read"))):
     """Historical metric snapshots from SQLite (up to 24h)."""
     return await load_snapshots(hours=min(hours, 24.0))
 
 @app.get("/db/events", tags=["System"])
-async def get_events(limit: int = 60):
+async def get_events(limit: int = 60, principal=Depends(require_scope("read"))):
     """Persisted event log from SQLite."""
     rows = await load_events(limit=limit)
     return rows or []
 
 
-if __name__ == "__main__":
-    import uvicorn
-    print("=" * 60)
-    print("  CVIS v9.0 · dev server (single worker)")
-    print("  For production: gunicorn -c gunicorn_conf.py backend.main:app")
-    print(f"  psutil : {'✓' if PS_OK else '✗'}")
-    print("  Docs   : http://localhost:8000/docs")
-    print("=" * 60)
-    uvicorn.run("backend.main:app", host="0.0.0.0",
-                port=int(os.environ.get("PORT", 8000)),
-                reload=False, log_level="warning", access_log=False)
 
-# ── Multi-device agent endpoint ───────────────────────────
-from typing import Any
-
-_devices: dict = {}
+# ═══════════════════════════════════════════════════════════
+#  MULTI-DEVICE AGENT ENDPOINTS
+#  Lets remote machines push their metrics here.
+#  The agent (cvis_agent.py) calls POST /devices/{id}/metrics
+#  every 5 seconds. The dashboard reads GET /devices to show
+#  all connected machines in the device bar.
+# ═══════════════════════════════════════════════════════════
+_devices: dict = {}  # In-memory device store
 
 class DeviceMetricsPayload(BaseModel):
     device_id:   str
@@ -916,15 +910,17 @@ class DeviceMetricsPayload(BaseModel):
 
 @app.post("/devices/{device_id}/metrics", tags=["Devices"])
 async def receive_device_metrics(device_id: str, payload: DeviceMetricsPayload):
+    """Remote agent pushes metrics here every 5 seconds."""
     _devices[device_id] = {
         **payload.dict(),
         "last_seen": time.time(),
-        "status": "online",
+        "status":    "online",
     }
     return {"accepted": True, "device_id": device_id}
 
 @app.get("/devices", tags=["Devices"])
 async def list_devices():
+    """List all connected devices with their current status."""
     now = time.time()
     return [
         {
@@ -942,8 +938,166 @@ async def list_devices():
 
 @app.get("/devices/{device_id}", tags=["Devices"])
 async def get_device(device_id: str):
+    """Get a specific device's current metrics."""
     if device_id not in _devices:
         raise HTTPException(404, "Device not found")
     dev = _devices[device_id]
     age = time.time() - dev.get("last_seen", 0)
-    return {**dev, "status": "online" if age < 30 else "offline", "last_seen_s": round(age, 1)}
+    return {
+        **dev,
+        "status":      "online" if age < 30 else "offline",
+        "last_seen_s": round(age, 1),
+    }
+
+
+# ═══════════════════════════════════════════════════════════
+#  ONE-CLICK ACTION ENDPOINTS
+#  When the dashboard shows a warning, the user clicks
+#  "Fix it now" and these endpoints actually run the fix —
+#  clearing temp files, rotating logs, freeing disk space.
+#  No more "check disk usage" — it actually does it.
+# ═══════════════════════════════════════════════════════════
+try:
+    from backend.core.actions.action_executor import (
+        execute_action as _execute_action,
+        get_available_actions as _get_actions,
+    )
+    ACTIONS_OK = True
+except Exception as _ae:
+    log.warning("Action executor unavailable: %s", _ae)
+    ACTIONS_OK = False
+
+@app.get("/actions/available", tags=["Actions"])
+async def list_available_actions(failure_type: str = None):
+    """
+    List all one-click fix actions.
+    Pass failure_type (OOM, DISK_FULL, CRASH etc.) to get
+    actions relevant to a specific predicted failure.
+    """
+    if not ACTIONS_OK:
+        return []
+    return _get_actions(failure_type)
+
+@app.post("/actions/execute", tags=["Actions"])
+async def run_action(action_id: str):
+    """
+    Execute a one-click fix action.
+    Actions are safe by design — they only clean files and
+    report info, never kill processes automatically.
+    """
+    if not ACTIONS_OK:
+        return {"success": False, "error": "Action executor not available"}
+    # Run in thread pool so it doesn't block the event loop
+    result = await asyncio.get_event_loop().run_in_executor(
+        None, _execute_action, action_id
+    )
+    return result
+
+
+# ═══════════════════════════════════════════════════════════
+#  WEEKLY HEALTH REPORT ENDPOINT
+#  Returns a plain English summary of the last week.
+#  The tray agent and cron job use this to generate and
+#  send the Monday morning health report to the user.
+# ═══════════════════════════════════════════════════════════
+@app.get("/report/weekly", tags=["Reports"])
+async def weekly_health_report():
+    """
+    Generate a plain English weekly health report.
+    Shows health score, alert summary, DNA patterns, and
+    recommendations. Designed to be sent as a Monday email.
+    """
+    try:
+        from backend.core.reports.weekly_report import generate_report
+        report = generate_report(
+            f"http://localhost:{os.environ.get('PORT', 8000)}",
+            os.environ.get("CVIS_API_KEY", ""),
+        )
+        return {
+            "report":       report,
+            "generated_at": time.time(),
+            "format":       "plain_text",
+        }
+    except Exception as e:
+        return {"error": str(e), "report": "Report generation failed"}
+
+
+# ═══════════════════════════════════════════════════════════
+#  FRONTEND STATIC FILE SERVING
+#  Serves the dashboard and onboarding page directly from
+#  the backend when nginx is not present (e.g. Railway,
+#  Render single-container deployments).
+# ═══════════════════════════════════════════════════════════
+import os as _os_fe
+from fastapi.responses import FileResponse as _FR, HTMLResponse as _HR
+from fastapi.staticfiles import StaticFiles as _SS
+
+_FRONTEND_DIR = _os_fe.path.join(
+    _os_fe.path.dirname(_os_fe.path.dirname(_os_fe.path.abspath(__file__))),
+    "frontend"
+)
+
+if _os_fe.path.isdir(_FRONTEND_DIR):
+    @app.get("/", include_in_schema=False)
+    async def serve_dashboard():
+        """Serve the cognitive dashboard (index.html)."""
+        path = _os_fe.path.join(_FRONTEND_DIR, "index.html")
+        if _os_fe.path.exists(path):
+            return _FR(path)
+        return _HR("<h1>CVIS backend is running</h1><p>Frontend not found.</p>")
+
+    @app.get("/onboarding", include_in_schema=False)
+    async def serve_onboarding():
+        """Serve onboarding page for first-time visitors."""
+        path = _os_fe.path.join(_FRONTEND_DIR, "onboarding.html")
+        if _os_fe.path.exists(path):
+            return _FR(path)
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse("/")
+
+    # Serve all other frontend files (JS, CSS, images)
+    try:
+        app.mount(
+            "/assets",
+            _SS(_FRONTEND_DIR, html=False),
+            name="frontend-assets",
+        )
+    except Exception:
+        pass
+
+
+# ═══════════════════════════════════════════════════════════
+#  ENHANCED HEALTH ENDPOINT
+#  Adds health_credit_score, health_grade, and
+#  active_prediction to the /health response so the
+#  dashboard and tray agent get everything in one call.
+# ═══════════════════════════════════════════════════════════
+# Override the existing /health with an enhanced version
+# that includes cognitive data
+_original_health = health  # save reference
+
+@app.get("/health/full", tags=["System"])
+async def health_full():
+    """
+    Extended health endpoint — includes cognitive data.
+    Same as /health but also returns health_credit_score,
+    active_prediction, and health_grade.
+    """
+    base = await _original_health()
+    base["health_credit_score"] = _last_metrics.get("health_credit_score")
+    base["health_grade"]        = _last_metrics.get("health_grade")
+    base["active_prediction"]   = _last_metrics.get("active_prediction")
+    return base
+
+
+if __name__ == "__main__":
+    import uvicorn
+    print("=" * 60)
+    print("  CVIS v9.0 · dev server (single worker)")
+    print("  For production: gunicorn -c gunicorn_conf.py backend.main:app")
+    print(f"  psutil : {'✓' if PS_OK else '✗'}")
+    print("  Docs   : http://localhost:8000/docs")
+    print("=" * 60)
+    uvicorn.run("backend.main:app", host="0.0.0.0",
+                port=int(os.environ.get("PORT", 8000)),
+                reload=False, log_level="warning", access_log=False)
