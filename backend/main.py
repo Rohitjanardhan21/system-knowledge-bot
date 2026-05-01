@@ -114,6 +114,12 @@ def _collect():
                 "vae_loss_hist":  scores.vae_loss_hist[-30:],
                 "backend":        scores.backend,
             }
+            # Store explain result in shared metrics immediately
+            _exp = explain_and_act({**_last_metrics, **update})
+            update["severity"] = _exp["severity"]
+            update["reason"]   = _exp["reason"]
+            update["actions"]  = _exp["actions"]
+
             with _lock:
                 _last_metrics.update(update)
 
@@ -1000,26 +1006,7 @@ async def run_action(action_id: str):
 #  The tray agent and cron job use this to generate and
 #  send the Monday morning health report to the user.
 # ═══════════════════════════════════════════════════════════
-@app.get("/report/weekly", tags=["Reports"])
-async def weekly_health_report():
-    """
-    Generate a plain English weekly health report.
-    Shows health score, alert summary, DNA patterns, and
-    recommendations. Designed to be sent as a Monday email.
-    """
-    try:
-        from backend.core.reports.weekly_report import generate_report
-        report = generate_report(
-            f"http://localhost:{os.environ.get('PORT', 8000)}",
-            os.environ.get("CVIS_API_KEY", ""),
-        )
-        return {
-            "report":       report,
-            "generated_at": time.time(),
-            "format":       "plain_text",
-        }
-    except Exception as e:
-        return {"error": str(e), "report": "Report generation failed"}
+# weekly report route moved below
 
 
 # ═══════════════════════════════════════════════════════════
@@ -1090,7 +1077,7 @@ async def health_full():
     return base
 
 
-if __name__ == "__main__":
+#if __name__ == "__main__":
     import uvicorn
     print("=" * 60)
     print("  CVIS v9.0 · dev server (single worker)")
@@ -1101,3 +1088,137 @@ if __name__ == "__main__":
     uvicorn.run("backend.main:app", host="0.0.0.0",
                 port=int(os.environ.get("PORT", 8000)),
                 reload=False, log_level="warning", access_log=False)
+
+# ── Weekly Report ─────────────────────────────────────────
+@app.get("/report/weekly", tags=["Reports"])
+async def weekly_health_report():
+    from datetime import datetime
+    m = dict(_last_metrics)
+    # Try cognitive endpoint first, fall back to _last_metrics
+    score = m.get("health_credit_score") or 0
+    if score == 0 and COGNITIVE_OK:
+        try:
+            hs = get_dna_engine().get_health_score(m)
+            score = hs.get("score", 0)
+        except Exception: pass
+    severity = m.get("severity") or "UNKNOWN"
+    reason = m.get("reason") or ""
+
+    def _grade(s):
+        if s >= 800: return "Excellent"
+        if s >= 600: return "Good"
+        if s >= 400: return "Fair"
+        if s >= 200: return "Poor"
+        return "Critical"
+
+    bar = "█" * int(score/50) + "░" * (20 - int(score/50))
+
+    dna_section = ""
+    if COGNITIVE_OK:
+        try:
+            summary = get_dna_engine().get_dna_summary()
+            dna_section = f"  Failure DNA:\n  — {summary.get('patterns',0)} patterns learned\n  — {summary.get('prevented',0)} failures prevented"
+        except Exception: pass
+
+    fc_section = ""
+    if COGNITIVE_OK:
+        try:
+            fc = get_forecaster().forecast(m)
+            if fc:
+                fc_section = f"  Next 60 Minutes:\n  — {getattr(fc,'plain_summary',getattr(fc,'summary','Analyzing...'))}"
+        except Exception: pass
+
+    recs = []
+    if score < 400: recs.append("→ Health is low. Check disk space and processes.")
+    elif score < 700: recs.append("→ Health is fair. Monitor memory usage.")
+    else: recs.append("→ System is healthy. No action needed.")
+
+    week = datetime.now().strftime("%B %d, %Y")
+    report = f"""{"="*56}
+  CVIS Weekly Health Report — {week}
+{"="*56}
+
+  Health Score: {score}/1000 ({_grade(score)})
+  [{bar}]
+  Status: {severity} — {reason}
+
+{dna_section}
+
+{fc_section}
+
+  Recommendations:
+  {"  ".join(recs)}
+
+  Dashboard: http://localhost
+{"="*56}"""
+
+    return {"report": report, "generated_at": time.time(), "format": "plain_text"}
+
+
+# ── Devices ───────────────────────────────────────────────
+_devices: dict = {}
+
+class DeviceMetricsPayload(BaseModel):
+    device_id: str
+    device_name: str
+    os: str
+    os_version: str = ""
+    hostname: str = ""
+    timestamp: float
+    metrics: dict
+    processes: list = []
+
+@app.post("/devices/{device_id}/metrics", tags=["Devices"])
+async def receive_device_metrics(device_id: str, payload: DeviceMetricsPayload):
+    _devices[device_id] = {**payload.dict(), "last_seen": time.time(), "status": "online"}
+    return {"accepted": True, "device_id": device_id}
+
+@app.get("/devices", tags=["Devices"])
+async def list_devices():
+    now = time.time()
+    return [{"device_id": did, "device_name": d.get("device_name","unknown"), "os": d.get("os","unknown"), "hostname": d.get("hostname",""), "status": "online" if now - d.get("last_seen",0) < 30 else "offline", "last_seen_s": round(now - d.get("last_seen",0),1), "metrics": d.get("metrics",{}), "processes": d.get("processes",[])} for did, d in _devices.items()]
+
+@app.get("/devices/{device_id}", tags=["Devices"])
+async def get_device(device_id: str):
+    if device_id not in _devices:
+        raise HTTPException(404, "Device not found")
+    dev = _devices[device_id]
+    age = time.time() - dev.get("last_seen", 0)
+    return {**dev, "status": "online" if age < 30 else "offline", "last_seen_s": round(age, 1)}
+
+
+# ── Actions ───────────────────────────────────────────────
+try:
+    from backend.core.actions.action_executor import execute_action as _execute_action, get_available_actions as _get_actions
+    ACTIONS_OK = True
+except Exception as _ae:
+    ACTIONS_OK = False
+
+@app.get("/actions/available", tags=["Actions"])
+async def list_available_actions(failure_type: str = None):
+    if not ACTIONS_OK: return []
+    return _get_actions(failure_type)
+
+@app.post("/actions/execute", tags=["Actions"])
+async def run_action(action_id: str):
+    if not ACTIONS_OK: return {"success": False, "error": "Not available"}
+    result = await asyncio.get_event_loop().run_in_executor(None, _execute_action, action_id)
+    return result
+
+
+# ── Frontend serving ──────────────────────────────────────
+import os as _os_fe
+from fastapi.responses import FileResponse as _FR, HTMLResponse as _HR
+
+_FRONTEND = _os_fe.path.join(_os_fe.path.dirname(_os_fe.path.dirname(_os_fe.path.abspath(__file__))), "frontend")
+
+if _os_fe.path.isdir(_FRONTEND):
+    @app.get("/", include_in_schema=False)
+    async def serve_root():
+        p = _os_fe.path.join(_FRONTEND, "index.html")
+        return _FR(p) if _os_fe.path.exists(p) else _HR("<h1>CVIS running</h1>")
+
+    @app.get("/onboarding", include_in_schema=False)
+    async def serve_onboarding():
+        p = _os_fe.path.join(_FRONTEND, "onboarding.html")
+        return _FR(p) if _os_fe.path.exists(p) else _HR("<h1>CVIS</h1>")

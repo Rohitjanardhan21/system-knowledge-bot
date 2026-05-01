@@ -43,7 +43,9 @@ def get_metrics() -> dict:
         if IN_CONTAINER:
             # In Docker: use actual disk space percentage, not I/O counters
             path = "C:\\" if OS == "Windows" else "/"
-            disk = psutil.disk_usage(path).percent
+            raw = psutil.disk_usage(path).percent
+            # Cap at 95% — Docker overlay can report 100% even when host is fine
+            disk = min(raw, 95.0)
         else:
             io = psutil.disk_io_counters()
             disk = min(100, (io.read_bytes + io.write_bytes) / 1e8 * 5) if io else 0.0

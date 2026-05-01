@@ -22,9 +22,12 @@ DEFAULT_KEY    = "test123"
 
 def fetch(server, key, path):
     try:
-        r = requests.get(f"{server}{path}", headers={"X-API-Key": key}, timeout=10)
-        if r.status_code == 200:
-            return r.json()
+        req = urllib.request.Request(
+            f"{server}{path}",
+            headers={"X-API-Key": key} if key else {}
+        )
+        with urllib.request.urlopen(req, timeout=10) as r:
+            return _json.loads(r.read())
     except Exception:
         pass
     return None

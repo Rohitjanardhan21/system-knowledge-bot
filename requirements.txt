@@ -28,3 +28,4 @@ aiosqlite
 
 PyJWT
 
+requests
