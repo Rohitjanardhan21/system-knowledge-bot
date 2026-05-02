@@ -1,5 +1,8 @@
 # CVIS — Cognitive AIOps Engine
 
+> Note: Live demo runs on Render free tier — disk metric shows 100% due to 
+> container filesystem limits. Local/Docker installs show real disk usage.
+
 [![Live Demo](https://img.shields.io/badge/Live%20Demo-Render-green)](https://cvis-os-latest.onrender.com)
 [![Docker](https://img.shields.io/badge/Docker-rohitjanardhan%2Fcvis--os-blue)](https://hub.docker.com/r/rohitjanardhan/cvis-os)
 
