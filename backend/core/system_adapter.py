@@ -40,21 +40,12 @@ def get_metrics() -> dict:
     # Disk — Docker overlay filesystem always reports 100% I/O
     # Use disk_usage (actual space used) when in a container
     try:
-        if IN_CONTAINER:
-            # In Docker: use actual disk space percentage, not I/O counters
-            path = "C:\\" if OS == "Windows" else "/"
-            raw = psutil.disk_usage(path).percent
-            # Cap at 95% — Docker overlay can report 100% even when host is fine
-            disk = min(raw, 95.0)
-        else:
-            io = psutil.disk_io_counters()
-            disk = min(100, (io.read_bytes + io.write_bytes) / 1e8 * 5) if io else 0.0
+        # Always use actual disk space — disk_io_counters saturates at 100% on
+        # Docker overlay and VirtualBox shared folders, making it useless
+        _disk_path = "C:\\" if OS == "Windows" else "/"
+        disk = psutil.disk_usage(_disk_path).percent
     except Exception:
-        try:
-            path = "C:\\" if OS == "Windows" else "/"
-            disk = psutil.disk_usage(path).percent
-        except Exception:
-            disk = 0.0
+        disk = 0.0
 
     # Network — normalized across platforms
     try:
