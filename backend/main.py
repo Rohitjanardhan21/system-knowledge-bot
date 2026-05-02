@@ -624,6 +624,9 @@ async def configure_email(req: EmailRequest):
 
 @app.get("/alerts/history", tags=["Alerts"])
 async def alert_history(limit: int = 50, severity: Optional[str] = None):
+    import re
+    if severity and not re.match(r'^[A-Z_]+$', severity):
+        raise HTTPException(status_code=422, detail="Invalid severity value")
     # Try SQLite first; fall back to in-memory deque
     db_rows = await load_alerts(limit=limit, severity=severity)
     if db_rows:
