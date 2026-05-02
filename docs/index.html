@@ -1,0 +1,1167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CVIS — Cognitive AIOps Engine</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:        #080b0f;
+    --bg2:       #0d1117;
+    --bg3:       #111820;
+    --green:     #00ff9d;
+    --green-dim: #00cc7a;
+    --green-glow:#00ff9d33;
+    --red:       #ff4444;
+    --yellow:    #ffcc00;
+    --text:      #e2e8f0;
+    --muted:     #64748b;
+    --border:    #1e2d3d;
+    --mono:      'Space Mono', monospace;
+    --sans:      'Syne', sans-serif;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    overflow-x: hidden;
+    cursor: default;
+  }
+
+  /* ── NOISE OVERLAY ── */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 1000;
+    opacity: 0.4;
+  }
+
+  /* ── NAV ── */
+  nav {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    z-index: 100;
+    padding: 1.2rem 4rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border);
+    background: rgba(8,11,15,0.85);
+    backdrop-filter: blur(12px);
+  }
+
+  .nav-logo {
+    font-family: var(--mono);
+    font-size: 1.1rem;
+    color: var(--green);
+    letter-spacing: 0.1em;
+    text-decoration: none;
+  }
+
+  .nav-logo span { color: var(--muted); }
+
+  .nav-links {
+    display: flex;
+    gap: 2.5rem;
+    list-style: none;
+  }
+
+  .nav-links a {
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    color: var(--muted);
+    text-decoration: none;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    transition: color 0.2s;
+  }
+
+  .nav-links a:hover { color: var(--green); }
+
+  .nav-cta {
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    padding: 0.5rem 1.2rem;
+    border: 1px solid var(--green);
+    color: var(--green);
+    text-decoration: none;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    transition: all 0.2s;
+  }
+
+  .nav-cta:hover {
+    background: var(--green);
+    color: var(--bg);
+  }
+
+  /* ── HERO ── */
+  .hero {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 8rem 4rem 4rem;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .hero-grid {
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(0,255,157,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,255,157,0.03) 1px, transparent 1px);
+    background-size: 60px 60px;
+    mask-image: radial-gradient(ellipse 80% 60% at 50% 50%, black, transparent);
+  }
+
+  .hero-glow {
+    position: absolute;
+    top: 20%;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 600px;
+    height: 600px;
+    background: radial-gradient(circle, rgba(0,255,157,0.06) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .hero-badge {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    color: var(--green);
+    border: 1px solid var(--green-glow);
+    background: rgba(0,255,157,0.05);
+    padding: 0.35rem 0.9rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 2rem;
+    width: fit-content;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    animation: fadeUp 0.6s ease both;
+  }
+
+  .hero-badge::before {
+    content: '';
+    width: 6px; height: 6px;
+    background: var(--green);
+    border-radius: 50%;
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.8); }
+  }
+
+  .hero h1 {
+    font-size: clamp(3.5rem, 8vw, 7rem);
+    font-weight: 800;
+    line-height: 0.95;
+    letter-spacing: -0.03em;
+    margin-bottom: 1.5rem;
+    animation: fadeUp 0.6s 0.1s ease both;
+  }
+
+  .hero h1 em {
+    font-style: normal;
+    color: var(--green);
+    position: relative;
+  }
+
+  .hero-sub {
+    font-size: 1.3rem;
+    color: var(--muted);
+    max-width: 560px;
+    line-height: 1.6;
+    margin-bottom: 3rem;
+    font-weight: 400;
+    animation: fadeUp 0.6s 0.2s ease both;
+  }
+
+  .hero-sub strong { color: var(--text); font-weight: 600; }
+
+  .hero-actions {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+    animation: fadeUp 0.6s 0.3s ease both;
+  }
+
+  .btn-primary {
+    font-family: var(--mono);
+    font-size: 0.85rem;
+    padding: 0.9rem 2rem;
+    background: var(--green);
+    color: var(--bg);
+    text-decoration: none;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    transition: all 0.2s;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .btn-primary:hover {
+    background: var(--green-dim);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 30px rgba(0,255,157,0.3);
+  }
+
+  .btn-secondary {
+    font-family: var(--mono);
+    font-size: 0.85rem;
+    padding: 0.9rem 2rem;
+    border: 1px solid var(--border);
+    color: var(--text);
+    text-decoration: none;
+    letter-spacing: 0.05em;
+    transition: all 0.2s;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .btn-secondary:hover {
+    border-color: var(--green);
+    color: var(--green);
+  }
+
+  /* ── TERMINAL TICKER ── */
+  .hero-terminal {
+    position: absolute;
+    right: 4rem;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 420px;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    animation: fadeUp 0.6s 0.4s ease both;
+    box-shadow: 0 0 60px rgba(0,255,157,0.05);
+  }
+
+  .terminal-bar {
+    padding: 0.6rem 1rem;
+    background: var(--bg3);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--muted);
+    font-size: 0.65rem;
+    letter-spacing: 0.08em;
+  }
+
+  .terminal-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+  }
+
+  .terminal-body {
+    padding: 1rem;
+    line-height: 1.8;
+    color: var(--muted);
+    min-height: 280px;
+  }
+
+  .t-green { color: var(--green); }
+  .t-red { color: var(--red); }
+  .t-yellow { color: var(--yellow); }
+  .t-white { color: var(--text); }
+
+  .terminal-line {
+    opacity: 0;
+    animation: appear 0.1s ease forwards;
+  }
+
+  @keyframes appear {
+    to { opacity: 1; }
+  }
+
+  .cursor {
+    display: inline-block;
+    width: 8px; height: 14px;
+    background: var(--green);
+    vertical-align: middle;
+    animation: blink 1s step-end infinite;
+  }
+
+  @keyframes blink {
+    50% { opacity: 0; }
+  }
+
+  /* ── STATS BAR ── */
+  .stats-bar {
+    padding: 2rem 4rem;
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    gap: 4rem;
+    background: var(--bg2);
+  }
+
+  .stat {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+  }
+
+  .stat-num {
+    font-family: var(--mono);
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--green);
+    line-height: 1;
+  }
+
+  .stat-label {
+    font-size: 0.75rem;
+    color: var(--muted);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-family: var(--mono);
+  }
+
+  /* ── SECTION ── */
+  section {
+    padding: 6rem 4rem;
+  }
+
+  .section-label {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    color: var(--green);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    margin-bottom: 1rem;
+  }
+
+  .section-title {
+    font-size: clamp(2rem, 4vw, 3.2rem);
+    font-weight: 800;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+    margin-bottom: 1.5rem;
+  }
+
+  .section-sub {
+    font-size: 1.1rem;
+    color: var(--muted);
+    max-width: 540px;
+    line-height: 1.7;
+  }
+
+  /* ── HOW IT WORKS ── */
+  .how-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+    margin-top: 4rem;
+    border: 1px solid var(--border);
+  }
+
+  .how-item {
+    padding: 2.5rem;
+    border-right: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    position: relative;
+    transition: background 0.3s;
+  }
+
+  .how-item:hover { background: var(--bg2); }
+  .how-item:nth-child(2n) { border-right: none; }
+  .how-item:nth-last-child(-n+2) { border-bottom: none; }
+
+  .how-num {
+    font-family: var(--mono);
+    font-size: 0.65rem;
+    color: var(--green);
+    letter-spacing: 0.1em;
+    margin-bottom: 1rem;
+  }
+
+  .how-title {
+    font-size: 1.2rem;
+    font-weight: 700;
+    margin-bottom: 0.8rem;
+    letter-spacing: -0.01em;
+  }
+
+  .how-desc {
+    font-size: 0.9rem;
+    color: var(--muted);
+    line-height: 1.7;
+    font-family: var(--mono);
+  }
+
+  /* ── DNA TABLE ── */
+  .dna-section {
+    background: var(--bg2);
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .dna-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 0;
+    margin-top: 3rem;
+    border: 1px solid var(--border);
+  }
+
+  .dna-card {
+    padding: 2rem 1.5rem;
+    border-right: 1px solid var(--border);
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .dna-card:last-child { border-right: none; }
+
+  .dna-card::before {
+    content: '';
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 2px;
+    background: var(--green);
+    transform: scaleX(0);
+    transition: transform 0.3s;
+  }
+
+  .dna-card:hover::before { transform: scaleX(1); }
+
+  .dna-type {
+    font-family: var(--mono);
+    font-size: 0.65rem;
+    color: var(--green);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin-bottom: 1rem;
+  }
+
+  .dna-accuracy {
+    font-size: 2.2rem;
+    font-weight: 800;
+    color: var(--text);
+    line-height: 1;
+    margin-bottom: 0.3rem;
+    font-family: var(--mono);
+  }
+
+  .dna-lead {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    color: var(--muted);
+  }
+
+  /* ── FEATURES ── */
+  .features-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1px;
+    background: var(--border);
+    margin-top: 4rem;
+    border: 1px solid var(--border);
+  }
+
+  .feature {
+    padding: 2.5rem;
+    background: var(--bg);
+    transition: background 0.3s;
+  }
+
+  .feature:hover { background: var(--bg2); }
+
+  .feature-icon {
+    font-size: 1.5rem;
+    margin-bottom: 1.2rem;
+    display: block;
+  }
+
+  .feature-title {
+    font-size: 1rem;
+    font-weight: 700;
+    margin-bottom: 0.6rem;
+    letter-spacing: -0.01em;
+  }
+
+  .feature-desc {
+    font-size: 0.82rem;
+    color: var(--muted);
+    line-height: 1.7;
+    font-family: var(--mono);
+  }
+
+  /* ── INSTALL ── */
+  .install-section {
+    background: var(--bg2);
+    border-top: 1px solid var(--border);
+  }
+
+  .install-tabs {
+    display: flex;
+    gap: 0;
+    margin-top: 3rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .tab {
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    padding: 0.8rem 1.5rem;
+    cursor: pointer;
+    color: var(--muted);
+    border-bottom: 2px solid transparent;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    transition: all 0.2s;
+    user-select: none;
+  }
+
+  .tab.active {
+    color: var(--green);
+    border-bottom-color: var(--green);
+  }
+
+  .tab-content {
+    display: none;
+    margin-top: 0;
+  }
+
+  .tab-content.active { display: block; }
+
+  .code-block {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-top: none;
+    padding: 1.5rem 2rem;
+    font-family: var(--mono);
+    font-size: 0.85rem;
+    color: var(--green);
+    position: relative;
+    line-height: 1.8;
+  }
+
+  .code-block .comment { color: var(--muted); }
+
+  .copy-btn {
+    position: absolute;
+    top: 1rem; right: 1rem;
+    font-family: var(--mono);
+    font-size: 0.65rem;
+    padding: 0.3rem 0.7rem;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    transition: all 0.2s;
+  }
+
+  .copy-btn:hover {
+    border-color: var(--green);
+    color: var(--green);
+  }
+
+  /* ── ADAPTIVE SECTION ── */
+  .adaptive-section {
+    border-top: 1px solid var(--border);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .adaptive-section::before {
+    content: '';
+    position: absolute;
+    top: -200px; right: -200px;
+    width: 600px; height: 600px;
+    background: radial-gradient(circle, rgba(0,255,157,0.04) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .adaptive-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6rem;
+    margin-top: 4rem;
+    align-items: center;
+  }
+
+  .adaptive-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    margin-top: 2rem;
+  }
+
+  .adaptive-item {
+    display: flex;
+    gap: 1.2rem;
+    align-items: flex-start;
+  }
+
+  .adaptive-dot {
+    width: 8px; height: 8px;
+    background: var(--green);
+    border-radius: 50%;
+    margin-top: 0.4rem;
+    flex-shrink: 0;
+  }
+
+  .adaptive-item-title {
+    font-weight: 700;
+    font-size: 0.95rem;
+    margin-bottom: 0.3rem;
+  }
+
+  .adaptive-item-desc {
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    color: var(--muted);
+    line-height: 1.6;
+  }
+
+  .device-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    padding: 1.5rem;
+    font-family: var(--mono);
+    font-size: 0.75rem;
+  }
+
+  .device-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 1rem;
+    color: var(--muted);
+    font-size: 0.65rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  .device-online {
+    color: var(--green);
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
+  .device-online::before {
+    content: '';
+    width: 6px; height: 6px;
+    background: var(--green);
+    border-radius: 50%;
+    animation: pulse 2s infinite;
+  }
+
+  .device-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.4rem 0;
+    border-bottom: 1px solid rgba(30,45,61,0.5);
+  }
+
+  .device-row:last-child { border-bottom: none; }
+  .device-key { color: var(--muted); }
+  .device-val { color: var(--text); }
+  .device-val.green { color: var(--green); }
+  .device-val.yellow { color: var(--yellow); }
+
+  /* ── CTA ── */
+  .cta-section {
+    text-align: center;
+    padding: 8rem 4rem;
+    background: var(--bg2);
+    border-top: 1px solid var(--border);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .cta-section::before {
+    content: '';
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 800px; height: 400px;
+    background: radial-gradient(ellipse, rgba(0,255,157,0.05) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .cta-section h2 {
+    font-size: clamp(2.5rem, 5vw, 4rem);
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    margin-bottom: 1.5rem;
+    line-height: 1.1;
+  }
+
+  .cta-section p {
+    font-size: 1.1rem;
+    color: var(--muted);
+    margin-bottom: 3rem;
+    font-family: var(--mono);
+  }
+
+  /* ── FOOTER ── */
+  footer {
+    padding: 2rem 4rem;
+    border-top: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    color: var(--muted);
+  }
+
+  footer a { color: var(--muted); text-decoration: none; }
+  footer a:hover { color: var(--green); }
+
+  /* ── ANIMATIONS ── */
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .reveal {
+    opacity: 0;
+    transform: translateY(30px);
+    transition: opacity 0.6s ease, transform 0.6s ease;
+  }
+
+  .reveal.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  @media (max-width: 1024px) {
+    nav { padding: 1rem 2rem; }
+    .hero { padding: 8rem 2rem 4rem; }
+    .hero-terminal { display: none; }
+    .how-grid { grid-template-columns: 1fr; }
+    .how-item { border-right: none; }
+    .dna-grid { grid-template-columns: repeat(3, 1fr); }
+    .features-grid { grid-template-columns: 1fr 1fr; }
+    .adaptive-grid { grid-template-columns: 1fr; gap: 3rem; }
+    .stats-bar { flex-wrap: wrap; gap: 2rem; padding: 2rem; }
+    section { padding: 4rem 2rem; }
+    footer { flex-direction: column; gap: 1rem; text-align: center; }
+  }
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <a href="#" class="nav-logo">CVIS<span>_v2</span></a>
+  <ul class="nav-links">
+    <li><a href="#how">How it works</a></li>
+    <li><a href="#dna">Failure DNA</a></li>
+    <li><a href="#install">Install</a></li>
+    <li><a href="https://github.com/Rohitjanardhan21/system-knowledge-bot">GitHub</a></li>
+  </ul>
+  <a href="https://cvis-os-latest.onrender.com" class="nav-cta" target="_blank">Live Demo →</a>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-grid"></div>
+  <div class="hero-glow"></div>
+
+  <div class="hero-badge">● System Intelligence — Active</div>
+
+  <h1>Your system<br>knows it's<br><em>going to fail.</em><br>We listen.</h1>
+
+  <p class="hero-sub">
+    CVIS is an AI engine that learns your machine's <strong>unique failure fingerprint</strong>
+    and warns you 26–34 minutes before a crash — running entirely on your hardware.
+    <strong>Your data never leaves.</strong>
+  </p>
+
+  <div class="hero-actions">
+    <a href="#install" class="btn-primary">↓ Install Free</a>
+    <a href="https://cvis-os-latest.onrender.com" class="btn-secondary" target="_blank">→ Live Demo</a>
+    <a href="https://github.com/Rohitjanardhan21/system-knowledge-bot" class="btn-secondary" target="_blank">⭐ GitHub</a>
+  </div>
+
+  <!-- Terminal -->
+  <div class="hero-terminal">
+    <div class="terminal-bar">
+      <div class="terminal-dot" style="background:#ff5f57"></div>
+      <div class="terminal-dot" style="background:#ffbd2e"></div>
+      <div class="terminal-dot" style="background:#28ca41"></div>
+      <span style="margin-left:0.5rem">cvis — cognitive monitor</span>
+    </div>
+    <div class="terminal-body" id="terminal-body">
+    </div>
+  </div>
+</section>
+
+<!-- STATS BAR -->
+<div class="stats-bar">
+  <div class="stat">
+    <span class="stat-num">94.1%</span>
+    <span class="stat-label">OOM prediction accuracy</span>
+  </div>
+  <div class="stat">
+    <span class="stat-num">29.5m</span>
+    <span class="stat-label">Average warning lead time</span>
+  </div>
+  <div class="stat">
+    <span class="stat-num">3</span>
+    <span class="stat-label">ML models running in parallel</span>
+  </div>
+  <div class="stat">
+    <span class="stat-num">100%</span>
+    <span class="stat-label">Local — zero cloud dependency</span>
+  </div>
+  <div class="stat">
+    <span class="stat-num">2s</span>
+    <span class="stat-label">Metric refresh interval</span>
+  </div>
+</div>
+
+<!-- HOW IT WORKS -->
+<section id="how">
+  <div class="section-label">// How it works</div>
+  <h2 class="section-title">Not monitoring.<br>Prediction.</h2>
+  <p class="section-sub">Every monitoring tool shows you what happened. CVIS tells you what's about to happen — and why.</p>
+
+  <div class="how-grid reveal">
+    <div class="how-item">
+      <div class="how-num">01 — COLLECT</div>
+      <div class="how-title">OS-agnostic metric collection</div>
+      <div class="how-desc">psutil reads CPU, memory, disk, network, and processes every 2 seconds across Linux, Windows, and macOS — no agents, no config.</div>
+    </div>
+    <div class="how-item">
+      <div class="how-num">02 — LEARN</div>
+      <div class="how-title">3-model ML ensemble trains live</div>
+      <div class="how-desc">PyTorch LSTM detects trends. β-VAE finds reconstruction anomalies. Isolation Forest catches statistical outliers. All three run in parallel, continuously.</div>
+    </div>
+    <div class="how-item">
+      <div class="how-num">03 — REMEMBER</div>
+      <div class="how-title">Failure DNA engine</div>
+      <div class="how-desc">Every incident trains a pattern. After 7+ occurrences, CVIS recognises the pre-failure signature with 87–94% accuracy and 95% confidence.</div>
+    </div>
+    <div class="how-item">
+      <div class="how-num">04 — WARN</div>
+      <div class="how-title">Plain English alerts — 30 min early</div>
+      <div class="how-desc">"OOM predicted in 29 minutes — seen this pattern 16 times on this machine." Not a raw number. A sentence you can act on.</div>
+    </div>
+  </div>
+</section>
+
+<!-- FAILURE DNA -->
+<section id="dna" class="dna-section">
+  <div class="section-label">// Failure DNA</div>
+  <h2 class="section-title">Learns your machine.<br>Not a generic one.</h2>
+  <p class="section-sub">Most tools use fixed thresholds. CVIS builds a fingerprint of YOUR system's failure patterns — so warnings are specific, not generic.</p>
+
+  <div class="dna-grid reveal">
+    <div class="dna-card">
+      <div class="dna-type">OOM</div>
+      <div class="dna-accuracy">94.1%</div>
+      <div class="dna-lead">↑ 29.5 min lead</div>
+    </div>
+    <div class="dna-card">
+      <div class="dna-type">CRASH</div>
+      <div class="dna-accuracy">90.9%</div>
+      <div class="dna-lead">↑ 26.1 min lead</div>
+    </div>
+    <div class="dna-card">
+      <div class="dna-type">THERMAL</div>
+      <div class="dna-accuracy">87.5%</div>
+      <div class="dna-lead">↑ 33.5 min lead</div>
+    </div>
+    <div class="dna-card">
+      <div class="dna-type">CPU STRESS</div>
+      <div class="dna-accuracy">90.0%</div>
+      <div class="dna-lead">↑ 30.0 min lead</div>
+    </div>
+    <div class="dna-card">
+      <div class="dna-type">DISK FULL</div>
+      <div class="dna-accuracy">87.5%</div>
+      <div class="dna-lead">↑ 30.0 min lead</div>
+    </div>
+  </div>
+</section>
+
+<!-- FEATURES -->
+<section>
+  <div class="section-label">// What's inside</div>
+  <h2 class="section-title">Every layer,<br>built from scratch.</h2>
+
+  <div class="features-grid reveal">
+    <div class="feature">
+      <span class="feature-icon">🧠</span>
+      <div class="feature-title">Cognitive Health Score</div>
+      <div class="feature-desc">0–1000 score updated every 2 seconds. Grades your system A–F with a breakdown of what's dragging it down.</div>
+    </div>
+    <div class="feature">
+      <span class="feature-icon">🔮</span>
+      <div class="feature-title">60-Min LSTM Forecast</div>
+      <div class="feature-desc">Projects CPU, memory, and anomaly risk across the next hour. "Safe at +5 min. Risk at +47 min."</div>
+    </div>
+    <div class="feature">
+      <span class="feature-icon">⚡</span>
+      <div class="feature-title">One-Click Fixes</div>
+      <div class="feature-desc">Clear temp files, rotate logs, drop page cache, identify CPU hogs — directly from the dashboard. No terminal needed.</div>
+    </div>
+    <div class="feature">
+      <span class="feature-icon">🖥️</span>
+      <div class="feature-title">Multi-Device Fleet</div>
+      <div class="feature-desc">Run the agent on any machine. All devices appear in one dashboard. One server monitors your entire infrastructure.</div>
+    </div>
+    <div class="feature">
+      <span class="feature-icon">📼</span>
+      <div class="feature-title">Black Box Recorder</div>
+      <div class="feature-desc">Continuously records the last 2 hours. When something goes wrong, replay exactly what happened — second by second.</div>
+    </div>
+    <div class="feature">
+      <span class="feature-icon">💬</span>
+      <div class="feature-title">AI Cognitive Assistant</div>
+      <div class="feature-desc">Ask your system anything in plain English. "Why is memory high?" "Will my computer crash?" Answers with live context.</div>
+    </div>
+    <div class="feature">
+      <span class="feature-icon">📊</span>
+      <div class="feature-title">Weekly Health Report</div>
+      <div class="feature-desc">Every Monday, a plain-English summary of your system's week — failures prevented, patterns learned, recommendations.</div>
+    </div>
+    <div class="feature">
+      <span class="feature-icon">🔒</span>
+      <div class="feature-title">100% Local — Zero Cloud</div>
+      <div class="feature-desc">Everything runs on your hardware. No telemetry, no cloud account, no data leaves your network. Ever.</div>
+    </div>
+    <div class="feature">
+      <span class="feature-icon">🪟</span>
+      <div class="feature-title">Silent Tray Agent</div>
+      <div class="feature-desc">Windows exe that runs invisibly in the system tray. Native OS notifications. Starts with Windows. You forget it's there.</div>
+    </div>
+  </div>
+</section>
+
+<!-- AUTO-ADAPTATION TEASER -->
+<section class="adaptive-section">
+  <div class="section-label">// Coming next</div>
+  <h2 class="section-title">Auto-Adaptation Layer.<br><em>No config. Ever.</em></h2>
+
+  <div class="adaptive-grid">
+    <div>
+      <p class="section-sub">CVIS detects what machine it's running on and automatically adjusts every threshold, every model sensitivity, every alert rule — without you touching a config file.</p>
+
+      <ul class="adaptive-list reveal">
+        <li class="adaptive-item">
+          <div class="adaptive-dot"></div>
+          <div>
+            <div class="adaptive-item-title">Hardware Fingerprinting</div>
+            <div class="adaptive-item-desc">Detects CPU cores, RAM, SSD vs HDD, battery presence, virtualisation, Docker — in under 100ms on first launch.</div>
+          </div>
+        </li>
+        <li class="adaptive-item">
+          <div class="adaptive-dot"></div>
+          <div>
+            <div class="adaptive-item-title">Adaptive Thresholds</div>
+            <div class="adaptive-item-desc">8GB laptop gets OOM warnings at 75%. 64GB workstation gets them at 88%. Same software, different intelligence.</div>
+          </div>
+        </li>
+        <li class="adaptive-item">
+          <div class="adaptive-dot"></div>
+          <div>
+            <div class="adaptive-item-title">Baseline Learning</div>
+            <div class="adaptive-item-desc">After 30 minutes of watching your machine, CVIS sets thresholds based on YOUR normal — not industry averages.</div>
+          </div>
+        </li>
+        <li class="adaptive-item">
+          <div class="adaptive-dot"></div>
+          <div>
+            <div class="adaptive-item-title">Zero False Alarms</div>
+            <div class="adaptive-item-desc">If your machine always runs at 70% CPU, that's normal for you. CVIS learns this and stops crying wolf.</div>
+          </div>
+        </li>
+      </ul>
+    </div>
+
+    <div class="device-card reveal">
+      <div class="device-header">
+        <span>device profile — auto-detected</span>
+        <span class="device-online">online</span>
+      </div>
+      <div class="device-row"><span class="device-key">hostname</span><span class="device-val">rohit-workstation</span></div>
+      <div class="device-row"><span class="device-key">os</span><span class="device-val">Linux 6.17 x86_64</span></div>
+      <div class="device-row"><span class="device-key">cpu_model</span><span class="device-val">Intel i7-12700K</span></div>
+      <div class="device-row"><span class="device-key">cpu_cores</span><span class="device-val green">12 physical / 20 threads</span></div>
+      <div class="device-row"><span class="device-key">ram_gb</span><span class="device-val green">32.0 GB</span></div>
+      <div class="device-row"><span class="device-key">disk_type</span><span class="device-val green">SSD — NVMe</span></div>
+      <div class="device-row"><span class="device-key">is_virtual</span><span class="device-val">false</span></div>
+      <div class="device-row"><span class="device-key">has_docker</span><span class="device-val green">true</span></div>
+      <div class="device-row"><span class="device-key">oom_threshold</span><span class="device-val yellow">auto → 85% (32GB machine)</span></div>
+      <div class="device-row"><span class="device-key">cpu_threshold</span><span class="device-val yellow">auto → 88% (12-core machine)</span></div>
+      <div class="device-row"><span class="device-key">baseline_learned</span><span class="device-val green">true — 47 min observation</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- INSTALL -->
+<section id="install" class="install-section">
+  <div class="section-label">// Install</div>
+  <h2 class="section-title">Running in<br>30 seconds.</h2>
+
+  <div class="install-tabs">
+    <div class="tab active" onclick="switchTab('docker')">Docker</div>
+    <div class="tab" onclick="switchTab('linux')">Linux / macOS</div>
+    <div class="tab" onclick="switchTab('windows')">Windows</div>
+    <div class="tab" onclick="switchTab('compose')">Full Stack</div>
+  </div>
+
+  <div id="tab-docker" class="tab-content active">
+    <div class="code-block">
+      <button class="copy-btn" onclick="copyCode('docker-code')">Copy</button>
+      <div id="docker-code"><span class="comment"># One command. Works on Linux, macOS, Windows.</span>
+docker run -p 8000:8000 rohitjanardhan/cvis-os:latest
+
+<span class="comment"># Open http://localhost:8000</span></div>
+    </div>
+  </div>
+
+  <div id="tab-linux" class="tab-content">
+    <div class="code-block">
+      <button class="copy-btn" onclick="copyCode('linux-code')">Copy</button>
+      <div id="linux-code"><span class="comment"># One-line installer for Linux and macOS</span>
+curl -sSL https://raw.githubusercontent.com/Rohitjanardhan21/system-knowledge-bot/main/install.sh | bash
+
+<span class="comment"># CVIS starts automatically and opens the dashboard</span></div>
+    </div>
+  </div>
+
+  <div id="tab-windows" class="tab-content">
+    <div class="code-block">
+      <button class="copy-btn" onclick="copyCode('windows-code')">Copy</button>
+      <div id="windows-code"><span class="comment"># Download and run the Windows installer</span>
+<span class="t-white">1. Download CVIS-TrayAgent.exe from GitHub releases</span>
+<span class="t-white">2. Double-click install_windows.bat</span>
+<span class="t-white">3. Enter your server URL when prompted</span>
+
+<span class="comment"># CVIS installs silently, adds to startup, shows tray icon</span>
+<span class="comment"># Native Windows notifications for CRITICAL alerts</span></div>
+    </div>
+  </div>
+
+  <div id="tab-compose" class="tab-content">
+    <div class="code-block">
+      <button class="copy-btn" onclick="copyCode('compose-code')">Copy</button>
+      <div id="compose-code"><span class="comment"># Full stack: backend + nginx + redis + prometheus + grafana</span>
+git clone https://github.com/Rohitjanardhan21/system-knowledge-bot
+cd system-knowledge-bot
+cp .env.example .env
+docker compose up -d
+
+<span class="comment"># Open http://localhost — full dashboard with SSL support</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section class="cta-section">
+  <h2>Stop finding out<br>after the crash.</h2>
+  <p>Install CVIS in 30 seconds. Free forever. Your data stays yours.</p>
+  <div style="display:flex;gap:1rem;justify-content:center;flex-wrap:wrap">
+    <a href="#install" class="btn-primary">↓ Install Free</a>
+    <a href="https://cvis-os-latest.onrender.com" class="btn-secondary" target="_blank">→ Live Demo</a>
+    <a href="https://github.com/Rohitjanardhan21/system-knowledge-bot" class="btn-secondary" target="_blank">⭐ Star on GitHub</a>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <span>CVIS — Cognitive AIOps Engine</span>
+  <span>
+    <a href="https://github.com/Rohitjanardhan21/system-knowledge-bot">GitHub</a> ·
+    <a href="https://hub.docker.com/r/rohitjanardhan/cvis-os">Docker Hub</a> ·
+    <a href="https://cvis-os-latest.onrender.com">Live Demo</a>
+  </span>
+  <span style="font-family:var(--mono);font-size:0.65rem">Built with PyTorch · FastAPI · psutil</span>
+</footer>
+
+<script>
+// Terminal animation
+const lines = [
+  { text: '$ cvis start --server localhost:8000', cls: 't-green', delay: 300 },
+  { text: '[CVIS] Cognitive AIOps Engine v2.0', cls: 't-white', delay: 600 },
+  { text: '[CVIS] Device: rohit-workstation (Linux)', cls: 't-white', delay: 900 },
+  { text: '[CVIS] RAM: 32GB · Cores: 12 · SSD: true', cls: 'comment', delay: 1200 },
+  { text: '[CVIS] ML models loading...', cls: 'comment', delay: 1500 },
+  { text: '[CVIS] ✓ LSTM fitted (992 steps)', cls: 't-green', delay: 1900 },
+  { text: '[CVIS] ✓ β-VAE fitted (992 steps)', cls: 't-green', delay: 2200 },
+  { text: '[CVIS] ✓ Isolation Forest fitted', cls: 't-green', delay: 2500 },
+  { text: '[CVIS] Failure DNA: 5 patterns loaded', cls: 't-green', delay: 2900 },
+  { text: '', cls: '', delay: 3200 },
+  { text: '[CVIS] ✓ 13:02:11 cpu=12.3% mem=31.6% score=847', cls: 't-green', delay: 3500 },
+  { text: '[CVIS] ✓ 13:02:21 cpu=15.1% mem=32.0% score=831', cls: 't-green', delay: 4200 },
+  { text: '', cls: '', delay: 4800 },
+  { text: '⚠ PREDICTION — OOM in ~29 min (94% confidence)', cls: 't-yellow', delay: 5200 },
+  { text: '  Seen this pattern 16x on this machine', cls: 'comment', delay: 5500 },
+  { text: '  → Free memory now or scale horizontally', cls: 'comment', delay: 5800 },
+];
+
+const body = document.getElementById('terminal-body');
+lines.forEach(({ text, cls, delay }) => {
+  setTimeout(() => {
+    const div = document.createElement('div');
+    div.className = `terminal-line ${cls}`;
+    div.textContent = text || '\u00a0';
+    body.appendChild(div);
+    body.scrollTop = body.scrollHeight;
+  }, delay);
+});
+
+// Tab switching
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  event.target.classList.add('active');
+  document.getElementById('tab-' + name).classList.add('active');
+}
+
+// Copy code
+function copyCode(id) {
+  const text = document.getElementById(id).innerText;
+  navigator.clipboard.writeText(text).then(() => {
+    event.target.textContent = 'Copied!';
+    setTimeout(() => event.target.textContent = 'Copy', 1500);
+  });
+}
+
+// Scroll reveal
+const observer = new IntersectionObserver(entries => {
+  entries.forEach(e => {
+    if (e.isIntersecting) e.target.classList.add('visible');
+  });
+}, { threshold: 0.1 });
+
+document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+</script>
+
+</body>
+</html>
