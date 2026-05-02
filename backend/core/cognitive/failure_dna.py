@@ -84,7 +84,8 @@ class FailureDNAEngine:
     DNA_FILE     = "data/failure_dna.json"
     HISTORY_FILE = "data/failure_history.json"
     PRE_FAILURE_WINDOW = 120
-    MIN_CONFIDENCE     = 0.55
+    MIN_CONFIDENCE     = 0.70   # raised: only fire when genuinely confident
+    MIN_SAMPLES        = 15     # need 15+ observations before trusting a pattern
 
     def __init__(self):
         self._lock = threading.Lock()
@@ -125,7 +126,10 @@ class FailureDNAEngine:
         best_confidence = 0.0
         with self._lock:
             for pattern_id, pattern in self._patterns.items():
-                if pattern.seen_count < 2:
+                # Trust gate — don't predict until we have enough observations
+                if pattern.seen_count < self.MIN_SAMPLES:
+                    continue
+                if pattern.detection_accuracy < 0.70:
                     continue
                 confidence, eta_minutes = self._match_pattern(
                     pattern, list(self._metric_buffer) + [snapshot]
@@ -224,7 +228,9 @@ class FailureDNAEngine:
                 "pattern_list": [
                     {"type":p.failure_type,"seen":p.seen_count,"prevented":p.prevented_count,
                      "accuracy":round(p.detection_accuracy*100,1),"lead_time":round(p.avg_lead_time_minutes,1),
-                     "description":p.plain_description,"confidence":round(p.confidence*100,1)}
+                     "description":p.plain_description,"confidence":round(p.confidence*100,1),
+                     "data_quality":_data_quality_label(p.seen_count, p.detection_accuracy),
+                     "trustworthy":p.seen_count >= 15 and p.detection_accuracy >= 0.70}
                     for p in self._patterns.values()
                 ],
             }
@@ -338,13 +344,16 @@ class FailureDNAEngine:
 
     def _plain_prediction_message(self, pattern, eta, conf) -> str:
         eta_str = f"in about {int(eta)} minutes" if eta>2 else "very soon"
+        conf_pct = int(conf * 100)
         msgs = {"OOM":f"Your computer is likely to run out of memory {eta_str}",
                 "CRASH":f"A process crash is predicted {eta_str}",
                 "FREEZE":f"Your system may become unresponsive {eta_str}",
                 "THERMAL":f"Overheating is likely {eta_str}"}
         base = msgs.get(pattern.failure_type, f"A system issue is predicted {eta_str}")
-        if pattern.seen_count > 1:
+        if pattern.seen_count >= 15:
             base += f" — seen this pattern {pattern.seen_count} times on this machine"
+        else:
+            base += f" — early signal ({pattern.seen_count} observations, still learning)"
         return base
 
     def _plain_action(self, pattern) -> str:
@@ -385,6 +394,14 @@ class FailureDNAEngine:
                 with open(self.HISTORY_FILE) as f: data = json.load(f)
                 for item in data: self._history.append(FailureEvent(**item))
         except Exception: pass
+
+
+def _data_quality_label(seen: int, accuracy: float) -> str:
+    """Human-readable data quality label shown on dashboard."""
+    if seen >= 20 and accuracy >= 0.85: return "high — well trained"
+    if seen >= 15 and accuracy >= 0.70: return "medium — learning"
+    if seen >= 7:                        return "low — early stage"
+    return "insufficient — not yet reliable"
 
 
 _dna_engine = None

@@ -78,6 +78,16 @@ class Forecaster:
         if (self._last_forecast and
                 time.time() - self._last_forecast.generated_at < self._forecast_cache_ttl):
             return self._last_forecast
+        # Data quality gate
+        history_len = len(self._history)
+        if history_len < 5:
+            # Not enough data — return honest placeholder
+            return Forecast(
+                generated_at=time.time(), horizon_minutes=60,
+                points=[], plain_summary="Not enough data yet — forecast available after 5 minutes of monitoring.",
+                first_risk_at=None, peak_risk_level="UNKNOWN",
+                confidence=0.0, trend_direction="UNKNOWN",
+            )
 
         with self._lock:
             history = list(self._history)
