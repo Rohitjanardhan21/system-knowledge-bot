@@ -1,8 +1,18 @@
-# CVIS v9 — Cognitive AIOps Engine
+# CVIS — Cognitive AIOps Engine
 
-Real-time infrastructure monitoring with in-browser deep learning. Three ML models run continuously, learning your baseline and flagging deviations before they become incidents.
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-Render-green)](https://cvis-os-latest.onrender.com)
+[![Docker](https://img.shields.io/badge/Docker-rohitjanardhan%2Fcvis--os-blue)](https://hub.docker.com/r/rohitjanardhan/cvis-os)
 
----
+> Predicts system failures before they happen. Runs 100% locally.
+
+**[Live Demo](https://cvis-os-latest.onrender.com)** | [Docker Hub](https://hub.docker.com/r/rohitjanardhan/cvis-os)
+
+## Quickstart — 30 seconds
+```bash
+docker run -p 8000:8000 rohitjanardhan/cvis-os:latest
+```
+Open http://localhost:8000
+
 
 ## Architecture
 
