@@ -298,6 +298,7 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:1
   <!-- DNA + Black Box -->
   <div class="grid2">
     <div class="card">
+      <div id="hs-data-quality" style="margin-bottom:6px;min-height:16px"></div>
       <div class="card-title">Failure DNA <span style="font-weight:400;color:var(--muted);text-transform:none;font-size:9px">machine's learned breakdown signatures</span></div>
       <div id="dna-list"><div style="color:var(--muted);font-size:12px;text-align:center;padding:20px">No patterns learned yet.<br>Patterns appear after you record incidents.</div></div>
     </div>
@@ -611,11 +612,25 @@ function renderCognitive(){
     $('hs-prevented').textContent=dnaData.prevented||0;
     const patterns=dnaData.pattern_list||[];
     if(patterns.length){
-      $('dna-list').innerHTML=patterns.map(p=>`<div class="dna-row"><div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-weight:600">${p.type}</span><span style="font-family:var(--mono);font-size:11px;color:var(--accent)">${p.accuracy}% accurate</span></div><div style="font-size:11px;color:var(--muted);margin-bottom:6px">${p.description}</div><div style="display:flex;gap:16px;font-size:11px;font-family:var(--mono)"><span style="color:var(--muted)">Seen: <span style="color:var(--text)">${p.seen}</span></span><span style="color:var(--muted)">Prevented: <span style="color:var(--green)">${p.prevented}</span></span><span style="color:var(--muted)">Lead time: <span style="color:var(--blue)">${p.lead_time}m</span></span></div></div>`).join('');
+      $('dna-list').innerHTML=patterns.map(p=>{
+        const trusted=p.trustworthy;
+        const badge=trusted
+          ?`<span style="font-size:9px;padding:2px 6px;border-radius:3px;background:rgba(0,255,150,0.15);color:#00ff96;border:1px solid rgba(0,255,150,0.3)">✓ trusted</span>`
+          :`<span style="font-size:9px;padding:2px 6px;border-radius:3px;background:rgba(255,200,0,0.1);color:#ffcc00;border:1px solid rgba(255,200,0,0.3)">⚠ learning</span>`;
+        const dq=p.data_quality?`<span style="color:var(--muted);font-size:10px;font-family:var(--mono)">Data: ${p.data_quality}</span>`:'';
+        return `<div class="dna-row"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><span style="font-weight:600">${p.type}</span><div style="display:flex;gap:6px;align-items:center">${badge}<span style="font-family:var(--mono);font-size:11px;color:var(--accent)">${p.accuracy}% accurate</span></div></div><div style="font-size:11px;color:var(--muted);margin-bottom:6px">${p.description}</div><div style="display:flex;gap:16px;font-size:11px;font-family:var(--mono);flex-wrap:wrap"><span style="color:var(--muted)">Seen: <span style="color:var(--text)">${p.seen}</span></span><span style="color:var(--muted)">Prevented: <span style="color:var(--green)">${p.prevented}</span></span><span style="color:var(--muted)">Lead time: <span style="color:var(--blue)">${p.lead_time}m</span></span>${dq}</div></div>`;
+      }).join('');
     }
   }
   if(snap.health_credit_score!=null){
     fetch_('/cognitive/health-score').then(d=>{
+      if(d?.data_quality){
+        const dqEl=$('hs-data-quality');
+        if(dqEl){
+          const color=d.data_quality.startsWith('high')?'#00ff96':d.data_quality.startsWith('medium')?'#ffcc00':'#ff6b6b';
+          dqEl.innerHTML=`<span style="font-size:10px;font-family:var(--mono);color:${color}">◉ ${d.data_quality}</span>`;
+        }
+      }
       if(d.improvements?.length)$('hs-improve').innerHTML=d.improvements.map(i=>`<span style="color:var(--accent)">+${i.points}pts</span> ${i.action}`).join('<br>');
     }).catch(()=>{});
   }
