@@ -47,6 +47,7 @@ log = logging.getLogger("cvis.main")
 try:
     from backend.core.cognitive.failure_dna import get_dna_engine
     from backend.core.cognitive.forecaster   import get_forecaster
+    from backend.core.cognitive.premortem    import get_premortem_engine
     from backend.core.cognitive.notifier     import get_notifier
     from backend.core.cognitive.black_box    import get_black_box
     COGNITIVE_OK = True
@@ -142,6 +143,7 @@ def _collect():
                     # Feed all engines
                     dna.ingest(m)
                     fcast.ingest(m)
+                    get_premortem_engine().ingest(m)
 
                     # Record to black box
                     procs = m.get("processes", {})
@@ -732,6 +734,50 @@ async def cognitive_health_score():
         return {"score": None, "error": "Cognitive layer not available"}
     m = dict(_last_metrics)
     return get_dna_engine().get_health_score(m)
+
+
+@app.get("/cognitive/premortem", tags=["Cognitive"])
+async def cognitive_premortem():
+    """
+    Failure Pre-Mortem — What will kill this machine in the next 30 days?
+    
+    Unlike predictions (next 60 min), the pre-mortem looks weeks ahead
+    using trend analysis to identify slow-moving threats before they
+    become emergencies.
+    
+    Returns threats sorted by urgency with plain English explanations,
+    evidence, probability estimates, and specific recommendations.
+    """
+    import dataclasses
+    
+    dna = get_dna_engine().get_dna_summary()
+    result = get_premortem_engine().run(dna_summary=dna)
+    
+    def threat_to_dict(t):
+        return {
+            "threat_id":      t.threat_id,
+            "failure_type":   t.failure_type,
+            "probability":    round(t.probability * 100, 1),
+            "days_until":     round(t.days_until, 1) if t.days_until else None,
+            "confidence":     t.confidence,
+            "headline":       t.headline,
+            "evidence":       t.evidence,
+            "recommendation": t.recommendation,
+            "data_points":    t.data_points,
+            "trend_per_day":  round(t.trend_per_day, 3),
+        }
+    
+    return {
+        "generated_at":  result.generated_at,
+        "horizon_days":  result.horizon_days,
+        "safe":          result.safe,
+        "summary":       result.plain_summary,
+        "data_quality":  result.data_quality,
+        "snapshot_count": result.snapshot_count,
+        "threat_count":  len(result.threats),
+        "threats":       [threat_to_dict(t) for t in result.threats],
+        "top_threat":    threat_to_dict(result.top_threat) if result.top_threat else None,
+    }
 
 @app.get("/cognitive/forecast", tags=["Cognitive"])
 async def cognitive_forecast():
