@@ -48,6 +48,7 @@ try:
     from backend.core.cognitive.failure_dna import get_dna_engine
     from backend.core.cognitive.forecaster   import get_forecaster
     from backend.core.cognitive.premortem    import get_premortem_engine
+    from backend.core.actions.auto_remediation import get_ar_engine
     from backend.core.cognitive.notifier     import get_notifier
     from backend.core.cognitive.black_box    import get_black_box
     COGNITIVE_OK = True
@@ -144,6 +145,7 @@ def _collect():
                     dna.ingest(m)
                     fcast.ingest(m)
                     get_premortem_engine().ingest(m)
+                    get_ar_engine().update_metrics(m)
 
                     # Record to black box
                     procs = m.get("processes", {})
@@ -154,6 +156,15 @@ def _collect():
 
                     # Check for predictions
                     prediction = dna.predict(m)
+                    try:
+                        ar=get_ar_engine();ar.set_notifier(get_notifier())
+                        preds=dna.get_active_predictions()
+                        dna_sum=dna.get_dna_summary()
+                        pred_dicts=[{'id':p.prediction_id,'type':p.failure_type,'confidence':p.confidence*100,'severity':p.severity,'message':p.plain_message,'acknowledged':p.acknowledged,'resolved':p.resolved} for p in preds]
+                        ar.evaluate(pred_dicts,dna_sum)
+                    except Exception:
+                        pass
+
                     if prediction and not prediction.acknowledged:
                         notifier.send_prediction(prediction)
 
@@ -735,6 +746,16 @@ async def cognitive_health_score():
     m = dict(_last_metrics)
     return get_dna_engine().get_health_score(m)
 
+
+@app.get("/cognitive/remediation/status",tags=["Actions"])
+async def remediation_status():
+    from backend.core.actions.auto_remediation import get_ar_engine
+    return get_ar_engine().get_status()
+
+@app.get("/cognitive/remediation/log",tags=["Actions"])
+async def remediation_log(limit:int=20):
+    from backend.core.actions.auto_remediation import get_ar_engine
+    return get_ar_engine().get_audit_log(limit=limit)
 
 @app.get("/cognitive/premortem", tags=["Cognitive"])
 async def cognitive_premortem():
