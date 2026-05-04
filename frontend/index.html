@@ -111,6 +111,13 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:1
 .stat-lbl{font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:4px}
 .stat-val{font-family:var(--mono);font-size:18px;font-weight:600}
 .stat-sub{font-size:10px;color:var(--muted);margin-top:2px}
+/* Pre-Mortem */
+.pm-threat{padding:12px 14px;border-radius:6px;margin-bottom:8px;border-left:3px solid transparent}
+.pm-threat.urgent{background:rgba(255,60,60,0.08);border-left-color:#ff4444}
+.pm-threat.warning{background:rgba(255,180,0,0.08);border-left-color:#ffb400}
+.pm-threat.advisory{background:rgba(0,200,255,0.06);border-left-color:#00c8ff}
+.pm-threat.safe{background:rgba(0,255,150,0.06);border-left-color:#00ff96}
+.pm-evidence{margin-top:8px;padding:8px 10px;background:rgba(0,0,0,0.2);border-radius:4px}
 /* DNA */
 .dna-row{padding:10px 12px;border-radius:6px;background:rgba(0,0,0,.2);margin-bottom:8px}
 /* BB frames */
@@ -303,6 +310,17 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:1
       <div id="dna-list"><div style="color:var(--muted);font-size:12px;text-align:center;padding:20px">No patterns learned yet.<br>Patterns appear after you record incidents.</div></div>
     </div>
     <div class="card">
+      <!-- Pre-Mortem Section -->
+      <div id="premortem-section" style="margin-bottom:16px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div>
+            <div class="card-title" style="margin-bottom:2px">Future Failure Forecast <span style="font-weight:400;color:var(--muted);text-transform:none;font-size:9px">what will kill this machine in the next 30 days</span></div>
+          </div>
+          <div id="premortem-quality" style="font-family:var(--mono);font-size:10px;color:var(--muted)"></div>
+        </div>
+        <div id="premortem-summary" style="font-size:12px;color:var(--muted);margin-bottom:10px;font-family:var(--mono)">Analysing trends...</div>
+        <div id="premortem-list"></div>
+      </div>
       <div class="card-title">Black Box Recorder <span style="font-weight:400;color:var(--muted);text-transform:none;font-size:9px" id="bb-status-lbl">● recording</span></div>
       <div id="bb-frames"><div style="color:var(--muted);font-size:12px;text-align:center;padding:16px">Continuously recording last 2 hours…</div></div>
       <div style="margin-top:10px;display:flex;gap:8px">
@@ -417,6 +435,7 @@ async function loadCognitive(){
 
 async function loadBlackBox(){
   try{const bb=await fetch_('/cognitive/blackbox');renderBlackBox(bb);}catch{}
+  try{const pm=await fetch_('/cognitive/premortem');renderPremortem(pm);}catch{}
 }
 
 async function markIncident(){
@@ -634,6 +653,97 @@ function renderCognitive(){
       if(d.improvements?.length)$('hs-improve').innerHTML=d.improvements.map(i=>`<span style="color:var(--accent)">+${i.points}pts</span> ${i.action}`).join('<br>');
     }).catch(()=>{});
   }
+}
+
+function renderPremortem(pm){
+  if(!pm) return;
+  const summary=$('premortem-summary');
+  const list=$('premortem-list');
+  const quality=$('premortem-quality');
+  if(!summary||!list) return;
+
+  // Data quality badge
+  if(quality){
+    const dq=pm.data_quality||'';
+    const col=dq.startsWith('high')?'#00ff96':dq.startsWith('medium')?'#ffcc00':'#888';
+    quality.innerHTML=`<span style="color:${col}">◉ ${dq}</span>`;
+  }
+
+  // Safe state
+  if(pm.safe||!pm.threats||pm.threats.length===0){
+    summary.textContent='✅ No critical threats in the next 30 days. System looks stable.';
+    summary.style.color='#00ff96';
+    list.innerHTML='';
+    return;
+  }
+
+  // Summary line — plain English for everyone
+  const s=pm.summary||'';
+  const urgClass=s.includes('URGENT')?'#ff4444':s.includes('WARNING')?'#ffb400':'#00c8ff';
+  summary.style.color=urgClass;
+  summary.textContent=s;
+
+  // Threat cards
+  list.innerHTML=pm.threats.map(t=>{
+    const prob=t.probability||0;
+    const days=t.days_until?`~${Math.ceil(t.days_until)} days`:null;
+
+    // Risk level for styling
+    const cls=prob>=75?'urgent':prob>=50?'warning':'advisory';
+
+    // Emoji for non-technical users
+    const icon=prob>=75?'🔴':prob>=50?'🟡':'🟢';
+
+    // Plain English severity label
+    const sevLabel=prob>=75?'High risk':prob>=50?'Moderate risk':'Low risk';
+
+    // Timeline — human readable
+    const timeStr=days
+      ?`<span style="color:#ffb400;font-weight:600">${days}</span>`
+      :`<span style="color:var(--muted)">no fixed timeline</span>`;
+
+    // Probability bar
+    const barW=Math.round(prob);
+    const barCol=prob>=75?'#ff4444':prob>=50?'#ffb400':'#00c8ff';
+
+    // Evidence — show as plain bullets
+    const evidence=(t.evidence||[]).map(e=>
+      `<div style="font-size:11px;color:var(--muted);padding:2px 0">→ ${e}</div>`
+    ).join('');
+
+    return `<div class="pm-threat ${cls}">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">
+        <div>
+          <span style="font-size:15px">${icon}</span>
+          <span style="font-weight:700;font-size:13px;margin-left:6px">${t.failure_type}</span>
+          <span style="font-size:11px;color:var(--muted);margin-left:8px">${sevLabel}</span>
+        </div>
+        <div style="text-align:right;font-family:var(--mono);font-size:11px">
+          <div>${timeStr}</div>
+          <div style="color:var(--muted)">${prob}% probability</div>
+        </div>
+      </div>
+
+      <!-- Probability bar — visual for non-technical users -->
+      <div style="height:3px;background:rgba(255,255,255,0.08);border-radius:2px;margin-bottom:8px">
+        <div style="height:100%;width:${barW}%;background:${barCol};border-radius:2px;transition:width 0.5s"></div>
+      </div>
+
+      <!-- Headline — one sentence anyone can understand -->
+      <div style="font-size:12px;color:var(--text);margin-bottom:6px">${t.headline}</div>
+
+      <!-- Evidence — collapsible for technical users -->
+      <div class="pm-evidence">
+        <div style="font-size:10px;color:var(--muted);margin-bottom:4px;font-family:var(--mono);letter-spacing:0.05em">EVIDENCE</div>
+        ${evidence}
+      </div>
+
+      <!-- Recommendation — actionable for everyone -->
+      <div style="margin-top:8px;padding:6px 10px;background:rgba(255,255,255,0.04);border-radius:4px;font-size:11px;color:var(--text)">
+        <span style="color:#ffb400">→ What to do: </span>${t.recommendation}
+      </div>
+    </div>`;
+  }).join('');
 }
 
 function renderBlackBox(bb){
