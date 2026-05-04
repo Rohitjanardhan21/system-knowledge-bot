@@ -1,6 +1,7 @@
 """
 CVIS Failure DNA Engine
 Learns your machine's unique failure fingerprint.
+Includes: Trust Layer + Anomaly Explainability
 """
 import json, os, time, threading
 from collections import deque
@@ -80,12 +81,45 @@ DEFAULT_PATTERNS = {
     ),
 }
 
+# ---------------------------------------------------------------------------
+# Metric display helpers
+# ---------------------------------------------------------------------------
+
+_METRIC_LABELS = {
+    "cpu":     "CPU usage",
+    "mem":     "RAM usage",
+    "disk":    "Disk usage",
+    "net":     "Network I/O",
+    "anomaly": "Anomaly score",
+}
+
+_PATTERN_TRIGGERS = {
+    "OOM":        ["mem", "anomaly"],
+    "CRASH":      ["cpu", "anomaly"],
+    "THERMAL":    ["cpu"],
+    "FREEZE":     ["disk", "cpu"],
+    "CPU_STRESS": ["cpu", "anomaly"],
+    "DISK_FULL":  ["disk"],
+}
+
+_NORMAL_THRESHOLDS = {
+    "cpu":     70.0,
+    "mem":     75.0,
+    "disk":    85.0,
+    "net":     60.0,
+    "anomaly": 0.50,
+}
+
+# ---------------------------------------------------------------------------
+# Core engine
+# ---------------------------------------------------------------------------
+
 class FailureDNAEngine:
     DNA_FILE     = "data/failure_dna.json"
     HISTORY_FILE = "data/failure_history.json"
     PRE_FAILURE_WINDOW = 120
-    MIN_CONFIDENCE     = 0.70   # raised: only fire when genuinely confident
-    MIN_SAMPLES        = 15     # need 15+ observations before trusting a pattern
+    MIN_CONFIDENCE     = 0.70
+    MIN_SAMPLES        = 15
 
     def __init__(self):
         self._lock = threading.Lock()
@@ -98,6 +132,10 @@ class FailureDNAEngine:
         self._load()
         if not self._patterns:
             self._patterns = {k: v for k, v in DEFAULT_PATTERNS.items()}
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
 
     def ingest(self, metrics: dict):
         snapshot = self._extract_snapshot(metrics)
@@ -126,7 +164,6 @@ class FailureDNAEngine:
         best_confidence = 0.0
         with self._lock:
             for pattern_id, pattern in self._patterns.items():
-                # Trust gate — don't predict until we have enough observations
                 if pattern.seen_count < self.MIN_SAMPLES:
                     continue
                 if pattern.detection_accuracy < 0.70:
@@ -201,9 +238,20 @@ class FailureDNAEngine:
         if mem > 80:             improvements.append({"action":"Free up memory","points":35})
         if recent_failures:      improvements.append({"action":"Investigate recent crashes","points":25})
         if anomaly > 0.5:        improvements.append({"action":"Address anomaly source","points":20})
-        return {"score":score,"grade":grade,"color":color,"max":1000,
-                "percentile":min(99,int(score/10)),"improvements":improvements[:3],
-                "failure_count_7d":len(recent_failures),"patterns_learned":len(self._patterns)}
+
+        # Data quality context
+        snapshot_count = len(self._metric_buffer)
+        data_quality = (
+            "sufficient" if snapshot_count >= 50
+            else f"building — {snapshot_count} snapshots collected"
+        )
+
+        return {
+            "score": score, "grade": grade, "color": color, "max": 1000,
+            "percentile": min(99, int(score/10)), "improvements": improvements[:3],
+            "failure_count_7d": len(recent_failures), "patterns_learned": len(self._patterns),
+            "data_quality": data_quality, "snapshot_count": snapshot_count,
+        }
 
     def get_active_predictions(self) -> list:
         with self._lock:
@@ -226,11 +274,17 @@ class FailureDNAEngine:
                 "total_failures": len(self._history),
                 "prevented": sum(1 for e in self._history if e.prevented),
                 "pattern_list": [
-                    {"type":p.failure_type,"seen":p.seen_count,"prevented":p.prevented_count,
-                     "accuracy":round(p.detection_accuracy*100,1),"lead_time":round(p.avg_lead_time_minutes,1),
-                     "description":p.plain_description,"confidence":round(p.confidence*100,1),
-                     "data_quality":_data_quality_label(p.seen_count, p.detection_accuracy),
-                     "trustworthy":p.seen_count >= 15 and p.detection_accuracy >= 0.70}
+                    {
+                        "type": p.failure_type,
+                        "seen": p.seen_count,
+                        "prevented": p.prevented_count,
+                        "accuracy": round(p.detection_accuracy * 100, 1),
+                        "lead_time": round(p.avg_lead_time_minutes, 1),
+                        "description": p.plain_description,
+                        "confidence": round(p.confidence * 100, 1),
+                        "data_quality": _data_quality_label(p.seen_count, p.detection_accuracy),
+                        "trustworthy": p.seen_count >= 15 and p.detection_accuracy >= 0.70,
+                    }
                     for p in self._patterns.values()
                 ],
             }
@@ -241,33 +295,227 @@ class FailureDNAEngine:
         if not event:
             return {}
         ts = time.strftime("%b %d, %Y at %I:%M %p", time.localtime(event.timestamp))
-        plain_type = {"OOM":"ran out of memory","CRASH":"experienced a process crash",
-                      "FREEZE":"became unresponsive","THERMAL":"overheated"}.get(event.event_type,"experienced an issue")
+        plain_type = {
+            "OOM":     "ran out of memory",
+            "CRASH":   "experienced a process crash",
+            "FREEZE":  "became unresponsive",
+            "THERMAL": "overheated",
+        }.get(event.event_type, "experienced an issue")
         return {
-            "event_id":event_id,"timestamp":ts,
-            "what_happened":f"Your computer {plain_type}.",
-            "description":event.description,"prevented":event.prevented,"severity":event.severity,
-            "recommendation":self._postmortem_recommendation(event.event_type),
+            "event_id": event_id, "timestamp": ts,
+            "what_happened": f"Your computer {plain_type}.",
+            "description": event.description, "prevented": event.prevented,
+            "severity": event.severity,
+            "recommendation": self._postmortem_recommendation(event.event_type),
         }
 
+    # ------------------------------------------------------------------
+    # NEW: Anomaly Explainability
+    # ------------------------------------------------------------------
+
+    def explain(self, current_metrics: dict, pattern_name: str) -> dict:
+        """
+        Build a plain-English explanation of why CVIS is worried about
+        a given failure type, based on current metrics vs learned baseline.
+
+        Returns a dict with:
+          summary         — one-sentence headline
+          evidence        — list of plain-English observations
+          lead_time       — expected time to failure at current rate
+          last_similar    — timestamp of last similar recorded event (or None)
+          confidence_label — human label for confidence level
+          triggered_by    — which metrics are driving the alert
+        """
+        pattern_id = f"dna_{pattern_name}" if not pattern_name.startswith("dna_") else pattern_name
+        with self._lock:
+            pattern = self._patterns.get(pattern_id)
+            baseline = dict(self._baseline_stats)
+            buffer   = list(self._metric_buffer)
+            history  = list(self._history)
+
+        if not pattern:
+            return {"summary": "No pattern data available yet.", "evidence": []}
+
+        snapshot = self._extract_snapshot(current_metrics)
+        evidence = []
+        triggered_by = []
+
+        # --- Compare current readings against learned baseline ---
+        metric_map = {
+            "cpu":     ("cpu_percent",     current_metrics.get("cpu_percent",  0)),
+            "mem":     ("memory",          current_metrics.get("memory",       0)),
+            "disk":    ("disk_percent",    current_metrics.get("disk_percent", 0)),
+            "net":     ("network_percent", current_metrics.get("network_percent", 0)),
+            "anomaly": ("ensemble_score",  current_metrics.get("ensemble_score",  0)),
+        }
+
+        relevant_keys = _PATTERN_TRIGGERS.get(pattern_name, list(metric_map.keys()))
+
+        for key in relevant_keys:
+            if key not in metric_map:
+                continue
+            api_key, current_val = metric_map[key]
+            label = _METRIC_LABELS.get(key, key)
+
+            if key in baseline:
+                b = baseline[key]
+                mean_val = b["mean"]
+                std_val  = max(0.1, b["std"])
+
+                # Format values
+                if key == "anomaly":
+                    cur_str  = f"{current_val:.2f}"
+                    mean_str = f"{mean_val:.2f}"
+                    unit     = ""
+                else:
+                    cur_str  = f"{current_val:.1f}"
+                    mean_str = f"{mean_val:.1f}"
+                    unit     = "%"
+
+                # High deviation — primary signal
+                if current_val > mean_val + 2 * std_val:
+                    evidence.append(
+                        f"{label} is {cur_str}{unit} — significantly above your normal of {mean_str}{unit}"
+                    )
+                    triggered_by.append(key)
+
+                # Moderate deviation — supporting signal
+                elif current_val > mean_val + std_val:
+                    evidence.append(
+                        f"{label} is {cur_str}{unit} — above your usual {mean_str}{unit}"
+                    )
+                    triggered_by.append(key)
+
+            else:
+                # No baseline yet — compare against fixed safe thresholds
+                threshold = _NORMAL_THRESHOLDS.get(key)
+                if threshold and current_val > threshold:
+                    label = _METRIC_LABELS.get(key, key)
+                    unit  = "" if key == "anomaly" else "%"
+                    evidence.append(
+                        f"{label} is {current_val:.1f}{unit} — above the safe threshold of {threshold}{unit}"
+                    )
+                    triggered_by.append(key)
+
+        # --- Recent trend from buffer (last 10 readings) ---
+        if len(buffer) >= 10:
+            recent_10 = buffer[-10:]
+            for key in relevant_keys:
+                vals = [s.get(key, 0) for s in recent_10]
+                if len(vals) >= 2:
+                    trend = vals[-1] - vals[0]
+                    label = _METRIC_LABELS.get(key, key)
+                    unit  = "" if key == "anomaly" else "%"
+                    if trend > 8:
+                        evidence.append(
+                            f"{label} has risen {trend:.1f}{unit} over the last 10 readings"
+                        )
+                    elif trend < -8:
+                        evidence.append(
+                            f"{label} has dropped {abs(trend):.1f}{unit} over the last 10 readings"
+                        )
+
+        # --- Historical match --- 
+        last_similar = None
+        similar_events = [
+            e for e in sorted(history, key=lambda x: x.timestamp, reverse=True)
+            if e.event_type == pattern_name
+        ]
+        if similar_events:
+            last_event = similar_events[0]
+            last_similar = time.strftime(
+                "%b %d, %Y at %I:%M %p", time.localtime(last_event.timestamp)
+            )
+            evidence.append(
+                f"CVIS has seen this {pattern_name} pattern {len(similar_events)} time(s) on this machine — "
+                f"last occurred {last_similar}"
+            )
+
+        # --- Pattern-specific context from known steps ---
+        if pattern.plain_steps:
+            evidence.append(
+                f"Typical progression: {pattern.plain_steps[1] if len(pattern.plain_steps) > 1 else pattern.plain_steps[0]}"
+            )
+
+        # --- If no evidence found, explain why ---
+        if not evidence:
+            evidence.append(
+                "Metrics are within normal range — this is an early anomaly signal based on ML pattern matching."
+            )
+
+        # --- Summary headline ---
+        conf_pct = int(pattern.confidence * 100)
+        eta_str  = f"~{int(pattern.avg_lead_time_minutes)} minutes"
+        summary = self._build_explanation_summary(pattern_name, conf_pct, eta_str, len(similar_events) if similar_events else 0)
+
+        # --- Confidence label ---
+        if conf_pct >= 90:   confidence_label = "Very high — strong signal"
+        elif conf_pct >= 75: confidence_label = "High — reliable signal"
+        elif conf_pct >= 60: confidence_label = "Moderate — pattern emerging"
+        else:                confidence_label = "Low — early indication"
+
+        return {
+            "summary":          summary,
+            "evidence":         evidence,
+            "lead_time":        f"{eta_str} at current trajectory",
+            "last_similar":     last_similar,
+            "confidence_label": confidence_label,
+            "triggered_by":     triggered_by,
+            "pattern_seen":     pattern.seen_count,
+            "trustworthy":      pattern.seen_count >= self.MIN_SAMPLES and pattern.detection_accuracy >= 0.70,
+        }
+
+    def explain_prediction(self, prediction: ActivePrediction, current_metrics: dict) -> dict:
+        """
+        Convenience wrapper — takes an ActivePrediction and returns its explanation.
+        Call this from main.py when building the /cognitive/predictions response.
+        """
+        return self.explain(current_metrics, prediction.failure_type)
+
+    # ------------------------------------------------------------------
+    # Private helpers
+    # ------------------------------------------------------------------
+
+    def _build_explanation_summary(self, failure_type: str, conf_pct: int, eta_str: str, occurrences: int) -> str:
+        base = {
+            "OOM":        f"Memory is building toward exhaustion ({conf_pct}% confidence, {eta_str} away)",
+            "CRASH":      f"CPU pattern matches a pre-crash signature ({conf_pct}% confidence, {eta_str} away)",
+            "THERMAL":    f"Sustained CPU load is heading toward thermal throttling ({conf_pct}% confidence)",
+            "FREEZE":     f"Disk and CPU activity suggests the system may become unresponsive ({conf_pct}% confidence)",
+            "CPU_STRESS": f"CPU stress pattern detected ({conf_pct}% confidence, {eta_str} away)",
+            "DISK_FULL":  f"Disk is filling at a rate that will cause issues ({conf_pct}% confidence, {eta_str} away)",
+        }.get(failure_type, f"An anomalous pattern matching {failure_type} has been detected ({conf_pct}% confidence)")
+
+        if occurrences >= 15:
+            base += f" — this exact pattern has preceded {occurrences} events on your machine"
+        elif occurrences > 0:
+            base += f" — seen {occurrences} time(s) previously on this machine"
+
+        return base
+
     def _extract_snapshot(self, metrics: dict) -> dict:
-        return {"cpu":metrics.get("cpu_percent",0),"mem":metrics.get("memory",0),
-                "disk":metrics.get("disk_percent",0),"net":metrics.get("network_percent",0),
-                "anomaly":metrics.get("ensemble_score",0),"t":time.time()}
+        return {
+            "cpu":     metrics.get("cpu_percent",      0),
+            "mem":     metrics.get("memory",           0),
+            "disk":    metrics.get("disk_percent",     0),
+            "net":     metrics.get("network_percent",  0),
+            "anomaly": metrics.get("ensemble_score",   0),
+            "t":       time.time(),
+        }
 
     def _update_baseline(self, snapshot: dict):
         for key in ["cpu","mem","disk","net","anomaly"]:
             val = snapshot.get(key, 0)
             if key not in self._baseline_stats:
-                self._baseline_stats[key] = {"mean":val,"std":1.0,"n":1}
+                self._baseline_stats[key] = {"mean": val, "std": 1.0, "n": 1}
             else:
                 s = self._baseline_stats[key]
                 n = s["n"] + 1
                 old_mean = s["mean"]
                 new_mean = old_mean + (val - old_mean) / n
-                s["std"] = max(0.1, s["std"] + (val-old_mean)*(val-new_mean)/max(1,n-1))
+                s["std"]  = max(0.1, s["std"] + (val-old_mean)*(val-new_mean)/max(1,n-1))
                 s["mean"] = new_mean
-                s["n"] = min(n, 10000)
+                s["n"]    = min(n, 10000)
 
     def _to_z_scores(self, snapshot: dict) -> np.ndarray:
         z = []
@@ -283,7 +531,7 @@ class FailureDNAEngine:
     def _learn_pattern(self, event: FailureEvent):
         if len(event.pre_snapshot) < 10:
             return
-        snapshots = event.pre_snapshot
+        snapshots  = event.pre_snapshot
         pattern_id = f"dna_{event.event_type}"
         if pattern_id not in self._patterns:
             self._patterns[pattern_id] = FailurePattern(
@@ -291,13 +539,15 @@ class FailureDNAEngine:
         pattern = self._patterns[pattern_id]
         sample_points = []
         n = len(snapshots)
-        for minutes_before in [5,15,30,60]:
+        for minutes_before in [5, 15, 30, 60]:
             idx = max(0, n - minutes_before)
             if idx < n:
-                sample_points.append({"minutes_before":minutes_before,
-                                       "z_scores":self._to_z_scores(snapshots[idx]).tolist()})
+                sample_points.append({
+                    "minutes_before": minutes_before,
+                    "z_scores": self._to_z_scores(snapshots[idx]).tolist(),
+                })
         if not pattern.signature_steps:
-            pattern.signature_steps = [p["z_scores"] for p in sample_points]
+            pattern.signature_steps  = [p["z_scores"] for p in sample_points]
             pattern.signature_timing = [p["minutes_before"] for p in sample_points]
         else:
             alpha = 0.3
@@ -306,28 +556,31 @@ class FailureDNAEngine:
                     old = np.array(pattern.signature_steps[i])
                     new = np.array(sp["z_scores"])
                     pattern.signature_steps[i] = (alpha*new + (1-alpha)*old).tolist()
-        pattern.seen_count += 1
-        pattern.last_seen = time.time()
-        pattern.avg_lead_time_minutes = 0.7*pattern.avg_lead_time_minutes + 0.3*30.0 if pattern.avg_lead_time_minutes else 30.0
-        pattern.confidence = min(0.95, 0.4 + pattern.seen_count*0.1)
-        pattern.detection_accuracy = min(1.0, pattern.seen_count/max(1,pattern.seen_count+1))
-        pattern.plain_description = self._build_plain_description(event.event_type)
+        pattern.seen_count            += 1
+        pattern.last_seen              = time.time()
+        pattern.avg_lead_time_minutes  = (
+            0.7 * pattern.avg_lead_time_minutes + 0.3 * 30.0
+            if pattern.avg_lead_time_minutes else 30.0
+        )
+        pattern.confidence             = min(0.95, 0.4 + pattern.seen_count * 0.1)
+        pattern.detection_accuracy     = min(1.0, pattern.seen_count / max(1, pattern.seen_count + 1))
+        pattern.plain_description      = self._build_plain_description(event.event_type)
 
     def _match_pattern(self, pattern: FailurePattern, current_buffer: list) -> tuple:
         if not pattern.signature_steps or len(current_buffer) < 10:
             return 0.0, 60.0
-        recent = current_buffer[-min(30,len(current_buffer)):]
+        recent    = current_buffer[-min(30, len(current_buffer)):]
         current_z = np.array([self._to_z_scores(s) for s in recent])
-        scores = []
+        scores    = []
         for sig_z in pattern.signature_steps:
             sig = np.array(sig_z)
             if len(current_z) > 0:
-                dists = [np.linalg.norm(current_z[j]-sig) for j in range(len(current_z))]
-                scores.append(1.0/(1.0+min(dists)))
+                dists = [np.linalg.norm(current_z[j] - sig) for j in range(len(current_z))]
+                scores.append(1.0 / (1.0 + min(dists)))
         if not scores:
             return 0.0, 60.0
         base_confidence = np.mean(scores) * pattern.confidence
-        eta = max(5.0, pattern.avg_lead_time_minutes*(1.0-base_confidence))
+        eta = max(5.0, pattern.avg_lead_time_minutes * (1.0 - base_confidence))
         return float(base_confidence), float(eta)
 
     def _get_active_prediction(self, pattern_id: str):
@@ -337,18 +590,20 @@ class FailureDNAEngine:
         return None
 
     def _severity_from_eta(self, eta: float, conf: float) -> str:
-        if eta<=10 and conf>0.7: return "CRITICAL"
-        if eta<=20 and conf>0.6: return "HIGH"
-        if eta<=45:              return "MEDIUM"
+        if eta <= 10 and conf > 0.7: return "CRITICAL"
+        if eta <= 20 and conf > 0.6: return "HIGH"
+        if eta <= 45:                return "MEDIUM"
         return "LOW"
 
     def _plain_prediction_message(self, pattern, eta, conf) -> str:
-        eta_str = f"in about {int(eta)} minutes" if eta>2 else "very soon"
+        eta_str  = f"in about {int(eta)} minutes" if eta > 2 else "very soon"
         conf_pct = int(conf * 100)
-        msgs = {"OOM":f"Your computer is likely to run out of memory {eta_str}",
-                "CRASH":f"A process crash is predicted {eta_str}",
-                "FREEZE":f"Your system may become unresponsive {eta_str}",
-                "THERMAL":f"Overheating is likely {eta_str}"}
+        msgs = {
+            "OOM":     f"Your computer is likely to run out of memory {eta_str}",
+            "CRASH":   f"A process crash is predicted {eta_str}",
+            "FREEZE":  f"Your system may become unresponsive {eta_str}",
+            "THERMAL": f"Overheating is likely {eta_str}",
+        }
         base = msgs.get(pattern.failure_type, f"A system issue is predicted {eta_str}")
         if pattern.seen_count >= 15:
             base += f" — seen this pattern {pattern.seen_count} times on this machine"
@@ -357,44 +612,59 @@ class FailureDNAEngine:
         return base
 
     def _plain_action(self, pattern) -> str:
-        return {"OOM":"Close unused browser tabs and restart memory-heavy applications",
-                "CRASH":"Save your work and restart the affected application",
-                "FREEZE":"Save your work now — the system may stop responding shortly",
-                "THERMAL":"Close heavy applications and improve airflow around your computer"
-               }.get(pattern.failure_type,"Save your work and monitor the situation")
+        return {
+            "OOM":     "Close unused browser tabs and restart memory-heavy applications",
+            "CRASH":   "Save your work and restart the affected application",
+            "FREEZE":  "Save your work now — the system may stop responding shortly",
+            "THERMAL": "Close heavy applications and improve airflow around your computer",
+        }.get(pattern.failure_type, "Save your work and monitor the situation")
 
     def _build_plain_description(self, event_type: str) -> str:
-        return {"OOM":"Memory fills up before the system runs out",
-                "CRASH":"CPU and anomaly scores spike before a process terminates",
-                "FREEZE":"Disk I/O saturates before the system becomes unresponsive",
-                "THERMAL":"CPU usage stays high leading to thermal throttling"
-               }.get(event_type,"Unusual metric pattern precedes this failure type")
+        return {
+            "OOM":     "Memory fills up before the system runs out",
+            "CRASH":   "CPU and anomaly scores spike before a process terminates",
+            "FREEZE":  "Disk I/O saturates before the system becomes unresponsive",
+            "THERMAL": "CPU usage stays high leading to thermal throttling",
+        }.get(event_type, "Unusual metric pattern precedes this failure type")
 
     def _postmortem_recommendation(self, event_type: str) -> str:
-        return {"OOM":"Consider adding more RAM or closing memory-heavy apps during heavy sessions.",
-                "CRASH":"Check application logs. Update the affected software if available.",
-                "FREEZE":"Restart to clear accumulated state. Check disk health.",
-                "THERMAL":"Clean cooling vents and ensure adequate airflow."
-               }.get(event_type,"Monitor the system and consult logs for more details.")
+        return {
+            "OOM":     "Consider adding more RAM or closing memory-heavy apps during heavy sessions.",
+            "CRASH":   "Check application logs. Update the affected software if available.",
+            "FREEZE":  "Restart to clear accumulated state. Check disk health.",
+            "THERMAL": "Clean cooling vents and ensure adequate airflow.",
+        }.get(event_type, "Monitor the system and consult logs for more details.")
 
     def _save(self):
         try:
             dna_data = {k: asdict(v) for k, v in self._patterns.items()}
-            with open(self.DNA_FILE,"w") as f: json.dump(dna_data,f,indent=2)
+            with open(self.DNA_FILE, "w") as f:
+                json.dump(dna_data, f, indent=2)
             history_data = [asdict(e) for e in self._history[-200:]]
-            with open(self.HISTORY_FILE,"w") as f: json.dump(history_data,f,indent=2)
-        except Exception: pass
+            with open(self.HISTORY_FILE, "w") as f:
+                json.dump(history_data, f, indent=2)
+        except Exception:
+            pass
 
     def _load(self):
         try:
             if os.path.exists(self.DNA_FILE):
-                with open(self.DNA_FILE) as f: data = json.load(f)
-                for k,v in data.items(): self._patterns[k] = FailurePattern(**v)
+                with open(self.DNA_FILE) as f:
+                    data = json.load(f)
+                for k, v in data.items():
+                    self._patterns[k] = FailurePattern(**v)
             if os.path.exists(self.HISTORY_FILE):
-                with open(self.HISTORY_FILE) as f: data = json.load(f)
-                for item in data: self._history.append(FailureEvent(**item))
-        except Exception: pass
+                with open(self.HISTORY_FILE) as f:
+                    data = json.load(f)
+                for item in data:
+                    self._history.append(FailureEvent(**item))
+        except Exception:
+            pass
 
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 def _data_quality_label(seen: int, accuracy: float) -> str:
     """Human-readable data quality label shown on dashboard."""
@@ -404,8 +674,12 @@ def _data_quality_label(seen: int, accuracy: float) -> str:
     return "insufficient — not yet reliable"
 
 
+# ---------------------------------------------------------------------------
+# Singleton
+# ---------------------------------------------------------------------------
+
 _dna_engine = None
-_dna_lock = threading.Lock()
+_dna_lock   = threading.Lock()
 
 def get_dna_engine() -> FailureDNAEngine:
     global _dna_engine

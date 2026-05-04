@@ -49,13 +49,25 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:1
 .pred-eta-lbl{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;text-align:right}
 .pred-action{margin-top:12px;padding:10px 14px;border-radius:6px;display:flex;align-items:center;justify-content:space-between;gap:12px;background:rgba(248,113,113,.07);border:1px solid rgba(248,113,113,.2)}
 .pred-btn{font-size:11px;font-weight:600;padding:5px 14px;border-radius:5px;border:none;cursor:pointer;font-family:var(--sans)}
+/* NEW: Explanation panel */
+.explain-panel{margin-top:10px;padding:12px 14px;border-radius:6px;background:rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.06);display:none}
+.explain-panel.open{display:block}
+.explain-toggle{font-size:11px;color:var(--accent);cursor:pointer;background:none;border:none;font-family:var(--sans);padding:0;margin-top:8px;text-decoration:underline;text-underline-offset:2px}
+.explain-evidence{font-size:11px;color:#aaa;line-height:1.8;padding-left:8px;border-left:2px solid rgba(124,106,247,.3)}
+.explain-evidence div{margin-bottom:2px}
+.explain-evidence div::before{content:'→ ';color:var(--accent)}
 /* Forecast */
 .fc-summary{font-size:12px;color:#aaa;line-height:1.6;margin-bottom:12px;padding:10px 12px;border-radius:6px;background:rgba(0,0,0,.2)}
-.fc-bar-row{display:flex;align-items:center;gap:10px;padding:6px 10px;border-radius:5px;margin-bottom:5px;font-size:11px}
+.fc-bar-row{display:flex;align-items:center;gap:10px;padding:6px 10px;border-radius:5px;margin-bottom:5px;font-size:11px;cursor:pointer;transition:background .15s}
+.fc-bar-row:hover{background:rgba(255,255,255,.03)}
 .fc-time{font-family:var(--mono);color:var(--muted);width:44px;flex-shrink:0}
 .fc-track{flex:1;height:5px;border-radius:3px;background:rgba(255,255,255,.05);overflow:hidden}
 .fc-fill{height:100%;border-radius:3px;transition:width .6s}
 .fc-risk{min-width:80px;text-align:right;font-weight:600}
+/* NEW: Forecast insight rows */
+.fc-insight{padding:7px 10px;border-radius:5px;background:rgba(0,0,0,.2);margin-bottom:5px;font-size:11px;display:flex;align-items:center;gap:8px}
+.fc-insight-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.fc-watch{padding:8px 12px;border-radius:6px;background:rgba(124,106,247,.07);border:1px solid rgba(124,106,247,.2);font-size:11px;color:#bbb;margin-top:8px;line-height:1.7}
 /* Metrics */
 .metrics-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
 .mc{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px 16px}
@@ -120,8 +132,32 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:1
 .pm-evidence{margin-top:8px;padding:8px 10px;background:rgba(0,0,0,0.2);border-radius:4px}
 /* DNA */
 .dna-row{padding:10px 12px;border-radius:6px;background:rgba(0,0,0,.2);margin-bottom:8px}
+/* NEW: DNA explanation panel */
+.dna-explain{margin-top:8px;padding:10px 12px;border-radius:5px;background:rgba(0,0,0,.25);border:1px solid rgba(124,106,247,.15);display:none}
+.dna-explain.open{display:block}
+.dna-explain-evidence{font-size:11px;color:#aaa;line-height:1.8}
+.dna-explain-evidence div::before{content:'→ ';color:var(--accent)}
 /* BB frames */
 .bb-frame{display:flex;align-items:center;gap:8px;padding:5px 10px;border-radius:4px;font-size:11px;font-family:var(--mono);border-left:2px solid;margin-bottom:3px}
+/* NEW: Timeline modal */
+#timeline-modal{display:none;position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.7);backdrop-filter:blur(4px);align-items:center;justify-content:center}
+#timeline-modal.open{display:flex}
+#timeline-box{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:28px;max-width:620px;width:90%;max-height:80vh;overflow-y:auto;position:relative}
+#timeline-box::-webkit-scrollbar{width:3px}#timeline-box::-webkit-scrollbar-thumb{background:var(--border)}
+.tl-close{position:absolute;top:16px;right:16px;background:none;border:none;color:var(--muted);cursor:pointer;font-size:18px;line-height:1}
+.tl-step{display:flex;gap:14px;margin-bottom:0;position:relative}
+.tl-step:not(:last-child)::before{content:'';position:absolute;left:11px;top:22px;width:2px;bottom:-8px;background:var(--border)}
+.tl-dot{width:24px;height:24px;border-radius:50%;border:2px solid;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;margin-top:2px}
+.tl-dot.primary{border-color:var(--red);background:rgba(248,113,113,.15);color:var(--red)}
+.tl-dot.supporting{border-color:var(--yellow);background:rgba(251,191,36,.1);color:var(--yellow)}
+.tl-dot.incident{border-color:var(--red);background:var(--red);color:#000}
+.tl-dot.ok{border-color:var(--muted);background:transparent;color:var(--muted)}
+.tl-body{padding-bottom:16px;flex:1}
+.tl-time{font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:2px}
+.tl-event{font-size:12px;color:var(--text);font-weight:500}
+.tl-val{font-family:var(--mono);font-size:11px;color:var(--muted)}
+/* Forecast point tooltip */
+.fc-tooltip{position:fixed;background:#1a1a28;border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-size:11px;color:#bbb;max-width:260px;line-height:1.6;z-index:900;pointer-events:none;display:none}
 /* Chat */
 #ch-head{padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-shrink:0}
 #ch-msgs{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px}
@@ -174,7 +210,7 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:1
       <div style="display:flex;align-items:baseline;gap:14px;margin-bottom:8px">
         <div class="hs-number" id="hs-number" style="color:var(--green)">—</div>
         <div>
-          <div style="font-size:18px;font-weight:600" id="hs-grade" style="color:var(--green)">Loading…</div>
+          <div style="font-size:18px;font-weight:600" id="hs-grade">Loading…</div>
           <div style="font-size:11px;color:var(--muted)">out of 1000</div>
         </div>
       </div>
@@ -201,6 +237,8 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:1
       <div style="flex:1">
         <div class="pred-title" id="pred-title" style="color:var(--red)">Failure Predicted</div>
         <div class="pred-desc" id="pred-desc"></div>
+        <!-- NEW: trust badge -->
+        <div id="pred-trust" style="margin-top:4px;font-size:10px;color:var(--muted)"></div>
       </div>
       <div>
         <div class="pred-eta" id="pred-eta" style="color:var(--red)">—</div>
@@ -215,16 +253,23 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:1
         <button class="pred-btn" onclick="dismissPrediction()" style="background:rgba(255,255,255,.08);color:var(--muted)">Dismiss</button>
       </div>
     </div>
+    <!-- NEW: Why is CVIS worried? -->
+    <button class="explain-toggle" onclick="toggleExplain('pred-explain')">▶ Why is CVIS worried?</button>
+    <div class="explain-panel" id="pred-explain">
+      <div style="font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:8px">Evidence</div>
+      <div class="explain-evidence" id="pred-explain-evidence"></div>
+      <div style="margin-top:8px;font-size:11px;color:var(--muted)" id="pred-explain-lead"></div>
+      <div style="margin-top:4px;font-size:11px;color:var(--muted)" id="pred-explain-last"></div>
+    </div>
   </div>
 
-
-  <!-- Feedback Banner — appears after prediction resolves -->
-  <div id="feedback-banner" style="display:none;border-radius:8px;border:1px solid rgba(124,106,247,.3);background:rgba(124,106,247,.06);padding:12px 18px;display:none;align-items:center;gap:14px;font-size:12px">
+  <!-- Feedback Banner -->
+  <div id="feedback-banner" style="display:none;border-radius:8px;border:1px solid rgba(124,106,247,.3);background:rgba(124,106,247,.06);padding:12px 18px;align-items:center;gap:14px;font-size:12px">
     <span style="font-size:18px">🎯</span>
     <span style="flex:1;color:#bbb" id="feedback-text">Was our warning correct?</span>
     <button onclick="sendFeedback(true)" style="font-size:11px;padding:4px 12px;border-radius:4px;border:1px solid rgba(52,211,153,.4);background:rgba(52,211,153,.08);color:var(--green);cursor:pointer;font-family:var(--sans)">✓ Yes, it was right</button>
     <button onclick="sendFeedback(false)" style="font-size:11px;padding:4px 12px;border-radius:4px;border:1px solid rgba(248,113,113,.3);background:rgba(248,113,113,.07);color:var(--red);cursor:pointer;font-family:var(--sans)">✗ False alarm</button>
-    <button onclick="$('feedback-banner').style.display='none'" style="font-size:11px;padding:4px 10px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;font-family:var(--sans)">Skip</button>
+    <button onclick="document.getElementById('feedback-banner').style.display='none'" style="font-size:11px;padding:4px 10px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;font-family:var(--sans)">Skip</button>
   </div>
 
   <!-- Severity Banner -->
@@ -248,9 +293,20 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:1
   <!-- Forecast + RCA -->
   <div class="grid2">
     <div class="card">
-      <div class="card-title">60-Min Forecast <span style="font-weight:400;color:var(--muted);text-transform:none;font-family:var(--mono);font-size:9px" id="fc-conf"></span></div>
+      <!-- NEW: trust badge + confidence label -->
+      <div class="card-title">
+        60-Min Forecast
+        <span style="display:flex;align-items:center;gap:6px">
+          <span id="fc-trust-badge" style="font-family:var(--mono);font-size:9px;padding:2px 6px;border-radius:3px;display:none"></span>
+          <span style="font-weight:400;color:var(--muted);text-transform:none;font-family:var(--mono);font-size:9px" id="fc-conf"></span>
+        </span>
+      </div>
       <div id="fc-summary" class="fc-summary">Analyzing trends…</div>
       <div id="fc-timeline"></div>
+      <!-- NEW: Trend insights -->
+      <div id="fc-insights" style="margin-top:10px"></div>
+      <!-- NEW: What to watch -->
+      <div id="fc-watch"></div>
     </div>
     <div class="card">
       <div class="card-title">Root Cause Analysis <span id="rca-ts" style="font-weight:400;color:var(--muted);text-transform:none;font-family:var(--mono);font-size:9px"></span></div>
@@ -302,7 +358,7 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:1
     </div>
   </div>
 
-  <!-- DNA + Black Box -->
+  <!-- DNA + Black Box / Pre-Mortem -->
   <div class="grid2">
     <div class="card">
       <div id="hs-data-quality" style="margin-bottom:6px;min-height:16px"></div>
@@ -310,12 +366,9 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:1
       <div id="dna-list"><div style="color:var(--muted);font-size:12px;text-align:center;padding:20px">No patterns learned yet.<br>Patterns appear after you record incidents.</div></div>
     </div>
     <div class="card">
-      <!-- Pre-Mortem Section -->
       <div id="premortem-section" style="margin-bottom:16px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-          <div>
-            <div class="card-title" style="margin-bottom:2px">Future Failure Forecast <span style="font-weight:400;color:var(--muted);text-transform:none;font-size:9px">what will kill this machine in the next 30 days</span></div>
-          </div>
+          <div class="card-title" style="margin-bottom:2px">Future Failure Forecast <span style="font-weight:400;color:var(--muted);text-transform:none;font-size:9px">what will kill this machine in the next 30 days</span></div>
           <div id="premortem-quality" style="font-family:var(--mono);font-size:10px;color:var(--muted)"></div>
         </div>
         <div id="premortem-summary" style="font-size:12px;color:var(--muted);margin-bottom:10px;font-family:var(--mono)">Analysing trends...</div>
@@ -326,7 +379,10 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:1
       <div style="margin-top:10px;display:flex;gap:8px">
         <button onclick="markIncident()" style="font-size:11px;padding:5px 12px;border-radius:5px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;font-family:var(--sans)">⚑ Mark Incident</button>
         <button onclick="loadBlackBox()" style="font-size:11px;padding:5px 12px;border-radius:5px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;font-family:var(--sans)">↻ Refresh</button>
+        <button onclick="loadIncidents()" style="font-size:11px;padding:5px 12px;border-radius:5px;border:1px solid var(--border);background:transparent;color:var(--accent);cursor:pointer;font-family:var(--sans)">⊞ Incidents</button>
       </div>
+      <!-- NEW: Incident list with timeline buttons -->
+      <div id="incident-list" style="margin-top:10px;display:none"></div>
     </div>
   </div>
 
@@ -373,8 +429,34 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:1
     </div>
   </div>
 </aside>
-
 </div>
+
+<!-- NEW: Timeline modal -->
+<div id="timeline-modal" onclick="if(event.target===this)closeTimeline()">
+  <div id="timeline-box">
+    <button class="tl-close" onclick="closeTimeline()">✕</button>
+    <div style="font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:4px">Post-Mortem</div>
+    <div id="tl-incident-type" style="font-size:18px;font-weight:700;margin-bottom:2px"></div>
+    <div id="tl-incident-time" style="font-size:11px;color:var(--muted);margin-bottom:18px"></div>
+    <!-- What happened -->
+    <div id="tl-what-happened" style="font-size:12px;color:#bbb;padding:10px 14px;background:rgba(0,0,0,.2);border-radius:6px;margin-bottom:16px;line-height:1.7"></div>
+    <!-- Timeline steps -->
+    <div style="font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:12px">Failure Timeline</div>
+    <div id="tl-steps" style="margin-bottom:18px"></div>
+    <!-- Contributing factors -->
+    <div style="font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:10px">Contributing Factors</div>
+    <div id="tl-factors" style="margin-bottom:18px"></div>
+    <!-- What to watch -->
+    <div style="font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:8px">What to Watch</div>
+    <div id="tl-watch" style="margin-bottom:18px"></div>
+    <!-- Recommendation -->
+    <div id="tl-recommendation" style="padding:12px 14px;border-radius:6px;background:rgba(124,106,247,.07);border:1px solid rgba(124,106,247,.2);font-size:12px;color:#ccc;line-height:1.7"></div>
+  </div>
+</div>
+
+<!-- Forecast point tooltip -->
+<div id="fc-tooltip" class="fc-tooltip"></div>
+
 <script>
 const API='',POLL_MS=3000,HISTORY_LEN=60;
 const apiKey=localStorage.getItem('cvis_key')||'test123';
@@ -382,13 +464,133 @@ const startTime=Date.now();
 let snap={},hist=[],offline=false,chatHistory=[],tickCount=0;
 let _lastPredId=null,_predShownAt=null;
 let selectedDevice=null,activePredId=null,forecast=null,dnaData=null;
+let _lastPredExplain=null; // NEW: store explanation data
 
 class AR{constructor(mu,p1,p2,s){this.mu=mu;this.p1=p1;this.p2=p2;this.s=s;this.v1=mu;this.v2=mu;}next(){const n=Math.sqrt(-2*Math.log(Math.random()))*Math.cos(2*Math.PI*Math.random());const v=Math.max(0,Math.min(100,this.mu+this.p1*(this.v1-this.mu)+this.p2*(this.v2-this.mu)+n*this.s));this.v2=this.v1;this.v1=v;return v;}}
 const arC=new AR(35,.72,.14,4),arM=new AR(48,.80,.09,3),arD=new AR(28,.62,.18,2.5);
 function demoSnap(){const c=arC.next(),m=arM.next(),d=arD.next(),h=Math.max(50,100-Math.max(0,c-70)*.45-Math.max(0,m-65)*.3),a=Math.max(0,Math.min(1,(c-30)/130+(m-40)/160));return{cpu_percent:c,memory:m,disk_percent:d,health_score:h,ensemble_score:a,if_score:a*.9,vae_score:a*.85,lstm_score:a*.7,model_fitted:false,steps_lstm:0,steps_vae:0,redis:{available:false},db:{available:false,alerts:0},processes:{by_cpu:[{name:'python3',pid:1234,cpu:c*.32,mem:14.2},{name:'uvicorn',pid:1235,cpu:c*.18,mem:8.3},{name:'redis',pid:890,cpu:c*.05,mem:3.1},{name:'nginx',pid:456,cpu:c*.03,mem:1.9}]},alerts:[],reason:'Demo mode — backend offline',actions:['Start backend to enable live data'],severity:'LOW',health_credit_score:780,health_grade:'Good',active_prediction:null};}
 
+const $=id=>document.getElementById(id);
 async function fetch_(p){const r=await fetch(API+p,{headers:{'X-API-Key':apiKey}});if(!r.ok)throw new Error(r.status);return r.json();}
 
+// ── NEW: Toggle explain panels ──────────────────────────
+function toggleExplain(id){
+  const el=$(id);if(!el)return;
+  el.classList.toggle('open');
+  const btn=el.previousElementSibling;
+  if(btn&&btn.classList.contains('explain-toggle'))
+    btn.textContent=el.classList.contains('open')?'▼ Why is CVIS worried?':'▶ Why is CVIS worried?';
+}
+
+function toggleDnaExplain(id){
+  const el=$(id);if(!el)return;
+  el.classList.toggle('open');
+  const btn=el.previousElementSibling;
+  if(btn){const open=el.classList.contains('open');btn.textContent=open?'▼ Why now?':'▶ Why now?';}
+}
+
+// ── NEW: Timeline modal ─────────────────────────────────
+async function showTimeline(incidentId){
+  try{
+    const pm=await fetch_(`/cognitive/postmortem/${incidentId}`);
+    renderTimelineModal(pm);
+  }catch(e){
+    renderTimelineModal(null,'Could not load post-mortem data.');
+  }
+}
+
+function renderTimelineModal(pm, errMsg){
+  const modal=$('timeline-modal');
+  modal.classList.add('open');
+
+  if(!pm||errMsg){
+    $('tl-incident-type').textContent='Post-Mortem';
+    $('tl-what-happened').textContent=errMsg||'No data available.';
+    $('tl-steps').innerHTML='';$('tl-factors').innerHTML='';
+    $('tl-watch').innerHTML='';$('tl-recommendation').textContent='';
+    $('tl-incident-time').textContent='';
+    return;
+  }
+
+  $('tl-incident-type').textContent=`${pm.type||'Incident'} Post-Mortem`;
+  $('tl-incident-time').textContent=pm.occurred_at||'';
+  $('tl-what-happened').textContent=pm.what_happened||pm.description||'';
+
+  // Timeline steps
+  const steps=pm.timeline||[];
+  $('tl-steps').innerHTML=steps.length
+    ? steps.map(s=>{
+        const isInc=s.significance==='incident';
+        const isPrim=s.significance==='primary';
+        const dotCls=isInc?'incident':isPrim?'primary':'supporting';
+        const dot=isInc?'●':isPrim?'!':'·';
+        const valStr=s.value!=null?`${s.value}${s.unit}`:'';
+        return `<div class="tl-step">
+          <div class="tl-dot ${dotCls}">${dot}</div>
+          <div class="tl-body">
+            <div class="tl-time">${s.t_minus_mins>0?`T-${s.t_minus_mins} min`:''} ${s.time_str||''}</div>
+            <div class="tl-event">${s.event}</div>
+            ${valStr?`<div class="tl-val">${s.metric}: ${valStr}</div>`:''}
+          </div>
+        </div>`;
+      }).join('')
+    : '<div style="color:var(--muted);font-size:12px">No timeline data — insufficient black box history at time of incident.</div>';
+
+  // Contributing factors
+  const factors=pm.contributing_factors||[];
+  const impactCols={primary:'var(--red)',accelerant:'var(--orange)',secondary:'var(--yellow)',supporting:'var(--muted)'};
+  $('tl-factors').innerHTML=factors.length
+    ? factors.map(f=>{
+        const c=impactCols[f.impact]||'var(--muted)';
+        return `<div style="padding:10px 12px;border-radius:6px;background:rgba(0,0,0,.2);border-left:3px solid ${c};margin-bottom:8px">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+            <span style="font-weight:600;font-size:12px">${f.factor}</span>
+            <span style="font-size:9px;padding:2px 6px;border-radius:3px;background:${c}20;color:${c};border:1px solid ${c}40;text-transform:uppercase;letter-spacing:.06em">${f.impact}</span>
+            ${f.peak!=null?`<span style="font-family:var(--mono);font-size:11px;color:${c};margin-left:auto">${f.peak}${f.unit}</span>`:''}
+          </div>
+          <div style="font-size:11px;color:#aaa;line-height:1.6">${f.detail}</div>
+        </div>`;
+      }).join('')
+    : '<div style="color:var(--muted);font-size:12px">No contributing factor data.</div>';
+
+  // What to watch
+  const watch=pm.what_to_watch||[];
+  $('tl-watch').innerHTML=watch.length
+    ? watch.map(w=>`<div style="font-size:11px;color:#aaa;padding:5px 0;border-bottom:1px solid var(--border);line-height:1.6"><span style="color:var(--accent)">→</span> ${w}</div>`).join('')
+    : '';
+
+  // Recommendation
+  $('tl-recommendation').innerHTML=pm.recommendation
+    ? `<span style="color:var(--accent);font-weight:600">Recommendation:</span> ${pm.recommendation}`
+    : '';
+}
+
+function closeTimeline(){
+  $('timeline-modal').classList.remove('open');
+}
+
+// ── Incidents panel ─────────────────────────────────────
+async function loadIncidents(){
+  const panel=$('incident-list');
+  panel.style.display=panel.style.display==='none'?'block':'none';
+  if(panel.style.display==='none')return;
+  try{
+    const incidents=await fetch_('/cognitive/incidents');
+    if(!incidents.length){panel.innerHTML='<div style="color:var(--muted);font-size:12px;padding:8px">No incidents recorded yet.</div>';return;}
+    panel.innerHTML=`<div style="font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:8px">Recorded Incidents</div>`+
+      incidents.slice(0,6).map(inc=>`
+        <div style="padding:8px 10px;border-radius:5px;background:rgba(0,0,0,.2);margin-bottom:5px;display:flex;align-items:center;gap:10px">
+          <div style="flex:1">
+            <div style="font-size:11px;font-weight:600">${inc.type}</div>
+            <div style="font-size:10px;color:var(--muted)">${inc.occurred_str||''}</div>
+          </div>
+          <button onclick="showTimeline('${inc.incident_id}')" style="font-size:10px;padding:3px 9px;border-radius:4px;border:1px solid rgba(124,106,247,.3);background:rgba(124,106,247,.07);color:var(--accent);cursor:pointer;font-family:var(--sans)">View Timeline</button>
+        </div>
+      `).join('');
+  }catch{panel.innerHTML='<div style="color:var(--muted);font-size:12px;padding:8px">Could not load incidents — backend offline.</div>';}
+}
+
+// ── Prediction expiry ────────────────────────────────────
 function checkPredictionExpiry(){
   const pred=snap.active_prediction;
   if(_lastPredId&&(!pred||pred.id!==_lastPredId)){
@@ -396,6 +598,15 @@ function checkPredictionExpiry(){
     if(fb){$('feedback-text').textContent='Was the warning we sent correct?';fb.style.display='flex';setTimeout(()=>{fb.style.display='none';},30000);}
   }
   if(pred){_lastPredId=pred.id;_predShownAt=Date.now();}
+}
+
+// NEW: send feedback to backend
+async function sendFeedback(wasCorrect){
+  if(_lastPredId){
+    try{await fetch(API+`/cognitive/predictions/${_lastPredId}/resolve?was_correct=${wasCorrect}`,{method:'POST',headers:{'X-API-Key':apiKey}});}catch{}
+  }
+  $('feedback-banner').style.display='none';
+  appendMsg('ai',wasCorrect?'Thanks — the pattern has been reinforced in the failure DNA.':'Thanks — the false alarm has been noted. CVIS will recalibrate the confidence threshold for that pattern.');
 }
 
 async function poll(){
@@ -426,9 +637,15 @@ function connectSSE(){
 
 async function loadCognitive(){
   try{
-    const[f,dna]=await Promise.all([fetch_('/cognitive/forecast').catch(()=>null),fetch_('/cognitive/dna').catch(()=>null)]);
+    const[f,dna,preds]=await Promise.all([
+      fetch_('/cognitive/forecast').catch(()=>null),
+      fetch_('/cognitive/dna').catch(()=>null),
+      fetch_('/cognitive/predictions').catch(()=>null),
+    ]);
     if(f)forecast=f;
     if(dna)dnaData=dna;
+    // Store prediction explanations
+    if(preds&&preds.length){_lastPredExplain=preds[0].explanation||null;}
     renderCognitive();
   }catch{}
 }
@@ -444,7 +661,7 @@ async function markIncident(){
   try{
     await fetch(API+`/cognitive/incident?incident_type=${type}&description=${encodeURIComponent(desc)}`,{method:'POST',headers:{'X-API-Key':apiKey}});
     loadCognitive();
-    appendMsg('ai',`Incident recorded: "${desc}". The system will learn from this pattern. Next time it sees the same pre-conditions, it will warn you in advance.`);
+    appendMsg('ai',`Incident recorded: "${desc}". The system will learn from this pattern.`);
   }catch{appendMsg('ai','Could not record incident — backend may be offline.');}
 }
 
@@ -454,17 +671,16 @@ function actOnPrediction(){
   const pred=snap.active_prediction;
   const type=pred?.type||'UNKNOWN';
   const eta=Math.ceil(pred?.eta_min||0);
-  // Build a specific question based on failure type
   const questions={
     'OOM':   `Memory failure predicted in ${eta} minutes. CPU=${snap.cpu_percent?.toFixed(1)}% MEM=${snap.memory?.toFixed(1)}%. Top process: ${snap.processes?.by_cpu?.[0]?.name||'unknown'} using ${snap.processes?.by_cpu?.[0]?.mem?.toFixed(1)||'?'}% RAM. What exact commands should I run right now to prevent this?`,
     'CRASH': `Process crash predicted in ${eta} minutes. CPU=${snap.cpu_percent?.toFixed(1)}%. Top process: ${snap.processes?.by_cpu?.[0]?.name||'unknown'} at ${snap.processes?.by_cpu?.[0]?.cpu?.toFixed(1)||'?'}% CPU. What exact steps should I take right now?`,
-    'THERMAL': `Thermal failure predicted in ${eta} minutes. CPU has been at ${snap.cpu_percent?.toFixed(1)}% for a sustained period. What should I do right now to prevent throttling or shutdown?`,
-    'DISK_FULL': `Disk full failure predicted in ${eta} minutes. Disk at ${snap.disk_percent?.toFixed(1)}%. What exact commands should I run to free space right now?`,
-    'DISK_IO_SATURATION': `Disk I/O saturated at ${snap.disk_percent?.toFixed(1)}% predicted to cause failure in ${eta} minutes. What should I do right now?`,
+    'THERMAL':`Thermal failure predicted in ${eta} minutes. CPU at ${snap.cpu_percent?.toFixed(1)}%. What should I do right now?`,
+    'DISK_FULL':`Disk full failure predicted in ${eta} minutes. Disk at ${snap.disk_percent?.toFixed(1)}%. What commands should I run?`,
   };
-  $('ch-in').value = questions[type] || `${type} failure predicted in ${eta} minutes. What exact steps should I take right now to prevent it?`;
+  $('ch-in').value=questions[type]||`${type} failure predicted in ${eta} minutes. What exact steps should I take right now?`;
   sendChat();
 }
+
 function dismissPrediction(){
   $('pred-banner').style.display='none';
   if(activePredId)fetch(API+'/cognitive/predictions/'+activePredId+'/acknowledge',{method:'POST',headers:{'X-API-Key':apiKey}}).catch(()=>{});
@@ -493,10 +709,17 @@ function rca(){
   return{title:'System Normal',desc:`IF=${(if_||0).toFixed(2)}, VAE=${(vae||0).toFixed(2)}, LSTM=${(lstm||0).toFixed(2)}. All within baseline.`,chain:[],action:null,conf:.95,sev:'ok'};
 }
 
-const $=id=>document.getElementById(id);
 const col=v=>v>80?'var(--red)':v>60?'var(--yellow)':'var(--green)';
 const arr=t=>({rising:'↑',spiking:'↑↑',falling:'↓',dropping:'↓↓',stable:'→'}[t]||'→');
 const tc=t=>({rising:'var(--yellow)',spiking:'var(--red)',falling:'var(--blue)',dropping:'var(--blue)',stable:'var(--muted)'}[t]||'var(--muted)');
+
+// ── NEW: Forecast tooltip ────────────────────────────────
+function showFcTooltip(e, text){
+  const tt=$('fc-tooltip');
+  tt.textContent=text;tt.style.display='block';
+  tt.style.left=(e.clientX+12)+'px';tt.style.top=(e.clientY-8)+'px';
+}
+function hideFcTooltip(){$('fc-tooltip').style.display='none';}
 
 function render(){
   const s=snap,now=new Date();
@@ -506,12 +729,12 @@ function render(){
   const hcs=s.health_credit_score;
   if(hcs!=null){
     const hcol=hcs>=700?'var(--green)':hcs>=500?'var(--yellow)':hcs>=350?'var(--orange)':'var(--red)';
-    $('hs-number').textContent=hcs; $('hs-number').style.color=hcol;
-    $('hs-grade').textContent=s.health_grade||'—'; $('hs-grade').style.color=hcol;
-    $('hs-bar').style.width=(hcs/10)+'%'; $('hs-bar').style.background=hcol;
+    $('hs-number').textContent=hcs;$('hs-number').style.color=hcol;
+    $('hs-grade').textContent=s.health_grade||'—';$('hs-grade').style.color=hcol;
+    $('hs-bar').style.width=(hcs/10)+'%';$('hs-bar').style.background=hcol;
   }
 
-  // Prediction banner
+  // Prediction banner + explanation
   const pred=s.active_prediction;
   if(pred&&!pred.acknowledged){
     activePredId=pred.id;
@@ -521,6 +744,17 @@ function render(){
     $('pred-eta').textContent=Math.ceil(pred.eta_min||0);
     $('pred-conf').textContent=`${pred.confidence||0}% confidence`;
     $('pred-action-text').textContent=pred.action||'';
+    // NEW: trust badge
+    const trustEl=$('pred-trust');
+    if(pred.confidence_label){trustEl.textContent=`Confidence: ${pred.confidence_label}`;}
+    if(pred.trustworthy===false){trustEl.textContent+=' · Still learning this pattern';}
+    // NEW: populate explanation panel
+    if(_lastPredExplain){
+      const ev=_lastPredExplain.evidence||[];
+      $('pred-explain-evidence').innerHTML=ev.map(e=>`<div>${e}</div>`).join('');
+      $('pred-explain-lead').textContent=_lastPredExplain.lead_time?`Expected: ${_lastPredExplain.lead_time}`:'';
+      $('pred-explain-last').textContent=_lastPredExplain.last_similar?`Last similar event: ${_lastPredExplain.last_similar}`:'';
+    }
   }else if(!pred){$('pred-banner').style.display='none';}
 
   // Severity banner
@@ -529,9 +763,9 @@ function render(){
   const sevBg={LOW:'rgba(52,211,153,.05)',MEDIUM:'rgba(251,191,36,.06)',HIGH:'rgba(251,146,60,.07)',CRITICAL:'rgba(248,113,113,.09)'};
   const sevBorder={LOW:'rgba(52,211,153,.3)',MEDIUM:'rgba(251,191,36,.3)',HIGH:'rgba(251,146,60,.35)',CRITICAL:'rgba(248,113,113,.5)'};
   const sev=s.severity||'LOW',sevC=sevCols[sev]||'var(--green)';
-  $('sev-banner').style.borderColor=sevBorder[sev]; $('sev-banner').style.background=sevBg[sev];
+  $('sev-banner').style.borderColor=sevBorder[sev];$('sev-banner').style.background=sevBg[sev];
   $('sev-icon').textContent=sevIcons[sev]||'✓';
-  $('sev-level').textContent=`${sev} — ${s.reason||'System stable'}`; $('sev-level').style.color=sevC;
+  $('sev-level').textContent=`${sev} — ${s.reason||'System stable'}`;$('sev-level').style.color=sevC;
   $('sev-reason').textContent=`Anomaly: ${(s.ensemble_score||0).toFixed(3)} · CPU: ${(s.cpu_percent||0).toFixed(1)}% · Mem: ${(s.memory||0).toFixed(1)}%`;
   const acts=s.actions||[];
   $('sev-actions').innerHTML=acts.length&&acts[0]!=='No action needed'?acts.map(a=>`<div style="color:${sevC};margin-bottom:2px">→ ${a}</div>`).join(''):'<span style="color:var(--muted)">No action needed</span>';
@@ -540,8 +774,8 @@ function render(){
   [['cpu','cpu_percent',s.cpu_percent,'Normal','Elevated','Critical'],['mem','memory',s.memory,'Normal','Moderate','High usage'],['disk','disk_percent',s.disk_percent,'Normal','Heavy I/O','Saturated'],['health','health_score',s.health_score,'All ok','Fair','Degraded']].forEach(([id,key,val,ok,mid,bad])=>{
     if(val==null)return;
     const v=id==='health'?100-val+20:val,c=col(v);
-    $('v-'+id).textContent=val.toFixed(1)+'%'; $('v-'+id).style.color=c;
-    $('b-'+id).style.width=Math.min(100,val).toFixed(0)+'%'; $('b-'+id).style.background=c;
+    $('v-'+id).textContent=val.toFixed(1)+'%';$('v-'+id).style.color=c;
+    $('b-'+id).style.width=Math.min(100,val).toFixed(0)+'%';$('b-'+id).style.background=c;
     $('s-'+id).textContent=val>(id==='health'?80:60)?val>(id==='health'?90:80)?bad:mid:ok;
     const t=temporal(key),de=$('d-'+id),isH=id==='health';
     if(Math.abs(t.delta)>0.4){de.textContent=`${arr(t.trend)} ${t.delta>0?'+':''}${t.delta.toFixed(1)}% / 30s`;de.style.color=isH?(t.delta<0?'var(--red)':'var(--green)'):tc(t.trend);}
@@ -553,12 +787,42 @@ function render(){
   else if(sc<80){hb.textContent='FAIR';hb.style.color='var(--yellow)';hb.style.borderColor='rgba(251,191,36,.3)';hb.style.background='rgba(251,191,36,.07)';}
   else{hb.textContent='OPTIMAL';hb.style.color='var(--green)';hb.style.borderColor='rgba(52,211,153,.3)';hb.style.background='rgba(52,211,153,.07)';}
 
-  // Forecast
+  // ── NEW: Forecast with insights + explanations ──────────
   if(forecast){
     $('fc-summary').textContent=forecast.summary||'Analyzing…';
-    $('fc-conf').textContent=`${Math.round((forecast.confidence||0)*100)}% confidence`;
+
+    // Confidence label + trustworthy badge
+    const confLabel=forecast.confidence_label||`${Math.round((forecast.confidence||0)*100)}% confidence`;
+    $('fc-conf').textContent=confLabel;
+    const trustBadge=$('fc-trust-badge');
+    if(forecast.trustworthy===false){
+      trustBadge.style.display='inline';
+      trustBadge.textContent='⚠ low data';
+      trustBadge.style.background='rgba(251,191,36,.1)';
+      trustBadge.style.color='var(--yellow)';
+      trustBadge.style.border='1px solid rgba(251,191,36,.3)';
+    }else{trustBadge.style.display='none';}
+
+    // Timeline points with hover tooltip for explanation
     const rc={SAFE:'var(--green)',ELEVATED:'var(--blue)',HIGH:'var(--yellow)',CRITICAL:'var(--red)'};
-    $('fc-timeline').innerHTML=(forecast.points||[]).map(p=>{const c=rc[p.risk]||'var(--muted)';return`<div class="fc-bar-row"><div class="fc-time">+${p.t}m</div><div class="fc-track"><div class="fc-fill" style="width:${Math.min(100,p.memory||0)}%;background:${c}"></div></div><div class="fc-risk" style="color:${c}">${p.risk}</div></div>`;}).join('');
+    $('fc-timeline').innerHTML=(forecast.points||[]).map(p=>{
+      const c=rc[p.risk]||'var(--muted)';
+      const tip=p.explanation||p.label||'';
+      return`<div class="fc-bar-row" onmouseenter="showFcTooltip(event,'${tip.replace(/'/g,'&#39;')}')" onmouseleave="hideFcTooltip()"><div class="fc-time">+${p.t}m</div><div class="fc-track"><div class="fc-fill" style="width:${Math.min(100,p.memory||0)}%;background:${c}"></div></div><div class="fc-risk" style="color:${c}">${p.risk}</div></div>`;
+    }).join('');
+
+    // Trend insights (NEW)
+    const insights=forecast.trend_insights||[];
+    $('fc-insights').innerHTML=insights.filter(i=>i.concern||i.direction!=='stable').map(i=>{
+      const dc=i.direction==='rising'?'var(--yellow)':i.direction==='falling'?'var(--blue)':'var(--muted)';
+      return`<div class="fc-insight"><div class="fc-insight-dot" style="background:${dc}"></div><span style="color:#bbb">${i.detail}</span></div>`;
+    }).join('');
+
+    // What to watch (NEW)
+    const watch=forecast.what_to_watch||[];
+    $('fc-watch').innerHTML=watch.length
+      ?`<div class="fc-watch">${watch.map(w=>`<div>→ ${w}</div>`).join('')}</div>`
+      :'';
   }
 
   // RCA
@@ -566,7 +830,7 @@ function render(){
   const sevStyles={ok:['rgba(52,211,153,.04)','rgba(52,211,153,.3)'],elevated:['rgba(96,165,250,.05)','rgba(96,165,250,.3)'],warning:['rgba(251,191,36,.06)','rgba(251,191,36,.4)'],critical:['rgba(248,113,113,.07)','rgba(248,113,113,.5)']};
   const p=$('rca-panel');p.style.background=sevStyles[r.sev][0];p.style.borderColor=sevStyles[r.sev][1];
   $('rca-icon').textContent=r.sev==='critical'?'⚠':r.sev==='warning'?'◐':r.sev==='elevated'?'◑':'✓';
-  $('rca-title').textContent=r.title; $('rca-desc').textContent=r.desc;
+  $('rca-title').textContent=r.title;$('rca-desc').textContent=r.desc;
   $('rca-score').textContent=(s.ensemble_score||0).toFixed(3);
   $('rca-score').style.color=r.sev==='critical'?'var(--red)':r.sev==='warning'?'var(--yellow)':r.sev==='elevated'?'var(--blue)':'var(--green)';
   $('rca-ts').textContent=now.toLocaleTimeString('en-US',{hour12:false});
@@ -625,19 +889,35 @@ function render(){
   $('st-uptime').textContent=`${String(Math.floor(up/3600)).padStart(2,'0')}:${String(Math.floor(up%3600/60)).padStart(2,'0')}:${String(up%60).padStart(2,'0')}`;
 }
 
+// ── NEW: DNA with per-pattern explanation ────────────────
 function renderCognitive(){
   if(dnaData){
     $('hs-patterns').textContent=dnaData.patterns||0;
     $('hs-prevented').textContent=dnaData.prevented||0;
     const patterns=dnaData.pattern_list||[];
     if(patterns.length){
-      $('dna-list').innerHTML=patterns.map(p=>{
+      $('dna-list').innerHTML=patterns.map((p,i)=>{
         const trusted=p.trustworthy;
         const badge=trusted
           ?`<span style="font-size:9px;padding:2px 6px;border-radius:3px;background:rgba(0,255,150,0.15);color:#00ff96;border:1px solid rgba(0,255,150,0.3)">✓ trusted</span>`
           :`<span style="font-size:9px;padding:2px 6px;border-radius:3px;background:rgba(255,200,0,0.1);color:#ffcc00;border:1px solid rgba(255,200,0,0.3)">⚠ learning</span>`;
         const dq=p.data_quality?`<span style="color:var(--muted);font-size:10px;font-family:var(--mono)">Data: ${p.data_quality}</span>`:'';
-        return `<div class="dna-row"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><span style="font-weight:600">${p.type}</span><div style="display:flex;gap:6px;align-items:center">${badge}<span style="font-family:var(--mono);font-size:11px;color:var(--accent)">${p.accuracy}% accurate</span></div></div><div style="font-size:11px;color:var(--muted);margin-bottom:6px">${p.description}</div><div style="display:flex;gap:16px;font-size:11px;font-family:var(--mono);flex-wrap:wrap"><span style="color:var(--muted)">Seen: <span style="color:var(--text)">${p.seen}</span></span><span style="color:var(--muted)">Prevented: <span style="color:var(--green)">${p.prevented}</span></span><span style="color:var(--muted)">Lead time: <span style="color:var(--blue)">${p.lead_time}m</span></span>${dq}</div></div>`;
+
+        // NEW: explanation block
+        const exId=`dna-explain-${i}`;
+        const explain=p.explanation||{};
+        const evLines=(explain.evidence||[]).slice(0,4).map(e=>`<div>${e}</div>`).join('');
+        const explainBlock=explain.summary
+          ?`<button class="explain-toggle" style="margin-top:6px;font-size:10px" onclick="toggleDnaExplain('${exId}')">▶ Why now?</button>
+             <div class="dna-explain" id="${exId}">
+               <div style="font-size:11px;font-weight:600;color:var(--accent);margin-bottom:6px">${explain.summary||''}</div>
+               <div class="dna-explain-evidence">${evLines}</div>
+               ${explain.lead_time?`<div style="font-size:10px;color:var(--muted);margin-top:6px">Expected: ${explain.lead_time}</div>`:''}
+               ${explain.last_similar?`<div style="font-size:10px;color:var(--muted)">Last seen: ${explain.last_similar}</div>`:''}
+             </div>`
+          :'';
+
+        return `<div class="dna-row"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><span style="font-weight:600">${p.type}</span><div style="display:flex;gap:6px;align-items:center">${badge}<span style="font-family:var(--mono);font-size:11px;color:var(--accent)">${p.accuracy}% accurate</span></div></div><div style="font-size:11px;color:var(--muted);margin-bottom:6px">${p.description}</div><div style="display:flex;gap:16px;font-size:11px;font-family:var(--mono);flex-wrap:wrap"><span style="color:var(--muted)">Seen: <span style="color:var(--text)">${p.seen}</span></span><span style="color:var(--muted)">Prevented: <span style="color:var(--green)">${p.prevented}</span></span><span style="color:var(--muted)">Lead time: <span style="color:var(--blue)">${p.lead_time}m</span></span>${dq}</div>${explainBlock}</div>`;
       }).join('');
     }
   }
@@ -656,93 +936,15 @@ function renderCognitive(){
 }
 
 function renderPremortem(pm){
-  if(!pm) return;
-  const summary=$('premortem-summary');
-  const list=$('premortem-list');
-  const quality=$('premortem-quality');
-  if(!summary||!list) return;
-
-  // Data quality badge
-  if(quality){
-    const dq=pm.data_quality||'';
-    const col=dq.startsWith('high')?'#00ff96':dq.startsWith('medium')?'#ffcc00':'#888';
-    quality.innerHTML=`<span style="color:${col}">◉ ${dq}</span>`;
-  }
-
-  // Safe state
-  if(pm.safe||!pm.threats||pm.threats.length===0){
-    summary.textContent='✅ No critical threats in the next 30 days. System looks stable.';
-    summary.style.color='#00ff96';
-    list.innerHTML='';
-    return;
-  }
-
-  // Summary line — plain English for everyone
-  const s=pm.summary||'';
-  const urgClass=s.includes('URGENT')?'#ff4444':s.includes('WARNING')?'#ffb400':'#00c8ff';
-  summary.style.color=urgClass;
-  summary.textContent=s;
-
-  // Threat cards
+  if(!pm)return;
+  const summary=$('premortem-summary'),list=$('premortem-list'),quality=$('premortem-quality');
+  if(!summary||!list)return;
+  if(quality){const dq=pm.data_quality||'';const col=dq.startsWith('high')?'#00ff96':dq.startsWith('medium')?'#ffcc00':'#888';quality.innerHTML=`<span style="color:${col}">◉ ${dq}</span>`;}
+  if(pm.safe||!pm.threats||pm.threats.length===0){summary.textContent='✅ No critical threats in the next 30 days. System looks stable.';summary.style.color='#00ff96';list.innerHTML='';return;}
+  const s=pm.summary||'';const urgClass=s.includes('URGENT')?'#ff4444':s.includes('WARNING')?'#ffb400':'#00c8ff';summary.style.color=urgClass;summary.textContent=s;
   list.innerHTML=pm.threats.map(t=>{
-    const prob=t.probability||0;
-    const days=t.days_until?`~${Math.ceil(t.days_until)} days`:null;
-
-    // Risk level for styling
-    const cls=prob>=75?'urgent':prob>=50?'warning':'advisory';
-
-    // Emoji for non-technical users
-    const icon=prob>=75?'🔴':prob>=50?'🟡':'🟢';
-
-    // Plain English severity label
-    const sevLabel=prob>=75?'High risk':prob>=50?'Moderate risk':'Low risk';
-
-    // Timeline — human readable
-    const timeStr=days
-      ?`<span style="color:#ffb400;font-weight:600">${days}</span>`
-      :`<span style="color:var(--muted)">no fixed timeline</span>`;
-
-    // Probability bar
-    const barW=Math.round(prob);
-    const barCol=prob>=75?'#ff4444':prob>=50?'#ffb400':'#00c8ff';
-
-    // Evidence — show as plain bullets
-    const evidence=(t.evidence||[]).map(e=>
-      `<div style="font-size:11px;color:var(--muted);padding:2px 0">→ ${e}</div>`
-    ).join('');
-
-    return `<div class="pm-threat ${cls}">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">
-        <div>
-          <span style="font-size:15px">${icon}</span>
-          <span style="font-weight:700;font-size:13px;margin-left:6px">${t.failure_type}</span>
-          <span style="font-size:11px;color:var(--muted);margin-left:8px">${sevLabel}</span>
-        </div>
-        <div style="text-align:right;font-family:var(--mono);font-size:11px">
-          <div>${timeStr}</div>
-          <div style="color:var(--muted)">${prob}% probability</div>
-        </div>
-      </div>
-
-      <!-- Probability bar — visual for non-technical users -->
-      <div style="height:3px;background:rgba(255,255,255,0.08);border-radius:2px;margin-bottom:8px">
-        <div style="height:100%;width:${barW}%;background:${barCol};border-radius:2px;transition:width 0.5s"></div>
-      </div>
-
-      <!-- Headline — one sentence anyone can understand -->
-      <div style="font-size:12px;color:var(--text);margin-bottom:6px">${t.headline}</div>
-
-      <!-- Evidence — collapsible for technical users -->
-      <div class="pm-evidence">
-        <div style="font-size:10px;color:var(--muted);margin-bottom:4px;font-family:var(--mono);letter-spacing:0.05em">EVIDENCE</div>
-        ${evidence}
-      </div>
-
-      <!-- Recommendation — actionable for everyone -->
-      <div style="margin-top:8px;padding:6px 10px;background:rgba(255,255,255,0.04);border-radius:4px;font-size:11px;color:var(--text)">
-        <span style="color:#ffb400">→ What to do: </span>${t.recommendation}
-      </div>
-    </div>`;
+    const prob=t.probability||0;const days=t.days_until?`~${Math.ceil(t.days_until)} days`:null;const cls=prob>=75?'urgent':prob>=50?'warning':'advisory';const icon=prob>=75?'🔴':prob>=50?'🟡':'🟢';const sevLabel=prob>=75?'High risk':prob>=50?'Moderate risk':'Low risk';const timeStr=days?`<span style="color:#ffb400;font-weight:600">${days}</span>`:`<span style="color:var(--muted)">no fixed timeline</span>`;const barW=Math.round(prob);const barCol=prob>=75?'#ff4444':prob>=50?'#ffb400':'#00c8ff';const evidence=(t.evidence||[]).map(e=>`<div style="font-size:11px;color:var(--muted);padding:2px 0">→ ${e}</div>`).join('');
+    return `<div class="pm-threat ${cls}"><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px"><div><span style="font-size:15px">${icon}</span><span style="font-weight:700;font-size:13px;margin-left:6px">${t.failure_type}</span><span style="font-size:11px;color:var(--muted);margin-left:8px">${sevLabel}</span></div><div style="text-align:right;font-family:var(--mono);font-size:11px"><div>${timeStr}</div><div style="color:var(--muted)">${prob}% probability</div></div></div><div style="height:3px;background:rgba(255,255,255,0.08);border-radius:2px;margin-bottom:8px"><div style="height:100%;width:${barW}%;background:${barCol};border-radius:2px;transition:width 0.5s"></div></div><div style="font-size:12px;color:var(--text);margin-bottom:6px">${t.headline}</div><div class="pm-evidence"><div style="font-size:10px;color:var(--muted);margin-bottom:4px;font-family:var(--mono);letter-spacing:0.05em">EVIDENCE</div>${evidence}</div><div style="margin-top:8px;padding:6px 10px;background:rgba(255,255,255,0.04);border-radius:4px;font-size:11px;color:var(--text)"><span style="color:#ffb400">→ What to do: </span>${t.recommendation}</div></div>`;
   }).join('');
 }
 
@@ -763,14 +965,16 @@ function buildCtx(){
   const s=snap,r=rca();
   const tC=temporal('cpu_percent'),tM=temporal('memory'),tE=temporal('ensemble_score');
   const pred=s.active_prediction,fc=forecast;
+  const explainCtx=_lastPredExplain?`\nPREDICTION EVIDENCE: ${(_lastPredExplain.evidence||[]).slice(0,3).join(' | ')}`:'';
   return `LIVE SYSTEM ${new Date().toLocaleTimeString('en-US',{hour12:false})}:
 HEALTH: ${s.health_credit_score||'?'}/1000 (${s.health_grade||'unknown'}) | SEVERITY: ${s.severity||'?'}
 CPU: ${(s.cpu_percent||0).toFixed(1)}% ${tC.trend} Δ${tC.delta>0?'+':''}${tC.delta.toFixed(1)}%/30s
 MEM: ${(s.memory||0).toFixed(1)}% ${tM.trend} Δ${tM.delta>0?'+':''}${tM.delta.toFixed(1)}%/30s
 ML: Ensemble=${(s.ensemble_score||0).toFixed(3)} IF=${(s.if_score||0).toFixed(3)} VAE=${(s.vae_score||0).toFixed(3)} LSTM=${(s.lstm_score||0).toFixed(3)}
 RCA: "${r.title}" — ${r.desc}
-${pred?`ACTIVE PREDICTION: ${pred.type} in ${Math.ceil(pred.eta_min||0)}min (${pred.confidence||0}% conf) — ${pred.message} → ${pred.action}`:'No active predictions.'}
-${fc?`FORECAST: ${fc.summary} | Direction: ${fc.direction} | Peak: ${fc.peak_risk}`:''}
+${pred?`ACTIVE PREDICTION: ${pred.type} in ${Math.ceil(pred.eta_min||0)}min (${pred.confidence||0}% conf) — ${pred.message} → ${pred.action}`:'No active predictions.'}${explainCtx}
+${fc?`FORECAST: ${fc.summary} | Direction: ${fc.direction} | Peak: ${fc.peak_risk} | ${fc.confidence_label||''}`:''}
+${fc?.what_to_watch?.length?`WATCH: ${fc.what_to_watch.join(' | ')}`:''}
 TOP PROCESSES: ${(s.processes?.by_cpu||[]).slice(0,4).map(p=>`${p.name}(${(p.cpu||0).toFixed(1)}%CPU,${(p.mem||0).toFixed(1)}%MEM)`).join(', ')}
 DNA: ${dnaData?.patterns||0} patterns, ${dnaData?.prevented||0} failures prevented`;
 }
@@ -780,7 +984,7 @@ async function sendChat(){
   inp.value='';$('ch-send').disabled=true;
   appendMsg('user',msg);const tid=appendTyping();chatHistory.push({role:'user',content:msg});
   try{
-    const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:500,system:`You are the cognitive intelligence layer of CVIS — a system monitor that predicts failures before they happen. You have live metrics, ML signals, active failure predictions, 60-minute forecasts, and this machine's learned failure history.\n\nStyle:\n- Lead with the most important thing (prediction > problem > normal)\n- Connect metrics → causes → predictions — show the chain\n- Use actual numbers. Be direct: 2-4 sentences.\n- If a failure is predicted, make that your first sentence.\n- Speak like a knowledgeable friend.\n\n${buildCtx()}`,messages:chatHistory})});
+    const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:500,system:`You are the cognitive intelligence layer of CVIS — a system monitor that predicts failures before they happen. You have live metrics, ML signals, active failure predictions, 60-minute forecasts, anomaly explanations, and this machine's learned failure history.\n\nStyle:\n- Lead with the most important thing (prediction > problem > normal)\n- Connect metrics → causes → predictions — show the chain\n- Use actual numbers. Be direct: 2-4 sentences.\n- If a failure is predicted, make that your first sentence.\n- Speak like a knowledgeable friend.\n\n${buildCtx()}`,messages:chatHistory})});
     if(!res.ok)throw new Error();const d=await res.json(),reply=d.content[0].text;
     chatHistory.push({role:'assistant',content:reply});if(chatHistory.length>20)chatHistory=chatHistory.slice(-20);
     removeTyping(tid);appendMsg('ai',reply);
@@ -789,6 +993,7 @@ async function sendChat(){
     const r=rca(),s=snap,pred=s.active_prediction,lq=msg.toLowerCase();
     let fb='';
     if(pred&&(lq.includes('crash')||lq.includes('will')||lq.includes('predict')))fb=`${pred.message} — ${pred.action} (${pred.confidence}% confidence, ${Math.ceil(pred.eta_min||0)} min)`;
+    else if(lq.includes('why')&&_lastPredExplain)fb=_lastPredExplain.summary||'Checking explanation data…';
     else if(lq.includes('forecast')||lq.includes('next'))fb=forecast?.summary||'Forecast not available yet.';
     else if(lq.includes('why')||lq.includes('cause'))fb=`${r.title}. ${r.desc}${r.action?` → ${r.action.t}`:''}`;
     else if(lq.includes('trend')||lq.includes('worsening')){const tE=temporal('ensemble_score');fb=`CPU ${temporal('cpu_percent').trend}, anomaly ${tE.trend}. ${tE.trend==='spiking'?'Deteriorating — act soon.':'No escalation detected.'}`;}
