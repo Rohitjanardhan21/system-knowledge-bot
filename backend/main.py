@@ -26,7 +26,6 @@ from fastapi.responses import (
 from fastapi.staticfiles import StaticFiles as _SS
 from pydantic import BaseModel, Field
 
-# ── Internal modules ──────────────────────────────────────
 from backend.core.logging.logging_config import (
     setup_logging, CorrelationIDMiddleware, AccessLogMiddleware,
 )
@@ -38,7 +37,7 @@ from backend.core.storage.redis_store import (
     alert_check_and_set, cache_metrics, get_cached_metrics,
     redis_info, publish_event, incr_counter,
 )
-from backend.core.ml.ml_engine       import get_engine
+from backend.core.ml.ml_engine           import get_engine
 from backend.core.storage.model_registry import get_registry
 from backend.core.alerts.alert_engine    import get_alert_engine, AlertRule
 from backend.core.storage.db import (
@@ -50,21 +49,19 @@ import logging
 setup_logging()
 log = logging.getLogger("cvis.main")
 
-# ── Cognitive layer ───────────────────────────────────────
 try:
-    from backend.core.cognitive.failure_dna      import get_dna_engine
-    from backend.core.cognitive.forecaster        import get_forecaster
-    from backend.core.cognitive.premortem         import get_premortem_engine
-    from backend.core.actions.auto_remediation    import get_ar_engine
-    from backend.core.cognitive.notifier          import get_notifier
-    from backend.core.cognitive.black_box         import get_black_box
+    from backend.core.cognitive.failure_dna       import get_dna_engine
+    from backend.core.cognitive.forecaster         import get_forecaster
+    from backend.core.cognitive.premortem          import get_premortem_engine
+    from backend.core.actions.auto_remediation     import get_ar_engine
+    from backend.core.cognitive.notifier           import get_notifier
+    from backend.core.cognitive.black_box          import get_black_box
     from backend.core.cognitive.postmortem_builder import get_postmortem_builder
     COGNITIVE_OK = True
 except Exception as _ce:
     log.warning("Cognitive layer unavailable: %s", _ce)
     COGNITIVE_OK = False
 
-# ── Optional psutil ───────────────────────────────────────
 try:
     import psutil
     PS_OK = True
@@ -72,20 +69,13 @@ except ImportError:
     PS_OK = False
     log.warning("psutil not found — synthetic metrics active")
 
-# ── Shared state ──────────────────────────────────────────
 feature_buffer: deque = deque(maxlen=600)
 _last_metrics: dict   = {}
 _lock = threading.Lock()
-
 _event_loop: asyncio.AbstractEventLoop = None
-
-# ── In-memory device store (single declaration) ───────────
 _devices: dict = {}
 
 
-# ─────────────────────────────────────────────────────────
-#  Explainability engine (rule-based, runs every cycle)
-# ─────────────────────────────────────────────────────────
 def explain_and_act(metrics: dict) -> dict:
     reasons, actions = [], []
     cpu     = metrics.get("cpu_percent",   0)
@@ -100,25 +90,21 @@ def explain_and_act(metrics: dict) -> dict:
     elif cpu > 70:
         reasons.append(f"CPU elevated ({cpu:.1f}%)")
         actions.append("Profile top processes for CPU hotspots")
-
     if mem > 85:
         reasons.append(f"Memory critical ({mem:.1f}%)")
         actions.append("Restart memory-heavy services — check for heap leaks")
     elif mem > 75:
         reasons.append(f"Memory pressure ({mem:.1f}%)")
         actions.append("Monitor memory trend — watch for monotonic growth")
-
     if disk > 85:
         reasons.append(f"Disk I/O saturated ({disk:.1f}%)")
         actions.append("Check disk usage and log rotation")
-
     if anomaly > 0.7:
         reasons.append(f"ML ensemble anomaly ({anomaly:.3f})")
         actions.append("Investigate anomaly source — cross-reference with process list")
     elif anomaly > 0.4:
         reasons.append(f"ML activity elevated ({anomaly:.3f})")
         actions.append("Monitor for escalation — check recent changes")
-
     if health < 60:
         reasons.append(f"Health degraded ({health:.1f}%)")
         actions.append("System needs immediate attention")
@@ -136,9 +122,6 @@ def explain_and_act(metrics: dict) -> dict:
     }
 
 
-# ─────────────────────────────────────────────────────────
-#  Feature vector builder
-# ─────────────────────────────────────────────────────────
 def _build_feature_vector():
     import math
     if not PS_OK:
@@ -174,14 +157,18 @@ def _build_feature_vector():
     return feat, raw
 
 
-# ─────────────────────────────────────────────────────────
-#  Background collector thread
-# ─────────────────────────────────────────────────────────
 async def _push_and_persist(metrics: dict, scores):
     await maybe_save_snapshot(metrics)
 
 
 def _collect():
+    # ── Windows fix ──────────────────────────────────────
+    # On Windows the asyncio event loop is not transferable
+    # across threads. Without this, run_coroutine_threadsafe
+    # raises "RuntimeError: Event loop is closed".
+    if sys.platform == "win32":
+        asyncio.set_event_loop(asyncio.new_event_loop())
+
     engine    = get_engine()
     registry  = get_registry()
     last_save = time.time()
@@ -224,13 +211,16 @@ def _collect():
             with _lock:
                 _last_metrics.update(update)
 
-            merged = dict(_last_metrics)
-            if _event_loop:
-                asyncio.run_coroutine_threadsafe(
-                    _push_and_persist(merged, scores), _event_loop
-                )
+            # Guard against closed loop (Windows shutdown race)
+            if _event_loop and not _event_loop.is_closed():
+                try:
+                    merged = dict(_last_metrics)
+                    asyncio.run_coroutine_threadsafe(
+                        _push_and_persist(merged, scores), _event_loop
+                    )
+                except RuntimeError:
+                    pass
 
-            # ── Cognitive layer ──────────────────────────
             if COGNITIVE_OK:
                 try:
                     m        = dict(_last_metrics)
@@ -248,21 +238,20 @@ def _collect():
                     proc_list = procs.get("by_cpu", []) if isinstance(procs, dict) else []
                     bb.record(m, proc_list, m.get("reason", ""), m.get("severity", "LOW"))
 
-                    # Auto-remediation evaluation
                     try:
-                        ar        = get_ar_engine()
+                        ar         = get_ar_engine()
                         ar.set_notifier(get_notifier())
-                        preds     = dna.get_active_predictions()
-                        dna_sum   = dna.get_dna_summary()
+                        preds      = dna.get_active_predictions()
+                        dna_sum    = dna.get_dna_summary()
                         pred_dicts = [
                             {
-                                "id":          p.prediction_id,
-                                "type":        p.failure_type,
-                                "confidence":  p.confidence * 100,
-                                "severity":    p.severity,
-                                "message":     p.plain_message,
+                                "id":           p.prediction_id,
+                                "type":         p.failure_type,
+                                "confidence":   p.confidence * 100,
+                                "severity":     p.severity,
+                                "message":      p.plain_message,
                                 "acknowledged": p.acknowledged,
-                                "resolved":    p.resolved,
+                                "resolved":     p.resolved,
                             }
                             for p in preds
                         ]
@@ -270,17 +259,14 @@ def _collect():
                     except Exception:
                         pass
 
-                    # Prediction notifications
                     prediction = dna.predict(m)
                     if prediction and not prediction.acknowledged:
                         notifier.send_prediction(prediction)
 
-                    # Health score notifications
                     health_data = dna.get_health_score(m)
                     if health_data["score"] < 400:
                         notifier.send_health_alert(health_data["score"], health_data["grade"])
 
-                    # Anomaly notifications
                     if m.get("severity") in ("HIGH", "CRITICAL") and m.get("reason"):
                         notifier.send_anomaly_alert(m["reason"], m["severity"])
 
@@ -300,9 +286,8 @@ def _collect():
                             if prediction else None
                         )
                 except Exception:
-                    pass  # never let cognitive layer crash the collector
+                    pass
 
-            # Auto-save model
             if time.time() - last_save > AUTOSAVE_INTERVAL and scores.steps_lstm > 50:
                 registry.save_version(
                     "ensemble", engine.state_dict(),
@@ -322,9 +307,6 @@ def _collect():
         time.sleep(float(os.environ.get("POLL_INTERVAL_S", "1")))
 
 
-# ─────────────────────────────────────────────────────────
-#  Lifespan
-# ─────────────────────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _event_loop
@@ -333,11 +315,8 @@ async def lifespan(app: FastAPI):
     os.makedirs("logs",           exist_ok=True)
     os.makedirs("model_versions", exist_ok=True)
 
-    # Collector thread
-    t = threading.Thread(target=_collect, daemon=True, name="cvis-collector")
-    t.start()
+    threading.Thread(target=_collect, daemon=True, name="cvis-collector").start()
 
-    # Alert loop (every 5s)
     async def _alert_loop():
         ae = get_alert_engine()
 
@@ -361,20 +340,16 @@ async def lifespan(app: FastAPI):
             await asyncio.sleep(5)
 
     asyncio.create_task(_alert_loop())
-    log.info("CVIS v9 started — backend running, SQLite at %s",
-             os.environ.get("DB_PATH", "cvis.db"))
+    log.info("CVIS v9 started — SQLite at %s", os.environ.get("DB_PATH", "cvis.db"))
     yield
     await close_db()
     log.info("CVIS v9 shutdown — DB closed")
 
 
-# ─────────────────────────────────────────────────────────
-#  App
-# ─────────────────────────────────────────────────────────
 app = FastAPI(
     title="CVIS v9 AIOps Backend",
     version="9.0.0",
-    description="PyTorch LSTM + β-VAE + sklearn IF · Versioning · Alerts · Auth · Redis",
+    description="PyTorch LSTM + beta-VAE + sklearn IF · Versioning · Alerts · Auth · Redis",
     lifespan=lifespan,
     docs_url="/docs" if os.environ.get("ENV") != "prod" else None,
     redoc_url=None,
@@ -397,39 +372,35 @@ app.add_middleware(CorrelationIDMiddleware)
 app.add_middleware(AccessLogMiddleware)
 
 
-# ─────────────────────────────────────────────────────────
-#  SSE live stream
-# ─────────────────────────────────────────────────────────
 @app.get("/stream", tags=["System"], include_in_schema=False)
 async def sse_stream(request: Request):
-    """Push live metrics to the frontend every 2 seconds."""
     async def event_gen():
         while True:
             if await request.is_disconnected():
                 break
             try:
-                m          = dict(_last_metrics)
-                eng        = get_engine()
-                eng_m      = eng.metrics if eng else None
-                ex         = explain_and_act(m)
-                payload    = {
-                    "cpu_percent":       m.get("cpu_percent",       0),
-                    "memory":            m.get("memory",            0),
-                    "disk_percent":      m.get("disk_percent",      0),
-                    "network_percent":   m.get("network_percent",   0),
-                    "health_score":      m.get("health_score",      100),
-                    "anomaly_score":     m.get("anomaly_score",     0),
-                    "ensemble_score":    float(eng_m.ensemble_score) if eng_m else 0.0,
-                    "if_score":          float(eng_m.if_score)       if eng_m else 0.0,
-                    "vae_score":         float(eng_m.vae_score)      if eng_m else 0.0,
-                    "lstm_score":        float(eng_m.lstm_score)     if eng_m else 0.0,
-                    "model_fitted":      eng_m.model_fitted          if eng_m else False,
-                    "steps_lstm":        int(eng_m.steps_lstm)       if eng_m else 0,
-                    "steps_vae":         int(eng_m.steps_vae)        if eng_m else 0,
-                    "reason":            ex["reason"],
-                    "actions":           ex["actions"],
-                    "severity":          ex["severity"],
-                    "timestamp":         time.time(),
+                m     = dict(_last_metrics)
+                eng   = get_engine()
+                eng_m = eng.metrics if eng else None
+                ex    = explain_and_act(m)
+                payload = {
+                    "cpu_percent":         m.get("cpu_percent",       0),
+                    "memory":              m.get("memory",            0),
+                    "disk_percent":        m.get("disk_percent",      0),
+                    "network_percent":     m.get("network_percent",   0),
+                    "health_score":        m.get("health_score",      100),
+                    "anomaly_score":       m.get("anomaly_score",     0),
+                    "ensemble_score":      float(eng_m.ensemble_score) if eng_m else 0.0,
+                    "if_score":            float(eng_m.if_score)       if eng_m else 0.0,
+                    "vae_score":           float(eng_m.vae_score)      if eng_m else 0.0,
+                    "lstm_score":          float(eng_m.lstm_score)     if eng_m else 0.0,
+                    "model_fitted":        eng_m.model_fitted          if eng_m else False,
+                    "steps_lstm":          int(eng_m.steps_lstm)       if eng_m else 0,
+                    "steps_vae":           int(eng_m.steps_vae)        if eng_m else 0,
+                    "reason":              ex["reason"],
+                    "actions":             ex["actions"],
+                    "severity":            ex["severity"],
+                    "timestamp":           time.time(),
                     "health_credit_score": m.get("health_credit_score"),
                     "health_grade":        m.get("health_grade"),
                     "active_prediction":   m.get("active_prediction"),
@@ -446,9 +417,6 @@ async def sse_stream(request: Request):
     )
 
 
-# ─────────────────────────────────────────────────────────
-#  Auth
-# ─────────────────────────────────────────────────────────
 class LoginRequest(BaseModel):
     username: str
     password: str
@@ -491,9 +459,6 @@ async def delete_key(key_hash: str):
     return {"deleted": key_hash}
 
 
-# ─────────────────────────────────────────────────────────
-#  OS endpoints
-# ─────────────────────────────────────────────────────────
 @app.get("/os/status", tags=["OS"])
 async def os_status():
     cached = await get_cached_metrics()
@@ -523,9 +488,6 @@ async def os_processes():
     }
 
 
-# ─────────────────────────────────────────────────────────
-#  ML endpoints
-# ─────────────────────────────────────────────────────────
 class FeatRequest(BaseModel):
     features: list[float] = Field(..., min_length=5, max_length=5)
 
@@ -567,9 +529,6 @@ async def ml_status():
     }
 
 
-# ─────────────────────────────────────────────────────────
-#  Model versioning
-# ─────────────────────────────────────────────────────────
 class SaveVersionRequest(BaseModel):
     model_name:  str = "ensemble"
     description: str = ""
@@ -629,9 +588,6 @@ async def version_stats():
     return get_registry().stats()
 
 
-# ─────────────────────────────────────────────────────────
-#  Alert endpoints
-# ─────────────────────────────────────────────────────────
 class WebhookRequest(BaseModel):
     url: str; name: str; secret: str = ""
 
@@ -682,7 +638,7 @@ async def alert_stats():
             total = int(await c.get("cvis:total_alerts_fired") or 0)
         except Exception:
             pass
-    stats             = get_alert_engine().get_stats()
+    stats = get_alert_engine().get_stats()
     stats["redis_total"] = total
     return stats
 
@@ -705,7 +661,7 @@ async def delete_rule(rule_id: str):
 
 @app.patch("/alerts/rules/{rule_id}", tags=["Alerts"])
 async def patch_rule(
-    rule_id: str,
+    rule_id:   str,
     enabled:   Optional[bool]  = None,
     threshold: Optional[float] = None,
 ):
@@ -718,11 +674,7 @@ async def patch_rule(
     return vars(rule)
 
 
-# ─────────────────────────────────────────────────────────
-#  Prometheus /metrics
-# ─────────────────────────────────────────────────────────
-@app.get("/metrics", tags=["System"], response_class=PlainTextResponse,
-         include_in_schema=False)
+@app.get("/metrics", tags=["System"], response_class=PlainTextResponse, include_in_schema=False)
 async def prometheus_metrics():
     m   = _last_metrics
     eng = get_engine().metrics
@@ -735,34 +687,31 @@ async def prometheus_metrics():
 
     return "".join([
         "# CVIS v9 metrics\n",
-        g("cvis_cpu_percent",           m.get("cpu_percent",  0),  "Host CPU %"),
-        g("cvis_memory_percent",        m.get("memory",       0),  "Host memory %"),
-        g("cvis_disk_percent",          m.get("disk_percent", 0),  "Disk I/O %"),
-        g("cvis_health_score",          m.get("health_score", 100),"System health 0–100"),
-        g("cvis_anomaly_score",         m.get("anomaly_score",0),  "Ensemble anomaly score 0–1"),
-        g("cvis_ml_if_score",           eng.if_score,               "Isolation Forest score"),
-        g("cvis_ml_vae_score",          eng.vae_score,              "β-VAE anomaly score"),
-        g("cvis_ml_lstm_score",         eng.lstm_score,             "LSTM prediction error"),
-        g("cvis_ml_ensemble_score",     eng.ensemble_score,         "Ensemble score"),
-        g("cvis_ml_lstm_loss",          eng.lstm_loss,              "LSTM MSE loss"),
-        g("cvis_ml_vae_recon_loss",     eng.vae_recon_loss,        "VAE reconstruction loss"),
-        g("cvis_ml_vae_kl_loss",        eng.vae_kl_loss,           "VAE KL divergence"),
-        g("cvis_ml_steps_lstm",         eng.steps_lstm,             "LSTM steps", "counter"),
-        g("cvis_ml_steps_vae",          eng.steps_vae,              "VAE steps",  "counter"),
-        g("cvis_ml_model_fitted",       int(eng.model_fitted),      "1 if IF fitted"),
-        g("cvis_ml_feature_buffer_size",len(feature_buffer),        "Feature buffer size"),
-        g("cvis_alerts_critical_total", ae.get("critical", 0),      "Critical alerts", "counter"),
-        g("cvis_alerts_warning_total",  ae.get("warning",  0),      "Warning alerts",  "counter"),
-        g("cvis_alerts_info_total",     ae.get("info",     0),      "Info alerts",     "counter"),
-        g("cvis_alerts_rules_active",   ae.get("rules_active", 0),  "Active alert rules"),
+        g("cvis_cpu_percent",            m.get("cpu_percent",  0),  "Host CPU %"),
+        g("cvis_memory_percent",         m.get("memory",       0),  "Host memory %"),
+        g("cvis_disk_percent",           m.get("disk_percent", 0),  "Disk IO %"),
+        g("cvis_health_score",           m.get("health_score", 100),"System health 0-100"),
+        g("cvis_anomaly_score",          m.get("anomaly_score",0),  "Ensemble anomaly 0-1"),
+        g("cvis_ml_if_score",            eng.if_score,               "Isolation Forest score"),
+        g("cvis_ml_vae_score",           eng.vae_score,              "VAE anomaly score"),
+        g("cvis_ml_lstm_score",          eng.lstm_score,             "LSTM error score"),
+        g("cvis_ml_ensemble_score",      eng.ensemble_score,         "Ensemble score"),
+        g("cvis_ml_lstm_loss",           eng.lstm_loss,              "LSTM MSE loss"),
+        g("cvis_ml_vae_recon_loss",      eng.vae_recon_loss,        "VAE recon loss"),
+        g("cvis_ml_vae_kl_loss",         eng.vae_kl_loss,           "VAE KL divergence"),
+        g("cvis_ml_steps_lstm",          eng.steps_lstm,             "LSTM steps", "counter"),
+        g("cvis_ml_steps_vae",           eng.steps_vae,              "VAE steps",  "counter"),
+        g("cvis_ml_model_fitted",        int(eng.model_fitted),      "1 if IF fitted"),
+        g("cvis_ml_feature_buffer_size", len(feature_buffer),        "Feature buffer size"),
+        g("cvis_alerts_critical_total",  ae.get("critical", 0),      "Critical alerts", "counter"),
+        g("cvis_alerts_warning_total",   ae.get("warning",  0),      "Warning alerts",  "counter"),
+        g("cvis_alerts_info_total",      ae.get("info",     0),      "Info alerts",     "counter"),
+        g("cvis_alerts_rules_active",    ae.get("rules_active", 0),  "Active rules"),
         g("cvis_model_versions_total",
-          sum(v.get("total_versions", 0) for v in reg.values()),     "Saved model versions"),
+          sum(v.get("total_versions", 0) for v in reg.values()),      "Saved model versions"),
     ])
 
 
-# ─────────────────────────────────────────────────────────
-#  Health endpoints
-# ─────────────────────────────────────────────────────────
 @app.get("/health", tags=["System"])
 async def health():
     e  = get_engine()
@@ -785,17 +734,12 @@ async def health():
 
 @app.get("/health/full", tags=["System"])
 async def health_full():
-    """Extended health — includes cognitive data."""
     base = await health()
     base["health_credit_score"] = _last_metrics.get("health_credit_score")
     base["health_grade"]        = _last_metrics.get("health_grade")
     base["active_prediction"]   = _last_metrics.get("active_prediction")
     return base
 
-
-# ─────────────────────────────────────────────────────────
-#  DB snapshot endpoints
-# ─────────────────────────────────────────────────────────
 @app.get("/db/snapshots", tags=["System"])
 async def get_snapshots(hours: float = 1.0):
     return await load_snapshots(hours=min(hours, 24.0))
@@ -805,33 +749,20 @@ async def get_events(limit: int = 60):
     return await load_events(limit=limit) or []
 
 
-# ─────────────────────────────────────────────────────────
-#  Cognitive — Health Score
-# ─────────────────────────────────────────────────────────
 @app.get("/cognitive/health-score", tags=["Cognitive"])
 async def cognitive_health_score():
     if not COGNITIVE_OK:
         return {"score": None, "error": "Cognitive layer not available"}
     return get_dna_engine().get_health_score(dict(_last_metrics))
 
-
-# ─────────────────────────────────────────────────────────
-#  Cognitive — Forecast  (NEW: confidence_label + trustworthy + insights)
-# ─────────────────────────────────────────────────────────
 @app.get("/cognitive/forecast", tags=["Cognitive"])
 async def cognitive_forecast():
-    """60-minute forward forecast with plain-English explanations per point."""
     if not COGNITIVE_OK:
         return {"error": "Cognitive layer not available"}
     return get_forecaster().get_plain_timeline(dict(_last_metrics))
 
-
-# ─────────────────────────────────────────────────────────
-#  Cognitive — Predictions  (NEW: explanation block per prediction)
-# ─────────────────────────────────────────────────────────
 @app.get("/cognitive/predictions", tags=["Cognitive"])
 async def cognitive_predictions():
-    """Active failure predictions with plain-English explanation of why CVIS is worried."""
     if not COGNITIVE_OK:
         return []
     dna     = get_dna_engine()
@@ -853,7 +784,6 @@ async def cognitive_predictions():
             "severity":         p.severity,
             "acknowledged":     p.acknowledged,
             "trustworthy":      p.seen_count >= 15 if hasattr(p, "seen_count") else True,
-            # NEW: plain-English explanation of the evidence
             "explanation":      dna.explain_prediction(p, metrics),
         }
         for p in preds
@@ -871,35 +801,22 @@ async def resolve_prediction(pred_id: str, was_correct: bool = True):
         get_dna_engine().resolve_prediction(pred_id, was_correct)
     return {"resolved": pred_id, "was_correct": was_correct}
 
-
-# ─────────────────────────────────────────────────────────
-#  Cognitive — DNA  (NEW: explanation per pattern)
-# ─────────────────────────────────────────────────────────
 @app.get("/cognitive/dna", tags=["Cognitive"])
 async def cognitive_dna():
-    """Failure DNA with explainability context per pattern."""
     if not COGNITIVE_OK:
         return {"patterns": 0}
     dna     = get_dna_engine()
     summary = dna.get_dna_summary()
     metrics = dict(_last_metrics)
-
-    # Attach explanation to each pattern
     for pattern in summary.get("pattern_list", []):
         try:
             pattern["explanation"] = dna.explain(metrics, pattern["type"])
         except Exception:
             pattern["explanation"] = {}
-
     return summary
 
-
-# ─────────────────────────────────────────────────────────
-#  Cognitive — Pre-mortem
-# ─────────────────────────────────────────────────────────
 @app.get("/cognitive/premortem", tags=["Cognitive"])
 async def cognitive_premortem():
-    """30-day failure pre-mortem — what will kill this machine in the next month."""
     dna    = get_dna_engine().get_dna_summary()
     result = get_premortem_engine().run(dna_summary=dna)
 
@@ -929,10 +846,6 @@ async def cognitive_premortem():
         "top_threat":     threat_to_dict(result.top_threat) if result.top_threat else None,
     }
 
-
-# ─────────────────────────────────────────────────────────
-#  Cognitive — Auto-remediation
-# ─────────────────────────────────────────────────────────
 @app.get("/cognitive/remediation/status", tags=["Actions"])
 async def remediation_status():
     return get_ar_engine().get_status()
@@ -941,10 +854,6 @@ async def remediation_status():
 async def remediation_log(limit: int = 20):
     return get_ar_engine().get_audit_log(limit=limit)
 
-
-# ─────────────────────────────────────────────────────────
-#  Cognitive — Black Box
-# ─────────────────────────────────────────────────────────
 @app.get("/cognitive/blackbox", tags=["Cognitive"])
 async def cognitive_blackbox():
     if not COGNITIVE_OK:
@@ -952,10 +861,6 @@ async def cognitive_blackbox():
     bb = get_black_box()
     return {"status": bb.get_status(), "recent_frames": bb.get_recent_frames(minutes=5)}
 
-
-# ─────────────────────────────────────────────────────────
-#  Cognitive — Incidents
-# ─────────────────────────────────────────────────────────
 @app.post("/cognitive/incident", tags=["Cognitive"])
 async def mark_incident(incident_type: str, description: str = ""):
     if not COGNITIVE_OK:
@@ -982,35 +887,17 @@ async def get_incident(incident_id: str):
     postmortem = get_dna_engine().generate_postmortem(incident_id)
     return {**incident, "postmortem": postmortem}
 
-
-# ─────────────────────────────────────────────────────────
-#  Cognitive — Post-mortem  (NEW: full timeline reconstruction)
-# ─────────────────────────────────────────────────────────
 @app.get("/cognitive/postmortem/{event_id}", tags=["Cognitive"])
 async def get_postmortem(event_id: str):
-    """
-    Full post-mortem with reconstructed failure timeline,
-    contributing factors, what to watch, and recommendation.
-    """
     if not COGNITIVE_OK:
         return {"error": "not available"}
-
     bb       = get_black_box()
     incident = bb.get_incident(event_id)
-
     if incident:
-        # Use new builder for rich post-mortem
         tl_data = bb.get_timeline_for_incident(event_id)
         return get_postmortem_builder().build(incident, tl_data.get("timeline", []))
-
-    # Fall back to DNA engine's simpler post-mortem for events
-    # recorded before this feature shipped
     return get_dna_engine().generate_postmortem(event_id)
 
-
-# ─────────────────────────────────────────────────────────
-#  Cognitive — Notifications
-# ─────────────────────────────────────────────────────────
 @app.get("/cognitive/notifications", tags=["Cognitive"])
 async def notification_history():
     if not COGNITIVE_OK:
@@ -1025,10 +912,6 @@ async def configure_notifications(enabled: bool = True, min_severity: str = "MED
         n.set_min_severity(min_severity)
     return {"enabled": enabled, "min_severity": min_severity}
 
-
-# ─────────────────────────────────────────────────────────
-#  Cognitive — Status
-# ─────────────────────────────────────────────────────────
 @app.get("/cognitive/status", tags=["Cognitive"])
 async def cognitive_status():
     if not COGNITIVE_OK:
@@ -1037,18 +920,15 @@ async def cognitive_status():
     dna = get_dna_engine()
     bb  = get_black_box()
     return {
-        "available":           True,
-        "health_score":        dna.get_health_score(m),
-        "dna":                 dna.get_dna_summary(),
-        "black_box":           bb.get_status(),
-        "notifications":       get_notifier().get_status(),
-        "active_predictions":  len(dna.get_active_predictions()),
+        "available":          True,
+        "health_score":       dna.get_health_score(m),
+        "dna":                dna.get_dna_summary(),
+        "black_box":          bb.get_status(),
+        "notifications":      get_notifier().get_status(),
+        "active_predictions": len(dna.get_active_predictions()),
     }
 
 
-# ─────────────────────────────────────────────────────────
-#  Devices
-# ─────────────────────────────────────────────────────────
 class DeviceMetricsPayload(BaseModel):
     device_id:   str
     device_name: str
@@ -1090,9 +970,6 @@ async def get_device(device_id: str):
     return {**dev, "status": "online" if age < 30 else "offline", "last_seen_s": round(age, 1)}
 
 
-# ─────────────────────────────────────────────────────────
-#  One-click actions
-# ─────────────────────────────────────────────────────────
 try:
     from backend.core.actions.action_executor import (
         execute_action as _execute_action,
@@ -1117,9 +994,6 @@ async def run_action(action_id: str):
     return result
 
 
-# ─────────────────────────────────────────────────────────
-#  Weekly report
-# ─────────────────────────────────────────────────────────
 @app.get("/report/weekly", tags=["Reports"])
 async def weekly_health_report():
     from datetime import datetime
@@ -1141,17 +1015,12 @@ async def weekly_health_report():
         if s >= 200: return "Poor"
         return "Critical"
 
-    bar = "█" * int(score / 50) + "░" * (20 - int(score / 50))
-
+    bar = "X" * int(score / 50) + "." * (20 - int(score / 50))
     dna_section = ""
     if COGNITIVE_OK:
         try:
             s = get_dna_engine().get_dna_summary()
-            dna_section = (
-                f"  Failure DNA:\n"
-                f"  — {s.get('patterns', 0)} patterns learned\n"
-                f"  — {s.get('prevented', 0)} failures prevented"
-            )
+            dna_section = f"  Failure DNA:\n  - {s.get('patterns',0)} patterns\n  - {s.get('prevented',0)} prevented"
         except Exception:
             pass
 
@@ -1160,36 +1029,25 @@ async def weekly_health_report():
         try:
             fc = get_forecaster().forecast(m)
             if fc:
-                summary = getattr(fc, "plain_summary", getattr(fc, "summary", "Analyzing..."))
-                fc_section = f"  Next 60 Minutes:\n  — {summary}"
+                fc_section = f"  Next 60 Min: {getattr(fc,'plain_summary',getattr(fc,'summary','Analyzing...'))}"
         except Exception:
             pass
 
     rec = (
-        "→ Health is low. Check disk space and processes." if score < 400 else
-        "→ Health is fair. Monitor memory usage."          if score < 700 else
-        "→ System is healthy. No action needed."
+        "Health low — check disk and processes." if score < 400 else
+        "Health fair — monitor memory."          if score < 700 else
+        "System healthy — no action needed."
     )
-    week   = datetime.now().strftime("%B %d, %Y")
+    week = datetime.now().strftime("%B %d, %Y")
     report = (
-        f"{'='*56}\n"
-        f"  CVIS Weekly Health Report — {week}\n"
-        f"{'='*56}\n\n"
-        f"  Health Score: {score}/1000 ({_grade(score)})\n"
-        f"  [{bar}]\n"
-        f"  Status: {severity} — {reason}\n\n"
-        f"{dna_section}\n\n"
-        f"{fc_section}\n\n"
-        f"  Recommendations:\n  {rec}\n\n"
-        f"  Dashboard: http://localhost\n"
-        f"{'='*56}"
+        f"{'='*56}\n  CVIS Weekly Report - {week}\n{'='*56}\n\n"
+        f"  Health: {score}/1000 ({_grade(score)})\n  [{bar}]\n"
+        f"  Status: {severity} - {reason}\n\n{dna_section}\n\n{fc_section}\n\n"
+        f"  Recommendation: {rec}\n  Dashboard: http://localhost\n{'='*56}"
     )
     return {"report": report, "generated_at": time.time(), "format": "plain_text"}
 
 
-# ─────────────────────────────────────────────────────────
-#  Frontend static file serving
-# ─────────────────────────────────────────────────────────
 _FRONTEND_DIR = _os.path.join(
     _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))),
     "frontend",
@@ -1215,16 +1073,12 @@ if _os.path.isdir(_FRONTEND_DIR):
         pass
 
 
-# ─────────────────────────────────────────────────────────
-#  Dev entry point
-# ─────────────────────────────────────────────────────────
 if __name__ == "__main__":
     import uvicorn
     print("=" * 60)
-    print("  CVIS v9.0 · dev server (single worker)")
-    print("  For production: gunicorn -c gunicorn_conf.py backend.main:app")
-    print(f"  psutil : {'✓' if PS_OK else '✗'}")
-    print("  Docs   : http://localhost:8000/docs")
+    print("  CVIS v9.0 - dev server")
+    print(f"  psutil: {'OK' if PS_OK else 'MISSING - synthetic metrics active'}")
+    print("  Docs  : http://localhost:8000/docs")
     print("=" * 60)
     uvicorn.run(
         "backend.main:app",
