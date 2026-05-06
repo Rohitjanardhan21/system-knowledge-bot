@@ -5,10 +5,11 @@ Native application window + system tray integration.
 Behaves like ArmouryCrate — window when you want it, tray when you don't.
 
 Double-click CVIS.exe:
-  → Backend starts silently
-  → Native window opens showing the full dashboard
+  → Loading screen appears immediately
+  → Backend starts silently in background
+  → Dashboard loads automatically when backend is ready
   → Minimising goes to tray
-  → Tray icon shows badge on CRITICAL alerts
+  → Tray icon turns red/orange on alerts
   → Windows notifications fire on predictions
 
 Build:
@@ -26,14 +27,22 @@ import urllib.error
 
 # ── Suppress console window on Windows ───────────────────
 if sys.platform == "win32":
-    import ctypes
-    ctypes.windll.user32.ShowWindow(ctypes.windll.kernel32.GetConsoleWindow(), 0)
+    try:
+        import ctypes
+        ctypes.windll.user32.ShowWindow(
+            ctypes.windll.kernel32.GetConsoleWindow(), 0
+        )
+    except Exception:
+        pass
 
 # ── Logging ───────────────────────────────────────────────
 logging.basicConfig(
     level=logging.WARNING,
     format="%(asctime)s %(levelname)s %(message)s",
-    handlers=[logging.FileHandler("cvis_app.log"), logging.StreamHandler()],
+    handlers=[
+        logging.FileHandler("cvis_app.log", encoding="utf-8"),
+        logging.StreamHandler(),
+    ],
 )
 log = logging.getLogger("cvis.app")
 
@@ -44,15 +53,109 @@ WINDOW_W     = 1440
 WINDOW_H     = 900
 MIN_W        = 1024
 MIN_H        = 700
-POLL_SECONDS = 10          # how often tray checks for alerts
+POLL_SECONDS = 10
 APP_TITLE    = "CVIS — Cognitive AIOps"
 
-# ── State shared between threads ─────────────────────────
-_window       = None       # pywebview window reference
-_tray         = None       # pystray icon reference
-_last_sev     = "LOW"
-_backend_up   = False
-_shutdown     = False
+# ── Shared state ──────────────────────────────────────────
+_window        = None
+_tray          = None
+_last_sev      = "LOW"
+_backend_up    = False
+_shutdown      = False
+_last_pred_id  = None
+_last_notif_at = 0.0
+
+
+# ─────────────────────────────────────────────────────────
+#  Loading screen HTML
+# ─────────────────────────────────────────────────────────
+
+LOADING_HTML = """<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;600&display=swap');
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    background: #0a0a0f;
+    color: #e8e8f0;
+    font-family: 'IBM Plex Mono', monospace;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    gap: 18px;
+    user-select: none;
+  }
+  .logo { font-size: 32px; font-weight: 600; color: #7c6af7; letter-spacing: .12em; }
+  .logo span { color: #555570; font-weight: 300; }
+  .tagline { font-size: 11px; color: #555570; letter-spacing: .12em; text-transform: uppercase; }
+  .bar-track {
+    width: 300px; height: 2px;
+    background: rgba(255,255,255,.06);
+    border-radius: 2px; overflow: hidden; margin-top: 8px;
+  }
+  .bar-fill {
+    height: 100%; width: 0%; background: #7c6af7;
+    border-radius: 2px; animation: load 12s ease forwards;
+  }
+  @keyframes load {
+    0%{width:0%} 20%{width:20%} 40%{width:45%}
+    65%{width:68%} 85%{width:85%} 100%{width:96%}
+  }
+  .status { font-size: 11px; color: #333350; margin-top: 4px; animation: fade 3s ease infinite alternate; }
+  @keyframes fade { from{opacity:.4} to{opacity:1} }
+  .dots { display: flex; gap: 8px; margin-top: 6px; }
+  .dot {
+    width: 5px; height: 5px; border-radius: 50%;
+    background: #7c6af7; animation: bounce 1.2s infinite;
+  }
+  .dot:nth-child(2){animation-delay:.2s}
+  .dot:nth-child(3){animation-delay:.4s}
+  @keyframes bounce {
+    0%,60%,100%{transform:translateY(0);opacity:.3}
+    30%{transform:translateY(-6px);opacity:1}
+  }
+</style>
+</head>
+<body>
+  <div class="logo">CVIS <span>/ Cognitive AIOps</span></div>
+  <div class="tagline">Predicts failures before they happen</div>
+  <div class="bar-track"><div class="bar-fill"></div></div>
+  <div class="status">Starting ML engine and cognitive layer...</div>
+  <div class="dots">
+    <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+  </div>
+</body>
+</html>"""
+
+ERROR_HTML = """<!DOCTYPE html>
+<html>
+<head>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{
+    background:#0a0a0f;color:#f87171;font-family:monospace;
+    display:flex;flex-direction:column;align-items:center;
+    justify-content:center;height:100vh;gap:12px;
+    text-align:center;padding:40px;
+  }
+  .title{font-size:20px;font-weight:600}
+  .sub{font-size:12px;color:#555570;line-height:1.7}
+  .log{font-size:11px;color:#333350;margin-top:8px}
+</style>
+</head>
+<body>
+  <div class="title">Backend failed to start</div>
+  <div class="sub">
+    The CVIS backend did not respond within 60 seconds.<br>
+    This usually means a missing dependency or port conflict.
+  </div>
+  <div class="log">Check cvis_app.log for details.</div>
+</body>
+</html>"""
 
 
 # ─────────────────────────────────────────────────────────
@@ -60,18 +163,16 @@ _shutdown     = False
 # ─────────────────────────────────────────────────────────
 
 def _start_backend():
-    """Start the FastAPI backend in a daemon thread."""
     global _backend_up
     try:
-        # Ensure data directories exist
         os.makedirs("data",           exist_ok=True)
         os.makedirs("logs",           exist_ok=True)
         os.makedirs("model_versions", exist_ok=True)
 
-        # Copy .env.example → .env if .env doesn't exist
         if not os.path.exists(".env") and os.path.exists(".env.example"):
             import shutil
             shutil.copy(".env.example", ".env")
+            log.info("Created .env from .env.example")
 
         import uvicorn
         from backend.main import app as fastapi_app
@@ -88,8 +189,7 @@ def _start_backend():
         log.error("Backend failed to start: %s", e)
 
 
-def _wait_for_backend(timeout: int = 30) -> bool:
-    """Poll /health until the backend responds or timeout."""
+def _wait_for_backend(timeout: int = 60) -> bool:
     global _backend_up
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -109,7 +209,39 @@ def _wait_for_backend(timeout: int = 30) -> bool:
 
 
 # ─────────────────────────────────────────────────────────
-#  Alert poller — fires Windows notifications
+#  Notifications
+# ─────────────────────────────────────────────────────────
+
+def _send_notification(title: str, message: str):
+    if sys.platform != "win32":
+        return
+    try:
+        from win10toast import ToastNotifier
+        ToastNotifier().show_toast(title, message, duration=8, threaded=True)
+    except Exception:
+        try:
+            import subprocess
+            t = title.replace("'", "")
+            m = message.replace("'", "").replace("\n", " ")
+            ps = (
+                f"Add-Type -AssemblyName System.Windows.Forms;"
+                f"$n=New-Object System.Windows.Forms.NotifyIcon;"
+                f"$n.Icon=[System.Drawing.SystemIcons]::Information;"
+                f"$n.Visible=$true;"
+                f"$n.ShowBalloonTip(8000,'{t}','{m}',"
+                f"[System.Windows.Forms.ToolTipIcon]::Warning);"
+                f"Start-Sleep -s 9;$n.Dispose()"
+            )
+            subprocess.Popen(
+                ["powershell", "-WindowStyle", "Hidden", "-Command", ps],
+                creationflags=0x08000000,
+            )
+        except Exception as e:
+            log.warning("Notification failed: %s", e)
+
+
+# ─────────────────────────────────────────────────────────
+#  Alert poller
 # ─────────────────────────────────────────────────────────
 
 def _fetch_json(path: str):
@@ -124,85 +256,37 @@ def _fetch_json(path: str):
         return None
 
 
-def _send_notification(title: str, message: str):
-    """Send a Windows toast notification."""
-    if sys.platform != "win32":
-        return
-    try:
-        from win10toast import ToastNotifier
-        ToastNotifier().show_toast(
-            title, message,
-            duration=8,
-            threaded=True,
-        )
-    except ImportError:
-        # Fallback: use PowerShell notification
-        try:
-            import subprocess
-            ps = (
-                f"Add-Type -AssemblyName System.Windows.Forms;"
-                f"$n = New-Object System.Windows.Forms.NotifyIcon;"
-                f"$n.Icon = [System.Drawing.SystemIcons]::Information;"
-                f"$n.Visible = $true;"
-                f"$n.ShowBalloonTip(8000, '{title}', '{message}', "
-                f"[System.Windows.Forms.ToolTipIcon]::Warning);"
-                f"Start-Sleep -s 9; $n.Dispose()"
-            )
-            subprocess.Popen(
-                ["powershell", "-WindowStyle", "Hidden", "-Command", ps],
-                creationflags=0x08000000,  # CREATE_NO_WINDOW
-            )
-        except Exception as e:
-            log.warning("Notification failed: %s", e)
-
-
-_last_pred_id  = None
-_last_notif_at = 0.0
-
 def _alert_poller():
-    """Background thread — polls backend, fires notifications, updates tray icon."""
     global _last_sev, _last_pred_id, _last_notif_at
-
     while not _shutdown:
         if not _backend_up:
             time.sleep(2)
             continue
-
         try:
-            # Check active prediction
             preds = _fetch_json("/cognitive/predictions")
-            if preds and len(preds) > 0:
+            if preds:
                 pred = preds[0]
                 pid  = pred.get("id")
                 sev  = pred.get("severity", "LOW")
                 eta  = int(pred.get("eta_minutes", 0))
                 msg  = pred.get("message", "")
                 conf = int(pred.get("confidence", 0))
-
-                # Fire notification if new prediction
-                now = time.time()
+                now  = time.time()
                 if pid != _last_pred_id and now - _last_notif_at > 60:
                     _last_pred_id  = pid
                     _last_notif_at = now
                     _send_notification(
-                        f"⚠ CVIS — {sev} Alert",
+                        f"CVIS — {sev} Alert",
                         f"{msg}\nExpected in ~{eta} min ({conf}% confidence)",
                     )
-
                 _last_sev = sev
-
             else:
-                # Check anomaly severity from health endpoint
                 health = _fetch_json("/health")
                 if health:
                     _last_sev = health.get("severity", "LOW")
-
-            # Update tray icon colour
             _update_tray_icon()
-
         except Exception as e:
             log.debug("Poller error: %s", e)
-
         time.sleep(POLL_SECONDS)
 
 
@@ -211,18 +295,13 @@ def _alert_poller():
 # ─────────────────────────────────────────────────────────
 
 def _make_tray_image(severity: str = "LOW"):
-    """
-    Generate a coloured circle icon for the tray.
-    Green = LOW, Yellow = MEDIUM, Orange = HIGH, Red = CRITICAL.
-    """
     try:
         from PIL import Image, ImageDraw
     except ImportError:
         return None
-
-    size   = 64
-    img    = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    draw   = ImageDraw.Draw(img)
+    size = 64
+    img  = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
     colors = {
         "LOW":      "#34d399",
         "MEDIUM":   "#fbbf24",
@@ -230,23 +309,16 @@ def _make_tray_image(severity: str = "LOW"):
         "CRITICAL": "#f87171",
     }
     c = colors.get(severity, "#34d399")
-
-    # Outer ring
-    draw.ellipse([2, 2, size-2, size-2], outline=c, width=4)
-    # Inner fill — semi-transparent
     r, g, b = int(c[1:3], 16), int(c[3:5], 16), int(c[5:7], 16)
-    draw.ellipse([8, 8, size-8, size-8], fill=(r, g, b, 120))
-
-    # CRITICAL: add exclamation mark
+    draw.ellipse([2,  2,  size-2,  size-2],  outline=c, width=4)
+    draw.ellipse([10, 10, size-10, size-10], fill=(r, g, b, 110))
     if severity == "CRITICAL":
         draw.rectangle([30, 14, 34, 36], fill=(r, g, b, 255))
-        draw.ellipse([30, 42, 34, 46],   fill=(r, g, b, 255))
-
+        draw.ellipse(  [30, 42, 34, 46], fill=(r, g, b, 255))
     return img
 
 
 def _update_tray_icon():
-    """Swap the tray icon colour to match current severity."""
     global _tray
     if _tray is None:
         return
@@ -280,64 +352,54 @@ def _hide_window():
 def _quit_app(icon=None, item=None):
     global _shutdown
     _shutdown = True
-    if _tray:
-        try:
-            _tray.stop()
-        except Exception:
-            pass
-    if _window:
-        try:
-            _window.destroy()
-        except Exception:
-            pass
+    try:
+        if _tray:   _tray.stop()
+    except Exception:
+        pass
+    try:
+        if _window: _window.destroy()
+    except Exception:
+        pass
     sys.exit(0)
 
 
-def _build_tray_menu():
-    try:
-        import pystray
-        from pystray import MenuItem as Item, Menu
-
-        return Menu(
-            Item("Open CVIS",    lambda icon, item: _show_window(), default=True),
-            Item("Dashboard",    lambda icon, item: _show_window()),
-            Menu.SEPARATOR,
-            Item("Check Status", lambda icon, item: _check_status_notification()),
-            Menu.SEPARATOR,
-            Item("Quit",         _quit_app),
-        )
-    except Exception:
-        return None
-
-
 def _check_status_notification():
-    """Tray menu → Check Status → fires a notification with current health."""
     data = _fetch_json("/cognitive/health-score")
     if data:
         score = data.get("score", "?")
         grade = data.get("grade", "?")
         _send_notification(
             "CVIS — System Status",
-            f"Health: {score}/1000 ({grade})\nSeverity: {_last_sev}",
+            f"Health: {score}/1000 ({grade})  Severity: {_last_sev}",
         )
     else:
         _send_notification("CVIS", "Backend not responding.")
 
 
+def _build_tray_menu():
+    try:
+        from pystray import MenuItem as Item, Menu
+        return Menu(
+            Item("Open CVIS",    lambda icon, item: _show_window(), default=True),
+            Item("Dashboard",    lambda icon, item: _show_window()),
+            Menu.SEPARATOR,
+            Item("Check Status", lambda icon, item: _check_status_notification()),
+            Menu.SEPARATOR,
+            Item("Quit CVIS",    _quit_app),
+        )
+    except Exception:
+        return None
+
+
 def _start_tray():
-    """Run the system tray icon (blocking — run in its own thread)."""
     global _tray
     try:
         import pystray
-
-        img  = _make_tray_image("LOW")
-        menu = _build_tray_menu()
-
         _tray = pystray.Icon(
             name="cvis",
-            icon=img,
+            icon=_make_tray_image("LOW"),
             title="CVIS — Cognitive AIOps",
-            menu=menu,
+            menu=_build_tray_menu(),
         )
         _tray.run()
     except ImportError:
@@ -350,20 +412,21 @@ def _start_tray():
 #  Window event handlers
 # ─────────────────────────────────────────────────────────
 
+_minimise_notif_sent = False
+
 def _on_minimise():
-    """When window is minimised, hide it and keep running in tray."""
+    global _minimise_notif_sent
     _hide_window()
-    _send_notification(
-        "CVIS is still running",
-        "CVIS is monitoring your system in the background. Click the tray icon to reopen.",
-    ) if _last_notif_at == 0.0 else None
+    if not _minimise_notif_sent:
+        _minimise_notif_sent = True
+        _send_notification(
+            "CVIS is still running",
+            "Monitoring continues in the background. Click the tray icon to reopen.",
+        )
 
 
 def _on_closing():
-    """
-    When X is clicked — minimise to tray instead of quitting.
-    Return False to prevent pywebview from destroying the window.
-    """
+    """X button goes to tray instead of quitting."""
     _hide_window()
     return False
 
@@ -375,31 +438,18 @@ def _on_closing():
 def main():
     global _window
 
-    # 1. Start backend thread
-    backend_thread = threading.Thread(target=_start_backend, daemon=True, name="cvis-backend")
-    backend_thread.start()
+    # Start backend, poller, tray in background threads
+    threading.Thread(target=_start_backend, daemon=True, name="cvis-backend").start()
+    threading.Thread(target=_alert_poller,  daemon=True, name="cvis-poller").start()
+    threading.Thread(target=_start_tray,    daemon=True, name="cvis-tray").start()
 
-    # 2. Wait for backend to be ready
-    print("Starting CVIS…")
-    ready = _wait_for_backend(timeout=30)
-    if not ready:
-        _send_notification("CVIS — Error", "Backend failed to start. Check cvis_app.log.")
-
-    # 3. Start alert poller thread
-    poller_thread = threading.Thread(target=_alert_poller, daemon=True, name="cvis-poller")
-    poller_thread.start()
-
-    # 4. Start tray in its own thread
-    tray_thread = threading.Thread(target=_start_tray, daemon=True, name="cvis-tray")
-    tray_thread.start()
-
-    # 5. Create and show the native window
     try:
         import webview
 
+        # Show loading screen immediately — no waiting
         _window = webview.create_window(
             title=APP_TITLE,
-            url=BACKEND_URL if ready else "about:blank",
+            html=LOADING_HTML,
             width=WINDOW_W,
             height=WINDOW_H,
             min_size=(MIN_W, MIN_H),
@@ -409,12 +459,23 @@ def main():
             zoomable=False,
         )
 
-        # Hook minimise → go to tray
-        # pywebview exposes events on the window object
-        _window.events.minimized  += _on_minimise
-        _window.events.closing    += _on_closing
+        _window.events.minimized += _on_minimise
+        _window.events.closing   += _on_closing
 
-        # Start the GUI event loop (blocking)
+        # Wait for backend in a thread, then navigate
+        def _navigate_when_ready():
+            ready = _wait_for_backend(timeout=60)
+            time.sleep(0.3)
+            if ready:
+                _window.load_url(BACKEND_URL)
+            else:
+                _window.load_html(ERROR_HTML)
+
+        threading.Thread(
+            target=_navigate_when_ready, daemon=True, name="cvis-nav"
+        ).start()
+
+        # Blocks until window is closed
         webview.start(
             debug=False,
             private_mode=False,
@@ -426,7 +487,7 @@ def main():
         input("pywebview not found. Press Enter to exit.")
     except Exception as e:
         log.error("Window error: %s", e)
-        input(f"Window failed: {e}\nPress Enter to exit.")
+        input(f"Window error: {e}\nPress Enter to exit.")
 
 
 if __name__ == "__main__":
