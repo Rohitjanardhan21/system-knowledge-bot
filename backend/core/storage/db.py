@@ -5,12 +5,30 @@ Stores: alert history, intervention log, event log, metric snapshots.
 Falls back silently to in-memory if aiosqlite is not installed.
 """
 
-import json, logging, os, time
+import json, logging, os, sys, time
 from typing import Optional
 
 log = logging.getLogger("cvis.db")
 
-DB_PATH = os.environ.get("DB_PATH", "/app/data/cvis.db")
+# ── DB Path — Windows-aware ───────────────────────────────
+# On Linux/Docker the default is /app/data/cvis.db.
+# On Windows that path doesn't exist, so fall back to a
+# path relative to this file's location.
+if sys.platform == "win32":
+    _DEFAULT_DB = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+        "data", "cvis.db"
+    )
+else:
+    _DEFAULT_DB = "/app/data/cvis.db"
+
+DB_PATH = os.environ.get("DB_PATH", _DEFAULT_DB)
+
+# Ensure the data directory exists before trying to open the DB
+try:
+    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+except Exception:
+    pass
 
 try:
     import aiosqlite
@@ -26,10 +44,10 @@ CREATE TABLE IF NOT EXISTS alerts (
     rule_id     TEXT    NOT NULL,
     severity    TEXT    NOT NULL,
     message     TEXT    NOT NULL,
-    metrics     TEXT,               -- JSON blob
+    metrics     TEXT,
     fired_at    REAL    NOT NULL,
     resolved_at REAL,
-    sent_to     TEXT                -- JSON list
+    sent_to     TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_alerts_fired_at ON alerts(fired_at DESC);
 CREATE INDEX IF NOT EXISTS idx_alerts_severity  ON alerts(severity);
@@ -67,7 +85,7 @@ CREATE INDEX IF NOT EXISTS idx_snapshots_ts ON metric_snapshots(ts DESC);
 """
 
 # ─────────────────────────────────────────────────────────
-#  Connection pool (one persistent connection per process)
+#  Connection pool
 # ─────────────────────────────────────────────────────────
 _conn: Optional[object] = None
 
@@ -76,19 +94,29 @@ async def get_db():
     if not SQLITE_OK:
         return None
     if _conn is None:
-        _conn = await aiosqlite.connect(DB_PATH, check_same_thread=False)
-        _conn.row_factory = aiosqlite.Row
-        await _conn.executescript(_SCHEMA)
-        await _conn.execute("PRAGMA journal_mode=WAL")   # concurrent reads + writes
-        await _conn.execute("PRAGMA synchronous=NORMAL") # fast enough, safe enough
-        await _conn.commit()
-        log.info("SQLite opened: %s", DB_PATH)
+        try:
+            # Ensure directory exists right before connecting
+            os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+            _conn = await aiosqlite.connect(DB_PATH, check_same_thread=False)
+            _conn.row_factory = aiosqlite.Row
+            await _conn.executescript(_SCHEMA)
+            await _conn.execute("PRAGMA journal_mode=WAL")
+            await _conn.execute("PRAGMA synchronous=NORMAL")
+            await _conn.commit()
+            log.info("SQLite opened: %s", DB_PATH)
+        except Exception as e:
+            log.warning("SQLite unavailable (%s) — running without persistence", e)
+            _conn = None
+            return None
     return _conn
 
 async def close_db():
     global _conn
     if _conn:
-        await _conn.close()
+        try:
+            await _conn.close()
+        except Exception:
+            pass
         _conn = None
 
 # ─────────────────────────────────────────────────────────
@@ -113,7 +141,6 @@ async def save_alert(alert) -> bool:
             )
         )
         await db.commit()
-        # Prune: keep only last 1000 alerts
         await db.execute(
             "DELETE FROM alerts WHERE id NOT IN "
             "(SELECT id FROM alerts ORDER BY fired_at DESC LIMIT 1000)"
@@ -140,8 +167,8 @@ async def load_alerts(limit: int = 200, severity: str = None) -> list[dict]:
         out = []
         for r in rows:
             d = dict(r)
-            d["metrics"]  = json.loads(d["metrics"] or "{}")
-            d["sent_to"]  = json.loads(d["sent_to"] or "[]")
+            d["metrics"] = json.loads(d["metrics"] or "{}")
+            d["sent_to"] = json.loads(d["sent_to"] or "[]")
             out.append(d)
         return out
     except Exception as e:
@@ -203,9 +230,9 @@ async def save_event(severity: str, message: str) -> bool:
             (severity, message, time.time())
         )
         await db.commit()
-        # Prune: keep only last 1000 events to prevent unbounded growth
         await db.execute(
-            "DELETE FROM events WHERE id NOT IN (SELECT id FROM events ORDER BY ts DESC LIMIT 1000)"
+            "DELETE FROM events WHERE id NOT IN "
+            "(SELECT id FROM events ORDER BY ts DESC LIMIT 1000)"
         )
         await db.commit()
         return True
@@ -226,16 +253,16 @@ async def load_events(limit: int = 60) -> list[dict]:
         return []
 
 # ─────────────────────────────────────────────────────────
-#  METRIC SNAPSHOTS  (sampled every 10s to keep DB small)
+#  METRIC SNAPSHOTS
 # ─────────────────────────────────────────────────────────
 _last_snapshot_ts = 0.0
 _startup_ts = __import__("time").time()
-STARTUP_GRACE_S = 300  # 5 min warmup before saving snapshots
+STARTUP_GRACE_S = 300
 
 async def maybe_save_snapshot(metrics: dict, interval_s: int = 10) -> bool:
     global _last_snapshot_ts
     now = time.time()
-    if now - _startup_ts < STARTUP_GRACE_S:  # warmup period
+    if now - _startup_ts < STARTUP_GRACE_S:
         return False
     if now - _last_snapshot_ts < interval_s:
         return False
@@ -245,20 +272,20 @@ async def maybe_save_snapshot(metrics: dict, interval_s: int = 10) -> bool:
         return False
     try:
         await db.execute(
-            "INSERT INTO metric_snapshots (cpu,mem,disk,net,anomaly,health,ensemble,ts) VALUES (?,?,?,?,?,?,?,?)",
+            "INSERT INTO metric_snapshots (cpu,mem,disk,net,anomaly,health,ensemble,ts) "
+            "VALUES (?,?,?,?,?,?,?,?)",
             (
-                metrics.get("cpu_percent", 0),
-                metrics.get("memory", 0),
-                metrics.get("disk_percent", 0),
-                metrics.get("network_percent", 0),
-                metrics.get("anomaly_score", 0),
-                metrics.get("health_score", 100),
-                metrics.get("anomaly_score", 0),   # ensemble = anomaly_score from backend
+                metrics.get("cpu_percent",    0),
+                metrics.get("memory",         0),
+                metrics.get("disk_percent",   0),
+                metrics.get("network_percent",0),
+                metrics.get("anomaly_score",  0),
+                metrics.get("health_score",   100),
+                metrics.get("anomaly_score",  0),
                 now,
             )
         )
         await db.commit()
-        # Prune: keep 24 hours of 10s samples = 8640 rows max
         await db.execute(
             "DELETE FROM metric_snapshots WHERE ts < ?", (now - 86400,)
         )
@@ -282,26 +309,28 @@ async def load_snapshots(hours: float = 1.0) -> list[dict]:
         return []
 
 # ─────────────────────────────────────────────────────────
-#  DB info endpoint payload
+#  DB info — never raises, always returns a dict
 # ─────────────────────────────────────────────────────────
 async def db_info() -> dict:
-    db = await get_db()
-    if not db:
-        return {"available": False, "reason": "aiosqlite not installed"}
+    if not SQLITE_OK:
+        return {"available": False, "reason": "aiosqlite not installed", "alerts": 0}
     try:
-        async with db.execute("SELECT COUNT(*) as n FROM alerts")      as c: alerts = (await c.fetchone())["n"]
-        async with db.execute("SELECT COUNT(*) as n FROM interventions") as c: ivs   = (await c.fetchone())["n"]
-        async with db.execute("SELECT COUNT(*) as n FROM events")       as c: evts  = (await c.fetchone())["n"]
+        db = await get_db()
+        if not db:
+            return {"available": False, "reason": f"Could not open {DB_PATH}", "alerts": 0}
+        async with db.execute("SELECT COUNT(*) as n FROM alerts")           as c: alerts = (await c.fetchone())["n"]
+        async with db.execute("SELECT COUNT(*) as n FROM interventions")    as c: ivs   = (await c.fetchone())["n"]
+        async with db.execute("SELECT COUNT(*) as n FROM events")           as c: evts  = (await c.fetchone())["n"]
         async with db.execute("SELECT COUNT(*) as n FROM metric_snapshots") as c: snaps = (await c.fetchone())["n"]
         size_bytes = os.path.getsize(DB_PATH) if os.path.exists(DB_PATH) else 0
         return {
-            "available":    True,
-            "path":         DB_PATH,
-            "size_bytes":   size_bytes,
-            "alerts":       alerts,
+            "available":     True,
+            "path":          DB_PATH,
+            "size_bytes":    size_bytes,
+            "alerts":        alerts,
             "interventions": ivs,
-            "events":       evts,
-            "snapshots":    snaps,
+            "events":        evts,
+            "snapshots":     snaps,
         }
     except Exception as e:
-        return {"available": False, "reason": str(e)}
+        return {"available": False, "reason": str(e), "alerts": 0}

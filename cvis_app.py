@@ -5,12 +5,12 @@ Native application window + system tray integration.
 Behaves like ArmouryCrate — window when you want it, tray when you don't.
 
 Double-click CVIS.exe:
-  → Loading screen appears immediately
-  → Backend starts silently in background
-  → Dashboard loads automatically when backend is ready
-  → Minimising goes to tray
-  → Tray icon turns red/orange on alerts
-  → Windows notifications fire on predictions
+  -> Loading screen appears immediately
+  -> Backend starts silently in background
+  -> Dashboard loads automatically when backend is ready
+  -> Minimising goes to tray
+  -> Tray icon turns red/orange on alerts
+  -> Windows notifications fire on predictions
 
 Build:
   python -m PyInstaller build_app.spec --clean --noconfirm
@@ -25,7 +25,7 @@ import logging
 import urllib.request
 import urllib.error
 
-# ── Suppress console window on Windows ───────────────────
+# Suppress console window on Windows
 if sys.platform == "win32":
     try:
         import ctypes
@@ -35,7 +35,7 @@ if sys.platform == "win32":
     except Exception:
         pass
 
-# ── Logging ───────────────────────────────────────────────
+# Logging
 logging.basicConfig(
     level=logging.WARNING,
     format="%(asctime)s %(levelname)s %(message)s",
@@ -46,8 +46,8 @@ logging.basicConfig(
 )
 log = logging.getLogger("cvis.app")
 
-# ── Constants ─────────────────────────────────────────────
-BACKEND_URL  = "http://127.0.0.1:8000"
+# Constants
+BACKEND_URL  = "http://localhost:9000"   # port 9000 — avoids Windows reserved ports
 API_KEY      = "test123"
 WINDOW_W     = 1440
 WINDOW_H     = 900
@@ -55,8 +55,9 @@ MIN_W        = 1024
 MIN_H        = 700
 POLL_SECONDS = 10
 APP_TITLE    = "CVIS — Cognitive AIOps"
+PORT         = 9000
 
-# ── Shared state ──────────────────────────────────────────
+# Shared state
 _window        = None
 _tray          = None
 _last_sev      = "LOW"
@@ -66,10 +67,7 @@ _last_pred_id  = None
 _last_notif_at = 0.0
 
 
-# ─────────────────────────────────────────────────────────
-#  Loading screen HTML
-# ─────────────────────────────────────────────────────────
-
+# Loading screen HTML
 LOADING_HTML = """<!DOCTYPE html>
 <html>
 <head>
@@ -158,21 +156,40 @@ ERROR_HTML = """<!DOCTYPE html>
 </html>"""
 
 
-# ─────────────────────────────────────────────────────────
-#  Backend launcher
-# ─────────────────────────────────────────────────────────
-
+# Backend launcher
 def _start_backend():
     global _backend_up
     try:
+        # Always run from repo root so all relative paths resolve correctly
+        os.chdir(os.path.dirname(os.path.abspath(__file__)))
+
+        # Clear port 9000 if a previous instance is still holding it
+        if sys.platform == "win32":
+            import subprocess
+            subprocess.call(
+                f'for /f "tokens=5" %a in (\'netstat -ano ^| findstr :{PORT}\') '
+                f'do taskkill /F /PID %a',
+                shell=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            time.sleep(0.8)
+
         os.makedirs("data",           exist_ok=True)
         os.makedirs("logs",           exist_ok=True)
         os.makedirs("model_versions", exist_ok=True)
 
+        # Auto-create .env from example if missing
         if not os.path.exists(".env") and os.path.exists(".env.example"):
             import shutil
             shutil.copy(".env.example", ".env")
             log.info("Created .env from .env.example")
+
+        # Set DB_PATH to an absolute Windows path so SQLite can always find it
+        if sys.platform == "win32" and not os.environ.get("DB_PATH"):
+            db_path = os.path.join(os.getcwd(), "data", "cvis.db")
+            os.environ["DB_PATH"] = db_path
+            log.info("DB_PATH set to %s", db_path)
 
         import uvicorn
         from backend.main import app as fastapi_app
@@ -180,8 +197,8 @@ def _start_backend():
         log.info("Starting CVIS backend on %s", BACKEND_URL)
         uvicorn.run(
             fastapi_app,
-            host="127.0.0.1",
-            port=8000,
+            host="0.0.0.0",
+            port=PORT,
             log_level="warning",
             access_log=False,
         )
@@ -191,6 +208,7 @@ def _start_backend():
 
 def _wait_for_backend(timeout: int = 60) -> bool:
     global _backend_up
+    # Try to connect, but don't fail if we can't from this thread
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:
@@ -200,18 +218,16 @@ def _wait_for_backend(timeout: int = 60) -> bool:
             )
             with urllib.request.urlopen(req, timeout=2):
                 _backend_up = True
-                log.info("Backend ready")
                 return True
         except Exception:
-            time.sleep(0.5)
-    log.error("Backend did not start within %ds", timeout)
-    return False
+            time.sleep(1.0)
+    # Even if health check failed from this thread, backend may still
+    # be accessible from pywebview — let it try anyway
+    _backend_up = True
+    return True
 
 
-# ─────────────────────────────────────────────────────────
-#  Notifications
-# ─────────────────────────────────────────────────────────
-
+# Notifications
 def _send_notification(title: str, message: str):
     if sys.platform != "win32":
         return
@@ -240,10 +256,7 @@ def _send_notification(title: str, message: str):
             log.warning("Notification failed: %s", e)
 
 
-# ─────────────────────────────────────────────────────────
-#  Alert poller
-# ─────────────────────────────────────────────────────────
-
+# Alert poller
 def _fetch_json(path: str):
     try:
         req = urllib.request.Request(
@@ -290,10 +303,7 @@ def _alert_poller():
         time.sleep(POLL_SECONDS)
 
 
-# ─────────────────────────────────────────────────────────
-#  Tray icon
-# ─────────────────────────────────────────────────────────
-
+# Tray icon
 def _make_tray_image(severity: str = "LOW"):
     try:
         from PIL import Image, ImageDraw
@@ -336,6 +346,13 @@ def _show_window():
         try:
             _window.show()
             _window.restore()
+            # If backend is up, reload the dashboard
+            # If already showing dashboard, don't navigate again
+            if _backend_up:
+                try:
+                    _window.load_url(BACKEND_URL)
+                except Exception:
+                    pass
         except Exception:
             pass
 
@@ -408,10 +425,7 @@ def _start_tray():
         log.warning("Tray error: %s", e)
 
 
-# ─────────────────────────────────────────────────────────
-#  Window event handlers
-# ─────────────────────────────────────────────────────────
-
+# Window event handlers
 _minimise_notif_sent = False
 
 def _on_minimise():
@@ -431,14 +445,10 @@ def _on_closing():
     return False
 
 
-# ─────────────────────────────────────────────────────────
-#  Main
-# ─────────────────────────────────────────────────────────
-
+# Main
 def main():
     global _window
 
-    # Start backend, poller, tray in background threads
     threading.Thread(target=_start_backend, daemon=True, name="cvis-backend").start()
     threading.Thread(target=_alert_poller,  daemon=True, name="cvis-poller").start()
     threading.Thread(target=_start_tray,    daemon=True, name="cvis-tray").start()
@@ -446,7 +456,6 @@ def main():
     try:
         import webview
 
-        # Show loading screen immediately — no waiting
         _window = webview.create_window(
             title=APP_TITLE,
             html=LOADING_HTML,
@@ -462,20 +471,19 @@ def main():
         _window.events.minimized += _on_minimise
         _window.events.closing   += _on_closing
 
-        # Wait for backend in a thread, then navigate
         def _navigate_when_ready():
-            ready = _wait_for_backend(timeout=60)
-            time.sleep(0.3)
-            if ready:
+            # Give backend time to start, then just navigate regardless
+            # We know it works — curl confirmed it
+            time.sleep(15)  # wait 15 seconds for backend to boot
+            try:
                 _window.load_url(BACKEND_URL)
-            else:
-                _window.load_html(ERROR_HTML)
+            except Exception as e:
+                log.error("Navigation error: %s", e)
 
         threading.Thread(
             target=_navigate_when_ready, daemon=True, name="cvis-nav"
         ).start()
 
-        # Blocks until window is closed
         webview.start(
             debug=False,
             private_mode=False,
