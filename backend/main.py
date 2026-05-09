@@ -232,6 +232,11 @@ def _collect():
                     dna.ingest(m)
                     fcast.ingest(m)
                     get_premortem_engine().ingest(m)
+                    try:
+                        from backend.core.cognitive.degradation import get_degradation_detector
+                        get_degradation_detector().ingest(m)
+                    except Exception:
+                        pass
                     get_ar_engine().update_metrics(m)
 
                     procs     = m.get("processes", {})
@@ -1046,6 +1051,200 @@ async def weekly_health_report():
         f"  Recommendation: {rec}\n  Dashboard: http://localhost\n{'='*56}"
     )
     return {"report": report, "generated_at": time.time(), "format": "plain_text"}
+
+
+
+# ── Settings endpoints ────────────────────────────────────────────────────────
+# Paste this block into backend/main.py before the _FRONTEND_DIR block
+
+from backend.core.settings import settings_manager as _sm
+
+@app.get("/settings", tags=["Settings"])
+async def get_settings():
+    return _sm.get_all()
+
+@app.post("/settings", tags=["Settings"])
+async def save_settings(request: Request):
+    body = await request.json()
+    result = _sm.save(body)
+    # Apply thresholds to live alert engine immediately
+    try:
+        _sm.apply_alert_thresholds(get_alert_engine())
+    except Exception:
+        pass
+    return result
+
+@app.post("/settings/reset", tags=["Settings"])
+async def reset_settings():
+    return _sm.reset()
+
+@app.post("/settings/test-email", tags=["Settings"])
+async def settings_test_email():
+    try:
+        from backend.core.reports.weekly_report import send_alert_email
+        send_alert_email(
+            severity="INFO",
+            message="CVIS settings test — email delivery confirmed.",
+            reason="Manual test from Settings panel",
+            actions=["No action required"],
+            metrics={
+                "cpu_percent":  _last_metrics.get("cpu_percent",  0),
+                "memory":       _last_metrics.get("memory",       0),
+                "health_score": _last_metrics.get("health_score", 100),
+            },
+        )
+        return {"success": True, "message": "Test email sent — check your inbox."}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+@app.post("/settings/send-report", tags=["Settings"])
+async def settings_send_report():
+    try:
+        from backend.core.reports.weekly_report import send_weekly_report_email
+        to = _sm.get("alert_email") or os.environ.get("ALERT_EMAIL", "")
+        if not to:
+            return {"success": False, "message": "No alert email configured."}
+        send_weekly_report_email(to)
+        return {"success": True, "message": f"Weekly report sent to {to}"}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
+
+# ── Settings endpoints ────────────────────────────────────────────────────────
+# Paste this block into backend/main.py before the _FRONTEND_DIR block
+
+from backend.core.settings import settings_manager as _sm
+
+@app.get("/settings", tags=["Settings"])
+async def get_settings():
+    return _sm.get_all()
+
+@app.post("/settings", tags=["Settings"])
+async def save_settings(request: Request):
+    body = await request.json()
+    result = _sm.save(body)
+    # Apply thresholds to live alert engine immediately
+    try:
+        _sm.apply_alert_thresholds(get_alert_engine())
+    except Exception:
+        pass
+    return result
+
+@app.post("/settings/reset", tags=["Settings"])
+async def reset_settings():
+    return _sm.reset()
+
+@app.post("/settings/test-email", tags=["Settings"])
+async def settings_test_email():
+    try:
+        from backend.core.reports.weekly_report import send_alert_email
+        send_alert_email(
+            severity="INFO",
+            message="CVIS settings test — email delivery confirmed.",
+            reason="Manual test from Settings panel",
+            actions=["No action required"],
+            metrics={
+                "cpu_percent":  _last_metrics.get("cpu_percent",  0),
+                "memory":       _last_metrics.get("memory",       0),
+                "health_score": _last_metrics.get("health_score", 100),
+            },
+        )
+        return {"success": True, "message": "Test email sent — check your inbox."}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+@app.post("/settings/send-report", tags=["Settings"])
+async def settings_send_report():
+    try:
+        from backend.core.reports.weekly_report import send_weekly_report_email
+        to = _sm.get("alert_email") or os.environ.get("ALERT_EMAIL", "")
+        if not to:
+            return {"success": False, "message": "No alert email configured."}
+        send_weekly_report_email(to)
+        return {"success": True, "message": f"Weekly report sent to {to}"}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
+
+# ── Settings endpoints ────────────────────────────────────────────────────────
+# Paste this block into backend/main.py before the _FRONTEND_DIR block
+
+from backend.core.settings import settings_manager as _sm
+
+@app.get("/settings", tags=["Settings"])
+async def get_settings():
+    return _sm.get_all()
+
+@app.post("/settings", tags=["Settings"])
+async def save_settings(request: Request):
+    body = await request.json()
+    result = _sm.save(body)
+    # Apply thresholds to live alert engine immediately
+    try:
+        _sm.apply_alert_thresholds(get_alert_engine())
+    except Exception:
+        pass
+    return result
+
+@app.post("/settings/reset", tags=["Settings"])
+async def reset_settings():
+    return _sm.reset()
+
+@app.post("/settings/test-email", tags=["Settings"])
+async def settings_test_email():
+    try:
+        from backend.core.reports.weekly_report import send_alert_email
+        send_alert_email(
+            severity="INFO",
+            message="CVIS settings test — email delivery confirmed.",
+            reason="Manual test from Settings panel",
+            actions=["No action required"],
+            metrics={
+                "cpu_percent":  _last_metrics.get("cpu_percent",  0),
+                "memory":       _last_metrics.get("memory",       0),
+                "health_score": _last_metrics.get("health_score", 100),
+            },
+        )
+        return {"success": True, "message": "Test email sent — check your inbox."}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+@app.post("/settings/send-report", tags=["Settings"])
+async def settings_send_report():
+    try:
+        from backend.core.reports.weekly_report import send_weekly_report_email
+        to = _sm.get("alert_email") or os.environ.get("ALERT_EMAIL", "")
+        if not to:
+            return {"success": False, "message": "No alert email configured."}
+        send_weekly_report_email(to)
+        return {"success": True, "message": f"Weekly report sent to {to}"}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
+# ── Silent Degradation endpoint ───────────────────────────────────────────────
+# Add this block to backend/main.py near the other /cognitive/ endpoints
+
+@app.get("/cognitive/degradation", tags=["Cognitive"])
+async def cognitive_degradation():
+    """
+    Returns long-term chronic drift analysis.
+    Requires ~7 days of data for meaningful results.
+    """
+    try:
+        from backend.core.cognitive.degradation import get_degradation_detector
+        return get_degradation_detector().get_report_dict()
+    except Exception as e:
+        return {
+            "is_degrading": False,
+            "summary": "Degradation detector initialising — check back after 7 days of data.",
+            "has_data": False,
+            "days_of_data": 0,
+            "metrics": [],
+            "error": str(e),
+        }
 
 
 _FRONTEND_DIR = _os.path.join(

@@ -1,0 +1,183 @@
+<!-- ═══════════════════════════════════════════════════════
+     CVIS Silent Degradation Panel
+     Inject into the grid in frontend/index.html
+     Place after the <!-- Infrastructure --> card
+     ═══════════════════════════════════════════════════════ -->
+
+<div class="card" id="degradation-card">
+  <div class="card-title" style="display:flex;align-items:center;justify-content:space-between">
+    <span>Silent Degradation
+      <span style="font-weight:400;color:var(--muted);text-transform:none;font-size:9px;margin-left:6px">long-term chronic drift · 30-day window</span>
+    </span>
+    <span id="deg-severity-badge" style="font-family:var(--mono);font-size:9px;padding:2px 8px;border-radius:3px;display:none"></span>
+  </div>
+
+  <div id="deg-loading" style="color:var(--muted);font-size:12px;padding:8px 0">
+    Analysing 30-day trends…
+  </div>
+
+  <div id="deg-body" style="display:none">
+    <!-- Summary banner -->
+    <div id="deg-banner" style="padding:12px 14px;border-radius:6px;margin-bottom:14px;border-left:3px solid transparent">
+      <div style="font-size:13px;font-weight:600;margin-bottom:3px" id="deg-summary-title"></div>
+      <div style="font-size:11px;color:#aaa;line-height:1.6" id="deg-summary-text"></div>
+    </div>
+
+    <!-- Metric rows -->
+    <div id="deg-metrics" style="margin-bottom:12px"></div>
+
+    <!-- Recommendation -->
+    <div id="deg-rec" style="font-size:11px;color:var(--muted);padding:10px 12px;border-radius:6px;background:rgba(0,0,0,.2);line-height:1.7;display:none">
+      <span style="color:var(--accent)">→ </span><span id="deg-rec-text"></span>
+    </div>
+
+    <!-- Data quality note -->
+    <div id="deg-data-note" style="margin-top:8px;font-size:10px;color:var(--muted);font-family:var(--mono)"></div>
+  </div>
+</div>
+
+
+<script>
+// ═══════════════════════════════════════════════════════
+//  Silent Degradation Panel JS
+// ═══════════════════════════════════════════════════════
+
+let _degradationData = null;
+
+async function loadDegradation() {
+  try {
+    const d = await fetch_(API + '/cognitive/degradation');
+    _degradationData = d;
+    renderDegradation(d);
+  } catch(e) {
+    const el = document.getElementById('deg-loading');
+    if (el) el.textContent = 'Degradation data unavailable — backend offline.';
+  }
+}
+
+function renderDegradation(d) {
+  const loading = document.getElementById('deg-loading');
+  const body    = document.getElementById('deg-body');
+  if (!d || !d.has_data) {
+    if (loading) {
+      const days = d?.days_of_data || 0;
+      loading.textContent = days > 0
+        ? `Collecting data — ${days}/7 days needed for trend analysis.`
+        : 'Collecting baseline data — check back in 7 days.';
+    }
+    return;
+  }
+  if (loading) loading.style.display = 'none';
+  if (body)    body.style.display = 'block';
+
+  // Severity badge
+  const badge = document.getElementById('deg-severity-badge');
+  if (badge) {
+    const sevCols = {
+      LOW:      ['rgba(52,211,153,.1)',  'var(--green)'],
+      MEDIUM:   ['rgba(251,191,36,.1)',  'var(--yellow)'],
+      HIGH:     ['rgba(251,146,60,.1)',  'var(--orange)'],
+      CRITICAL: ['rgba(248,113,113,.1)', 'var(--red)'],
+    };
+    const [bg, fg] = sevCols[d.overall_severity] || sevCols.LOW;
+    badge.style.display     = 'inline';
+    badge.style.background  = bg;
+    badge.style.color       = fg;
+    badge.textContent       = d.overall_severity;
+  }
+
+  // Summary banner
+  const bannerCols = {
+    LOW:      ['rgba(52,211,153,.05)',  'rgba(52,211,153,.4)'],
+    MEDIUM:   ['rgba(251,191,36,.06)',  'rgba(251,191,36,.5)'],
+    HIGH:     ['rgba(251,146,60,.07)',  'rgba(251,146,60,.5)'],
+    CRITICAL: ['rgba(248,113,113,.08)', 'rgba(248,113,113,.6)'],
+  };
+  const [banBg, banBorder] = bannerCols[d.overall_severity] || bannerCols.LOW;
+  const banner  = document.getElementById('deg-banner');
+  const sumTitle = document.getElementById('deg-summary-title');
+  const sumText  = document.getElementById('deg-summary-text');
+
+  if (banner) {
+    banner.style.background   = banBg;
+    banner.style.borderColor  = banBorder;
+  }
+
+  const titleMap = {
+    LOW:      '✓ Machine is stable',
+    MEDIUM:   '◐ Slow degradation detected',
+    HIGH:     '◉ Significant chronic drift',
+    CRITICAL: '⚠ Machine is silently dying',
+  };
+  if (sumTitle) {
+    sumTitle.textContent = titleMap[d.overall_severity] || '—';
+    const titleColors = { LOW:'var(--green)', MEDIUM:'var(--yellow)', HIGH:'var(--orange)', CRITICAL:'var(--red)' };
+    sumTitle.style.color = titleColors[d.overall_severity] || 'var(--green)';
+  }
+  if (sumText) {
+    sumText.textContent = d.degrading_since
+      ? `${d.summary} Drift began around ${d.degrading_since}.`
+      : d.summary;
+  }
+
+  // Metric rows
+  const container = document.getElementById('deg-metrics');
+  if (container && d.metrics?.length) {
+    container.innerHTML = d.metrics.map(m => {
+      const isHealth  = m.metric === 'health_score';
+      const degrading = m.degrading;
+      const slopeAbs  = Math.abs(m.slope_per_day);
+      const slopeStr  = isHealth
+        ? `${m.slope_per_day > 0 ? '+' : ''}${m.slope_per_day.toFixed(2)} pts/day`
+        : `${m.slope_per_day > 0 ? '+' : ''}${m.slope_per_day.toFixed(2)}%/day`;
+
+      const barWidth  = Math.min(100, slopeAbs * (isHealth ? 5 : 20));
+      const barColor  = !degrading ? 'var(--green)'
+        : m.severity === 'CRITICAL' ? 'var(--red)'
+        : m.severity === 'HIGH'     ? 'var(--orange)'
+        : m.severity === 'MEDIUM'   ? 'var(--yellow)'
+        : 'var(--muted)';
+
+      const etaStr = m.days_to_critical
+        ? `<span style="color:${barColor};font-family:var(--mono);font-size:10px">→ critical in ~${m.days_to_critical} days (${m.projected_at})</span>`
+        : '';
+
+      return `
+        <div style="padding:9px 0;border-bottom:1px solid rgba(255,255,255,.04)">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">
+            <span style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em">${m.label}</span>
+            <div style="display:flex;align-items:center;gap:10px">
+              <span style="font-family:var(--mono);font-size:11px;color:${barColor}">${slopeStr}</span>
+              <span style="font-family:var(--mono);font-size:12px;font-weight:600;color:var(--text)">${m.current_value}${isHealth ? '' : '%'}</span>
+            </div>
+          </div>
+          <div style="height:3px;border-radius:2px;background:rgba(255,255,255,.05);overflow:hidden;margin-bottom:4px">
+            <div style="height:100%;width:${barWidth.toFixed(0)}%;background:${barColor};border-radius:2px;transition:width .6s"></div>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <span style="font-size:10px;color:var(--muted)">${m.description}</span>
+            ${etaStr}
+          </div>
+        </div>`;
+    }).join('');
+  }
+
+  // Recommendation
+  const rec     = document.getElementById('deg-rec');
+  const recText = document.getElementById('deg-rec-text');
+  if (d.is_degrading && d.recommendation && rec && recText) {
+    recText.textContent = d.recommendation;
+    rec.style.display   = 'block';
+  }
+
+  // Data quality note
+  const note = document.getElementById('deg-data-note');
+  if (note) {
+    note.textContent = `${d.days_of_data || 0} days of data · refreshes hourly`;
+  }
+}
+
+// Load on startup and every 30 minutes
+loadDegradation();
+setInterval(loadDegradation, 1800000);
+</script>

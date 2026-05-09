@@ -1,0 +1,270 @@
+<!-- ════════════════════════════════════════════════════
+     CVIS Settings Modal
+     Paste just before </body> in frontend/index.html
+     ════════════════════════════════════════════════════ -->
+<style>
+#settings-overlay{display:none;position:fixed;inset:0;z-index:2000;background:rgba(0,0,0,.75);backdrop-filter:blur(6px);align-items:center;justify-content:center}
+#settings-overlay.open{display:flex}
+#settings-box{background:var(--surface);border:1px solid var(--border);border-radius:12px;width:640px;max-width:95vw;max-height:88vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 24px 80px rgba(0,0,0,.6)}
+#settings-header{padding:18px 22px 0;border-bottom:1px solid var(--border);flex-shrink:0}
+#settings-header h2{font-size:14px;font-weight:600;letter-spacing:.06em;color:var(--text);margin-bottom:14px}
+#settings-tabs{display:flex;gap:0;margin-bottom:-1px}
+.stab{font-size:11px;font-weight:500;padding:7px 14px;border:1px solid transparent;border-bottom:none;border-radius:6px 6px 0 0;cursor:pointer;color:var(--muted);background:transparent;font-family:var(--sans);transition:all .15s}
+.stab.active{border-color:var(--border);border-bottom-color:var(--surface);color:var(--text);background:var(--surface)}
+.stab:hover:not(.active){color:var(--text)}
+#settings-body{flex:1;overflow-y:auto;padding:20px 22px}
+#settings-body::-webkit-scrollbar{width:3px}#settings-body::-webkit-scrollbar-thumb{background:var(--border)}
+.spanel{display:none}.spanel.active{display:block}
+.srow{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.04)}
+.srow:last-child{border-bottom:none}
+.slbl{font-size:12px;color:var(--text)}.slbl small{display:block;font-size:10px;color:var(--muted);margin-top:1px}
+.sinput{background:rgba(255,255,255,.05);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--mono);font-size:12px;padding:5px 10px;width:200px;outline:none;transition:border-color .2s}
+.sinput:focus{border-color:var(--accent)}
+.sinput.w120{width:120px}.sinput.w80{width:80px}
+.stoggle{width:38px;height:20px;background:rgba(255,255,255,.1);border:1px solid var(--border);border-radius:10px;cursor:pointer;position:relative;flex-shrink:0;transition:background .2s}
+.stoggle.on{background:var(--accent);border-color:var(--accent)}
+.stoggle::after{content:'';position:absolute;width:14px;height:14px;border-radius:50%;background:#fff;top:2px;left:2px;transition:transform .2s}
+.stoggle.on::after{transform:translateX(18px)}
+.sselect{background:rgba(255,255,255,.05);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--mono);font-size:12px;padding:5px 10px;outline:none;cursor:pointer}
+.sselect option{background:var(--surface)}
+.ssection{font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin:14px 0 6px;padding-top:10px;border-top:1px solid var(--border)}
+.ssection:first-child{margin-top:0;border-top:none;padding-top:0}
+.sbtn{font-size:11px;padding:5px 14px;border-radius:5px;cursor:pointer;font-family:var(--sans);font-weight:500;transition:all .15s}
+.sbtn-accent{background:var(--accent);color:#fff;border:none}.sbtn-accent:hover{opacity:.85}
+.sbtn-ghost{background:transparent;border:1px solid var(--border);color:var(--muted)}.sbtn-ghost:hover{border-color:var(--accent);color:var(--accent)}
+.sbtn-danger{background:transparent;border:1px solid rgba(248,113,113,.4);color:var(--red)}.sbtn-danger:hover{background:rgba(248,113,113,.1)}
+.sslider-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.04)}
+.sslider-row:last-child{border-bottom:none}
+.sslider-lbl{font-size:12px;color:var(--text);flex:1}
+.sslider{-webkit-appearance:none;width:140px;height:3px;border-radius:2px;background:rgba(255,255,255,.1);outline:none;cursor:pointer}
+.sslider::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--accent);cursor:pointer}
+.sslider-val{font-family:var(--mono);font-size:11px;color:var(--accent);width:52px;text-align:right}
+.sinfo-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px}
+.sinfo-box{background:rgba(0,0,0,.2);border-radius:6px;padding:10px 14px}
+.sinfo-lbl{font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:4px}
+.sinfo-val{font-family:var(--mono);font-size:14px;font-weight:600}
+.smsg{font-size:11px;padding:6px 10px;border-radius:4px;margin-top:8px;display:none}
+.smsg.ok{background:rgba(52,211,153,.1);color:var(--green);border:1px solid rgba(52,211,153,.3)}
+.smsg.err{background:rgba(248,113,113,.08);color:var(--red);border:1px solid rgba(248,113,113,.3)}
+#settings-footer{padding:14px 22px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+</style>
+
+<div id="settings-overlay" onclick="if(event.target===this)closeSettings()">
+  <div id="settings-box">
+
+    <div id="settings-header">
+      <h2>⚙ Settings</h2>
+      <div id="settings-tabs">
+        <button class="stab active" onclick="switchSettingsTab('notifications',this)">Notifications</button>
+        <button class="stab" onclick="switchSettingsTab('thresholds',this)">Alert Thresholds</button>
+        <button class="stab" onclick="switchSettingsTab('monitoring',this)">Monitoring</button>
+        <button class="stab" onclick="switchSettingsTab('dashboard',this)">Dashboard</button>
+        <button class="stab" onclick="switchSettingsTab('sysinfo',this)">System Info</button>
+      </div>
+    </div>
+
+    <div id="settings-body">
+
+      <!-- ── Notifications ── -->
+      <div id="spanel-notifications" class="spanel active">
+        <div class="ssection">Email Alerts</div>
+        <div class="srow">
+          <div class="slbl">Email alerts enabled<small>Send email on HIGH/CRITICAL alerts</small></div>
+          <div class="stoggle" id="tog-email_alerts_enabled" onclick="toggleSetting('email_alerts_enabled',this)"></div>
+        </div>
+        <div class="srow">
+          <div class="slbl">Alert recipient<small>Email address to receive alerts</small></div>
+          <input class="sinput" id="s-alert_email" type="email" placeholder="you@example.com">
+        </div>
+        <div class="srow">
+          <div class="slbl">Minimum severity<small>Only alert at this level and above</small></div>
+          <select class="sselect" id="s-alert_min_severity">
+            <option value="CRITICAL">CRITICAL</option>
+            <option value="HIGH">HIGH</option>
+            <option value="MEDIUM">MEDIUM</option>
+          </select>
+        </div>
+        <div class="srow">
+          <div class="slbl">Cooldown (seconds)<small>Minimum gap between repeat alerts</small></div>
+          <input class="sinput w80" id="s-alert_cooldown_s" type="number" min="60" max="3600">
+        </div>
+        <div class="srow">
+          <div class="slbl">Test email<small>Send a test to confirm delivery</small></div>
+          <button class="sbtn sbtn-ghost" onclick="testEmail()">Send test</button>
+        </div>
+
+        <div class="ssection">SMTP Configuration</div>
+        <div class="srow">
+          <div class="slbl">SMTP host</div>
+          <input class="sinput" id="s-smtp_host" type="text" placeholder="smtp.gmail.com">
+        </div>
+        <div class="srow">
+          <div class="slbl">SMTP port</div>
+          <input class="sinput w80" id="s-smtp_port" type="number" placeholder="587">
+        </div>
+        <div class="srow">
+          <div class="slbl">SMTP username</div>
+          <input class="sinput" id="s-smtp_user" type="email">
+        </div>
+        <div class="srow">
+          <div class="slbl">App password<small>Gmail App Password (not your Google password)</small></div>
+          <input class="sinput" id="s-smtp_pass" type="password" placeholder="••••••••••••••••">
+        </div>
+
+        <div class="ssection">Reports</div>
+        <div class="srow">
+          <div class="slbl">Weekly report<small>Automated weekly health report email</small></div>
+          <div class="stoggle" id="tog-weekly_report_enabled" onclick="toggleSetting('weekly_report_enabled',this)"></div>
+        </div>
+        <div class="srow">
+          <div class="slbl">Send report now</div>
+          <button class="sbtn sbtn-ghost" onclick="sendWeeklyReport()">Send now</button>
+        </div>
+
+        <div class="ssection">Desktop</div>
+        <div class="srow">
+          <div class="slbl">Desktop notifications<small>Browser push notifications for alerts</small></div>
+          <div class="stoggle" id="tog-desktop_notifications" onclick="toggleSetting('desktop_notifications',this)"></div>
+        </div>
+        <div id="smsg-notifications" class="smsg"></div>
+      </div>
+
+      <!-- ── Alert Thresholds ── -->
+      <div id="spanel-thresholds" class="spanel">
+        <div class="ssection">Trigger Thresholds</div>
+        <p style="font-size:11px;color:var(--muted);margin-bottom:12px">Changes apply immediately to live alert rules — no restart needed.</p>
+
+        <div class="sslider-row">
+          <div class="sslider-lbl">CPU usage<small style="font-size:10px;color:var(--muted)">Alert when CPU exceeds this %</small></div>
+          <input class="sslider" id="sl-threshold_cpu" type="range" min="50" max="99" step="1" oninput="updateSlider('threshold_cpu',this.value,'%')">
+          <div class="sslider-val" id="slv-threshold_cpu">80%</div>
+        </div>
+        <div class="sslider-row">
+          <div class="sslider-lbl">Memory usage<small style="font-size:10px;color:var(--muted)">Alert when memory exceeds this %</small></div>
+          <input class="sslider" id="sl-threshold_memory" type="range" min="50" max="99" step="1" oninput="updateSlider('threshold_memory',this.value,'%')">
+          <div class="sslider-val" id="slv-threshold_memory">80%</div>
+        </div>
+        <div class="sslider-row">
+          <div class="sslider-lbl">Disk I/O<small style="font-size:10px;color:var(--muted)">Alert when disk I/O exceeds this %</small></div>
+          <input class="sslider" id="sl-threshold_disk" type="range" min="50" max="99" step="1" oninput="updateSlider('threshold_disk',this.value,'%')">
+          <div class="sslider-val" id="slv-threshold_disk">85%</div>
+        </div>
+        <div class="sslider-row">
+          <div class="sslider-lbl">Anomaly score<small style="font-size:10px;color:var(--muted)">ML ensemble threshold (0–1)</small></div>
+          <input class="sslider" id="sl-threshold_anomaly" type="range" min="0.20" max="0.99" step="0.01" oninput="updateSlider('threshold_anomaly',this.value,'')">
+          <div class="sslider-val" id="slv-threshold_anomaly">0.70</div>
+        </div>
+        <div class="sslider-row">
+          <div class="sslider-lbl">Health score floor<small style="font-size:10px;color:var(--muted)">Alert when health drops below this</small></div>
+          <input class="sslider" id="sl-threshold_health" type="range" min="100" max="700" step="10" oninput="updateSlider('threshold_health',this.value,'')">
+          <div class="sslider-val" id="slv-threshold_health">400</div>
+        </div>
+        <div style="margin-top:14px;display:flex;gap:8px">
+          <button class="sbtn sbtn-accent" onclick="saveSettings()">Apply now</button>
+          <button class="sbtn sbtn-ghost" onclick="resetThresholds()">Reset defaults</button>
+        </div>
+        <div id="smsg-thresholds" class="smsg"></div>
+      </div>
+
+      <!-- ── Monitoring ── -->
+      <div id="spanel-monitoring" class="spanel">
+        <div class="ssection">Collection</div>
+        <div class="srow">
+          <div class="slbl">Poll interval (seconds)<small>How often to collect metrics</small></div>
+          <input class="sinput w80" id="s-poll_interval_s" type="number" min="1" max="30">
+        </div>
+        <div class="srow">
+          <div class="slbl">Auto-save interval (seconds)<small>How often to save ML model versions</small></div>
+          <input class="sinput w80" id="s-autosave_interval_s" type="number" min="60" max="3600">
+        </div>
+        <div class="srow">
+          <div class="slbl">Startup grace period (seconds)<small>Suppress alerts during initial learning</small></div>
+          <input class="sinput w80" id="s-startup_grace_s" type="number" min="0" max="300">
+        </div>
+
+        <div class="ssection">Auto-Remediation</div>
+        <div class="srow">
+          <div class="slbl">Remediation mode<small>dry_run = log only, auto = execute fixes</small></div>
+          <select class="sselect" id="s-auto_remediation_mode">
+            <option value="disabled">Disabled</option>
+            <option value="dry_run">Dry run (log only)</option>
+            <option value="auto">Auto (execute)</option>
+          </select>
+        </div>
+
+        <div class="ssection">Black Box</div>
+        <div class="srow">
+          <div class="slbl">Retention (minutes)<small>How many minutes of history to keep</small></div>
+          <input class="sinput w80" id="s-blackbox_retention_min" type="number" min="30" max="480">
+        </div>
+        <div id="smsg-monitoring" class="smsg"></div>
+      </div>
+
+      <!-- ── Dashboard ── -->
+      <div id="spanel-dashboard" class="spanel">
+        <div class="ssection">Performance</div>
+        <div class="srow">
+          <div class="slbl">Refresh rate (ms)<small>How often the UI polls for updates</small></div>
+          <input class="sinput w80" id="s-refresh_rate_ms" type="number" min="1000" max="30000" step="500">
+        </div>
+
+        <div class="ssection">Panel Visibility</div>
+        <div class="srow">
+          <div class="slbl">60-min forecast</div>
+          <div class="stoggle" id="tog-show_forecast" onclick="toggleSetting('show_forecast',this)"></div>
+        </div>
+        <div class="srow">
+          <div class="slbl">Future failure forecast</div>
+          <div class="stoggle" id="tog-show_premortem" onclick="toggleSetting('show_premortem',this)"></div>
+        </div>
+        <div class="srow">
+          <div class="slbl">Black box recorder</div>
+          <div class="stoggle" id="tog-show_blackbox" onclick="toggleSetting('show_blackbox',this)"></div>
+        </div>
+        <div class="srow">
+          <div class="slbl">Top processes table</div>
+          <div class="stoggle" id="tog-show_processes" onclick="toggleSetting('show_processes',this)"></div>
+        </div>
+        <div class="srow">
+          <div class="slbl">Signal correlations</div>
+          <div class="stoggle" id="tog-show_correlations" onclick="toggleSetting('show_correlations',this)"></div>
+        </div>
+        <div class="srow">
+          <div class="slbl">ML model signals</div>
+          <div class="stoggle" id="tog-show_ml_signals" onclick="toggleSetting('show_ml_signals',this)"></div>
+        </div>
+        <div id="smsg-dashboard" class="smsg"></div>
+      </div>
+
+      <!-- ── System Info ── -->
+      <div id="spanel-sysinfo" class="spanel">
+        <div class="ssection">CVIS Instance</div>
+        <div class="sinfo-grid" id="sysinfo-grid">
+          <div class="sinfo-box"><div class="sinfo-lbl">Version</div><div class="sinfo-val" style="color:var(--accent)">v9.0.0</div></div>
+          <div class="sinfo-box"><div class="sinfo-lbl">Redis</div><div class="sinfo-val" id="si-redis">—</div></div>
+          <div class="sinfo-box"><div class="sinfo-lbl">Database</div><div class="sinfo-val" id="si-db">—</div></div>
+          <div class="sinfo-box"><div class="sinfo-lbl">ML Steps</div><div class="sinfo-val" id="si-steps" style="color:var(--blue)">—</div></div>
+          <div class="sinfo-box"><div class="sinfo-lbl">Alerts Stored</div><div class="sinfo-val" id="si-alerts" style="color:var(--yellow)">—</div></div>
+          <div class="sinfo-box"><div class="sinfo-lbl">DNA Patterns</div><div class="sinfo-val" id="si-patterns" style="color:var(--green)">—</div></div>
+        </div>
+        <div class="ssection">Actions</div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px">
+          <button class="sbtn sbtn-ghost" onclick="loadSystemInfo()">↻ Refresh</button>
+          <button class="sbtn sbtn-ghost" onclick="exportIncidents()">⬇ Export incidents</button>
+          <button class="sbtn sbtn-danger" onclick="resetAllSettings()">⚠ Reset all settings</button>
+        </div>
+        <div id="smsg-sysinfo" class="smsg"></div>
+      </div>
+
+    </div><!-- /settings-body -->
+
+    <div id="settings-footer">
+      <div style="font-size:11px;color:var(--muted)" id="settings-save-status"></div>
+      <div style="display:flex;gap:8px">
+        <button class="sbtn sbtn-ghost" onclick="closeSettings()">Cancel</button>
+        <button class="sbtn sbtn-accent" onclick="saveSettings()">Save changes</button>
+      </div>
+    </div>
+
+  </div>
+</div>
