@@ -1463,7 +1463,720 @@ function showSettingsMsg(panel, text, ok, spinner) {
 </script>
 <!-- ════════════════════════════════════════════════════
      CVIS Settings Modal
-     Paste just before </body> in frontend/index.html
+     Paste just before <!-- ═══════════════════════════════════════════════════════
+     CVIS Simple Mode
+     Inject before </body> in frontend/index.html
+     ═══════════════════════════════════════════════════════ -->
+<style>
+#simple-mode{display:none;position:fixed;inset:0;z-index:500;background:var(--bg);overflow-y:auto;padding-bottom:40px}
+#simple-mode::-webkit-scrollbar{width:3px}
+#simple-mode::-webkit-scrollbar-thumb{background:var(--border)}
+#sm-topbar{display:flex;align-items:center;gap:12px;padding:0 24px;height:52px;background:var(--surface);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:10}
+#sm-body{max-width:100%;padding:20px 28px;display:flex;flex-direction:column;gap:14px}
+
+/* Hero */
+#sm-hero{border-radius:12px;padding:22px 24px;display:flex;align-items:center;gap:18px;border:1px solid;transition:all .5s}
+.sm-hero-icon{width:54px;height:54px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:24px;flex-shrink:0;transition:all .5s}
+#sm-hero-status{font-size:20px;font-weight:700;margin-bottom:5px;transition:color .5s}
+#sm-hero-desc{font-size:13px;color:#aaa;line-height:1.65;max-width:500px}
+#sm-hero-badge{flex-shrink:0;margin-left:auto;font-size:12px;font-weight:600;padding:7px 16px;border-radius:6px;border:none;cursor:default}
+
+/* Vitals */
+.sm-vitals{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.sm-vital{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px}
+.sm-vital-header{display:flex;align-items:center;gap:7px;margin-bottom:8px}
+.sm-vital-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.sm-vital-name{font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.sm-vital-reading{font-size:12px;color:#bbb;line-height:1.55;margin-bottom:8px;min-height:36px}
+.sm-vital-bar-track{height:5px;border-radius:3px;background:rgba(255,255,255,.06);overflow:hidden;margin-bottom:7px}
+.sm-vital-bar{height:100%;border-radius:3px;transition:width .8s ease}
+.sm-vital-change{font-size:11px;color:var(--muted)}
+
+/* Prediction */
+#sm-prediction{display:none;border-radius:10px;padding:18px 20px;border:1px solid rgba(248,113,113,.35);background:rgba(248,113,113,.06)}
+.sm-pred-top{display:flex;align-items:flex-start;gap:14px}
+.sm-pred-left{flex:1}
+#sm-pred-title{font-size:16px;font-weight:700;color:var(--red);margin-bottom:5px}
+#sm-pred-text{font-size:12px;color:#bbb;line-height:1.65}
+.sm-pred-right{text-align:right;flex-shrink:0}
+#sm-pred-mins{font-family:var(--mono);font-size:36px;font-weight:600;color:var(--red);line-height:1}
+.sm-pred-mins-lbl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-top:2px}
+.sm-pred-btns{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+.sm-pred-btn{font-size:12px;font-weight:600;padding:7px 16px;border-radius:6px;cursor:pointer;font-family:var(--sans);border:none;transition:opacity .2s}
+.sm-pred-btn:hover{opacity:.85}
+
+/* Fix confirmation modal */
+#sm-fix-modal{display:none;position:fixed;inset:0;z-index:2000;background:rgba(0,0,0,.75);backdrop-filter:blur(4px);align-items:center;justify-content:center}
+#sm-fix-modal.open{display:flex}
+#sm-fix-box{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:26px;max-width:480px;width:90%}
+#sm-fix-title{font-size:15px;font-weight:700;margin-bottom:6px}
+#sm-fix-subtitle{font-size:12px;color:#aaa;line-height:1.6;margin-bottom:16px}
+#sm-fix-actions-list{margin-bottom:16px}
+.sm-fix-action-row{padding:10px 12px;border-radius:7px;background:rgba(0,0,0,.25);border-left:3px solid;margin-bottom:8px}
+.sm-fix-action-row:last-child{margin-bottom:0}
+.sm-fix-action-name{font-size:12px;font-weight:600;margin-bottom:2px}
+.sm-fix-action-desc{font-size:11px;color:#aaa;line-height:1.5}
+.sm-fix-safe-note{font-size:11px;color:var(--green);padding:8px 12px;border-radius:6px;background:rgba(52,211,153,.07);border:1px solid rgba(52,211,153,.2);margin-bottom:16px;line-height:1.5}
+.sm-fix-btns{display:flex;gap:8px;justify-content:flex-end}
+.sm-fix-btn{font-size:12px;font-weight:600;padding:8px 18px;border-radius:6px;cursor:pointer;font-family:var(--sans);transition:opacity .2s}
+.sm-fix-btn:hover{opacity:.85}
+
+/* Fix result */
+#sm-fix-result{display:none;border-radius:10px;padding:14px 18px;border:1px solid;margin-top:0}
+#sm-fix-result-text{font-size:13px;margin-bottom:8px}
+#sm-undo-btn{font-size:11px;padding:4px 12px;border-radius:5px;background:transparent;border:1px solid var(--border);color:var(--muted);cursor:pointer;font-family:var(--sans)}
+#sm-undo-timer{font-size:10px;color:var(--muted);margin-left:8px;font-family:var(--mono)}
+
+/* Watch list */
+#sm-watch{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px 18px}
+.sm-watch-title{font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:12px}
+.sm-watch-row{display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.04)}
+.sm-watch-row:last-child{border-bottom:none}
+.sm-watch-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;margin-top:4px}
+.sm-watch-text{font-size:12px;color:#bbb;line-height:1.55}
+.sm-watch-action{font-size:11px;font-weight:500;margin-top:3px}
+
+/* Stats row */
+.sm-stats{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.sm-stat{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 16px}
+.sm-stat-lbl{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+.sm-stat-val{font-family:var(--mono);font-size:26px;font-weight:600;line-height:1;margin-bottom:4px}
+.sm-stat-sub{font-size:11px;color:var(--muted)}
+
+/* ARIA hint */
+#sm-aria-hint{background:rgba(124,106,247,.07);border:1px solid rgba(124,106,247,.2);border-radius:10px;padding:14px 18px;display:flex;align-items:center;gap:14px;cursor:pointer;transition:background .2s}
+#sm-aria-hint:hover{background:rgba(124,106,247,.12)}
+
+/* Mode toggle */
+.sm-mode-toggle{display:flex;background:rgba(255,255,255,.05);border:1px solid var(--border);border-radius:6px;overflow:hidden;margin-left:auto}
+.sm-mode-btn{font-size:11px;padding:4px 12px;border:none;cursor:pointer;font-family:var(--sans);background:transparent;color:var(--muted);transition:all .2s}
+.sm-mode-btn.active{background:var(--accent);color:#fff}
+
+/* Safeguard badge */
+.sm-safe-badge{font-size:10px;padding:2px 8px;border-radius:3px;background:rgba(52,211,153,.1);color:var(--green);border:1px solid rgba(52,211,153,.25);font-family:var(--mono)}
+</style>
+
+<!-- Simple Mode Panel -->
+<div id="simple-mode">
+  <div id="sm-topbar">
+    <div class="logo">CVIS <span style="color:var(--muted);font-weight:300;font-size:11px">/ Simple</span></div>
+    <div class="pulse" id="sm-live-dot"></div>
+    <div class="sm-mode-toggle">
+      <button class="sm-mode-btn active" onclick="setMode('simple')">Simple</button>
+      <button class="sm-mode-btn" onclick="setMode('expert')">Expert</button>
+    </div>
+    <button onclick="openSettings()" style="margin-left:8px;background:none;border:1px solid var(--border);border-radius:5px;color:var(--muted);cursor:pointer;padding:4px 10px;font-size:12px;font-family:var(--sans)">⚙ Settings</button>
+    <div class="tb-time" id="sm-time"></div>
+  </div>
+
+  <div id="sm-body">
+
+    <!-- Hero status -->
+    <div id="sm-hero">
+      <div class="sm-hero-icon" id="sm-hero-icon">✓</div>
+      <div style="flex:1">
+        <div id="sm-hero-status">Your machine is healthy</div>
+        <div id="sm-hero-desc">Everything is running smoothly. No issues detected.</div>
+      </div>
+      <div id="sm-hero-badge">All good</div>
+    </div>
+
+    <!-- Vitals -->
+    <div class="sm-vitals">
+      <div class="sm-vital">
+        <div class="sm-vital-header"><div class="sm-vital-dot" id="sm-cpu-dot" style="background:var(--green)"></div><div class="sm-vital-name">Processor</div></div>
+        <div class="sm-vital-reading" id="sm-cpu-reading">Loading…</div>
+        <div class="sm-vital-bar-track"><div class="sm-vital-bar" id="sm-cpu-bar" style="width:0%;background:var(--green)"></div></div>
+        <div class="sm-vital-change" id="sm-cpu-change"></div>
+      </div>
+      <div class="sm-vital">
+        <div class="sm-vital-header"><div class="sm-vital-dot" id="sm-mem-dot" style="background:var(--green)"></div><div class="sm-vital-name">Memory</div></div>
+        <div class="sm-vital-reading" id="sm-mem-reading">Loading…</div>
+        <div class="sm-vital-bar-track"><div class="sm-vital-bar" id="sm-mem-bar" style="width:0%;background:var(--green)"></div></div>
+        <div class="sm-vital-change" id="sm-mem-change"></div>
+      </div>
+      <div class="sm-vital">
+        <div class="sm-vital-header"><div class="sm-vital-dot" id="sm-disk-dot" style="background:var(--green)"></div><div class="sm-vital-name">Storage activity</div></div>
+        <div class="sm-vital-reading" id="sm-disk-reading">Loading…</div>
+        <div class="sm-vital-bar-track"><div class="sm-vital-bar" id="sm-disk-bar" style="width:0%;background:var(--green)"></div></div>
+        <div class="sm-vital-change" id="sm-disk-change"></div>
+      </div>
+    </div>
+
+    <!-- Prediction card -->
+    <div id="sm-prediction">
+      <div class="sm-pred-top">
+        <div class="sm-pred-left">
+          <div id="sm-pred-title">Something needs attention</div>
+          <div id="sm-pred-text"></div>
+        </div>
+        <div class="sm-pred-right">
+          <div id="sm-pred-mins">—</div>
+          <div class="sm-pred-mins-lbl">minutes left</div>
+        </div>
+      </div>
+      <div class="sm-pred-btns">
+        <button class="sm-pred-btn" onclick="openFixModal()" style="background:var(--red);color:#fff">Fix it now</button>
+        <button class="sm-pred-btn" onclick="smDismissPred()" style="background:rgba(255,255,255,.07);color:var(--muted)">Dismiss</button>
+        <button class="sm-pred-btn" onclick="smAskWhy()" style="background:transparent;color:var(--accent);border:1px solid rgba(124,106,247,.3)">Why is this happening?</button>
+      </div>
+    </div>
+
+    <!-- Fix result -->
+    <div id="sm-fix-result">
+      <div id="sm-fix-result-text"></div>
+      <div style="display:flex;align-items:center;margin-top:6px">
+        <button id="sm-undo-btn" onclick="smUndo()" style="display:none">↩ Undo</button>
+        <span id="sm-undo-timer"></span>
+      </div>
+    </div>
+
+    <!-- What to watch -->
+    <div id="sm-watch">
+      <div class="sm-watch-title">What to watch</div>
+      <div id="sm-watch-list"><div style="font-size:12px;color:var(--muted)">Analysing trends…</div></div>
+    </div>
+
+    <!-- Stats -->
+    <div class="sm-stats">
+      <div class="sm-stat">
+        <div class="sm-stat-lbl">Failures prevented</div>
+        <div class="sm-stat-val" id="sm-prevented" style="color:var(--green)">—</div>
+        <div class="sm-stat-sub" id="sm-prevented-sub">all time</div>
+      </div>
+      <div class="sm-stat">
+        <div class="sm-stat-lbl">Machine health score</div>
+        <div class="sm-stat-val" id="sm-health-score" style="color:var(--accent)">—</div>
+        <div class="sm-stat-sub" id="sm-health-grade"></div>
+      </div>
+    </div>
+
+    <!-- ARIA hint -->
+    <div id="sm-aria-hint" onclick="smOpenAria()">
+      <div style="width:28px;height:28px;border-radius:6px;background:rgba(124,106,247,.15);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0">◈</div>
+      <div>
+        <div style="font-size:12px;font-weight:600;color:var(--accent);margin-bottom:2px">Ask ARIA anything</div>
+        <div style="font-size:11px;color:var(--muted)">"Will my computer crash?" · "Why is memory high?" · "What should I do right now?"</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Fix confirmation modal -->
+<div id="sm-fix-modal" onclick="if(event.target===this)closeFixModal()">
+  <div id="sm-fix-box">
+    <div id="sm-fix-title">Here's what CVIS will do</div>
+    <div id="sm-fix-subtitle">Review the actions below before confirming. Nothing will happen until you click Apply fix.</div>
+    <div id="sm-fix-actions-list"></div>
+    <div class="sm-fix-safe-note" id="sm-fix-safe-note">✓ Protected: your browser, code editor, and recently opened apps will not be touched.</div>
+    <div class="sm-fix-btns">
+      <button class="sm-fix-btn" onclick="closeFixModal()" style="background:transparent;border:1px solid var(--border);color:var(--muted)">Cancel</button>
+      <button class="sm-fix-btn" onclick="smApplyFix()" style="background:var(--accent);color:#fff;border:none" id="sm-fix-confirm-btn">Apply fix</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════
+//  CVIS Simple Mode
+// ═══════════════════════════════════════════════════════
+
+// ── Protected process list — never killed automatically ──
+const SM_PROTECTED = [
+  'firefox','chrome','chromium','safari','brave','opera','edge',
+  'code','vscode','vim','nvim','nano','emacs','sublime_text','atom','gedit',
+  'terminal','bash','zsh','fish','sh','konsole','gnome-terminal','xterm',
+  'zoom','teams','slack','discord','skype','telegram',
+  'python3','node','java','javaw',
+  'systemd','init','dockerd','containerd','nginx','sshd','Xorg','pulseaudio',
+];
+
+const SM_PROCESS_NAMES = {
+  'firefox':'Firefox','chrome':'Chrome','chromium':'Chromium',
+  'code':'VS Code','vscode':'VS Code','sublime_text':'Sublime Text',
+  'zoom':'Zoom','slack':'Slack','discord':'Discord',
+};
+
+let _smMode = localStorage.getItem('cvis_mode') || 'simple';
+let _smLastPredType = null;
+let _smUndoData = null;
+let _smUndoInterval = null;
+let _smFixTargets = [];
+
+// ── Mode toggle ──────────────────────────────────────────
+function setMode(mode) {
+  _smMode = mode;
+  localStorage.setItem('cvis_mode', mode);
+  const sm = document.getElementById('simple-mode');
+  const app = document.getElementById('app');
+  if (mode === 'simple') {
+    sm.style.display = 'block';
+    if (app) app.style.display = 'none';
+    smRenderAll();
+  } else {
+    sm.style.display = 'none';
+    if (app) app.style.display = 'grid';
+  }
+  // sync topbar toggles
+  document.querySelectorAll('.sm-mode-btn').forEach(b => b.classList.toggle('active', b.textContent.toLowerCase() === mode));
+  document.querySelectorAll('.expert-mode-btn').forEach(b => b.classList.toggle('active', b.textContent.toLowerCase() === mode));
+}
+
+// Init on load
+(function smInit() {
+  // Add Expert toggle to main topbar
+  const tbTime = document.getElementById('tb-time');
+  if (tbTime && !document.getElementById('expert-mode-toggle')) {
+    const tog = document.createElement('div');
+    tog.id = 'expert-mode-toggle';
+    tog.className = 'sm-mode-toggle';
+    tog.style.marginLeft = '8px';
+    tog.innerHTML = '<button class="sm-mode-btn expert-mode-btn" onclick="setMode(\'simple\')">Simple</button><button class="sm-mode-btn expert-mode-btn active" onclick="setMode(\'expert\')">Expert</button>';
+    tbTime.parentNode.insertBefore(tog, tbTime);
+  }
+  // Apply saved mode
+  if (_smMode === 'simple') {
+    const sm = document.getElementById('simple-mode');
+    const app = document.getElementById('app');
+    if (sm) sm.style.display = 'block';
+    if (app) app.style.display = 'none';
+  }
+})();
+
+// ── Plain English helpers ────────────────────────────────
+function smCpuReading(v, trend) {
+  if (v > 90) return `Processor is under extreme pressure at ${v.toFixed(0)}% — things may slow down or freeze.`;
+  if (v > 75) return `Processor is working very hard at ${v.toFixed(0)}%. Something is keeping it very busy.`;
+  if (v > 60) return `Processor is busier than usual at ${v.toFixed(0)}%. Worth keeping an eye on.`;
+  if (v > 40) return `Processor is moderately busy at ${v.toFixed(0)}% — normal for active use.`;
+  return `Processor is running comfortably at ${v.toFixed(0)}% — well within normal range.`;
+}
+
+function smMemReading(v, trend) {
+  if (v > 90) return `Memory is almost completely full at ${v.toFixed(0)}%. Apps may crash very soon.`;
+  if (v > 80) return `Memory is getting dangerously full at ${v.toFixed(0)}%. Close unused apps now.`;
+  if (v > 70) return `Memory is getting quite full at ${v.toFixed(0)}%. Worth closing things you're not using.`;
+  if (v > 50) return `Using ${v.toFixed(0)}% of memory — moderate usage, nothing to worry about.`;
+  return `Memory is in good shape at ${v.toFixed(0)}% — plenty of room to spare.`;
+}
+
+function smDiskReading(v) {
+  if (v > 85) return `Storage is being read or written very heavily at ${v.toFixed(0)}%. This can slow the whole system.`;
+  if (v > 60) return `Storage is fairly busy at ${v.toFixed(0)}% — a large file operation may be running.`;
+  if (v > 30) return `Moderate storage activity at ${v.toFixed(0)}% — normal background operations.`;
+  return `Storage is quiet — no heavy reading or writing happening right now.`;
+}
+
+function smTrendText(trend, delta, isHealth) {
+  if (!trend || trend === 'stable') return '→ Stable';
+  const d = Math.abs(delta).toFixed(1);
+  if (isHealth) {
+    if (trend === 'falling' || trend === 'dropping') return `↓ Improving — up ${d} pts recently`;
+    if (trend === 'rising' || trend === 'spiking')   return `↑ Declining — down ${d} pts recently`;
+  }
+  if (trend === 'spiking')  return `↑↑ Rising fast — up ${d}% in the last 30s`;
+  if (trend === 'rising')   return `↑ Slowly climbing — up ${d}% recently`;
+  if (trend === 'dropping') return `↓↓ Falling fast`;
+  if (trend === 'falling')  return `↓ Coming down`;
+  return '→ Stable';
+}
+
+function smMetricColor(v, isHealth) {
+  if (isHealth) return v > 700 ? 'var(--green)' : v > 400 ? 'var(--yellow)' : 'var(--red)';
+  return v > 80 ? 'var(--red)' : v > 60 ? 'var(--yellow)' : 'var(--green)';
+}
+
+function smHeroState(s) {
+  const sev = s.severity || 'LOW';
+  const pred = s.active_prediction;
+  if (pred && !pred.acknowledged) {
+    return {
+      icon: '⚠️', iconBg: 'rgba(248,113,113,.12)', iconBorder: 'rgba(248,113,113,.3)',
+      heroBg: 'rgba(248,113,113,.05)', heroBorder: 'rgba(248,113,113,.3)',
+      statusColor: 'var(--red)', status: 'Action needed — failure predicted',
+      desc: `${pred.type === 'OOM' ? 'Your machine is about to run out of memory' : pred.type === 'CRASH' ? 'A process crash is predicted' : pred.type === 'THERMAL' ? 'Your machine is overheating' : 'A system failure is predicted'}. ${pred.message || ''}`,
+      badge: '⚠ Act now', badgeBg: 'rgba(248,113,113,.15)', badgeColor: 'var(--red)',
+    };
+  }
+  if (sev === 'HIGH' || sev === 'CRITICAL') {
+    return {
+      icon: '◉', iconBg: 'rgba(251,146,60,.1)', iconBorder: 'rgba(251,146,60,.3)',
+      heroBg: 'rgba(251,146,60,.05)', heroBorder: 'rgba(251,146,60,.3)',
+      statusColor: 'var(--orange)', status: 'Something needs attention',
+      desc: s.reason || 'One or more metrics are elevated and need your attention.',
+      badge: 'Needs attention', badgeBg: 'rgba(251,146,60,.12)', badgeColor: 'var(--orange)',
+    };
+  }
+  if (sev === 'MEDIUM') {
+    return {
+      icon: '◐', iconBg: 'rgba(251,191,36,.1)', iconBorder: 'rgba(251,191,36,.3)',
+      heroBg: 'rgba(251,191,36,.05)', heroBorder: 'rgba(251,191,36,.25)',
+      statusColor: 'var(--yellow)', status: 'Minor issue worth watching',
+      desc: s.reason || 'Nothing urgent, but worth keeping an eye on.',
+      badge: 'Watch', badgeBg: 'rgba(251,191,36,.1)', badgeColor: 'var(--yellow)',
+    };
+  }
+  return {
+    icon: '✓', iconBg: 'rgba(52,211,153,.1)', iconBorder: 'rgba(52,211,153,.25)',
+    heroBg: 'rgba(52,211,153,.04)', heroBorder: 'rgba(52,211,153,.25)',
+    statusColor: 'var(--green)', status: 'Your machine is healthy',
+    desc: snap.reason && snap.reason !== 'System stable' ? snap.reason : 'Everything is running smoothly. No issues detected.',
+    badge: 'All good', badgeBg: 'rgba(52,211,153,.12)', badgeColor: 'var(--green)',
+  };
+}
+
+// ── Main render ──────────────────────────────────────────
+function smRenderAll() {
+  if (_smMode !== 'simple') return;
+  const s = snap;
+  const now = new Date();
+  const el = id => document.getElementById(id);
+
+  // Time
+  if (el('sm-time')) el('sm-time').textContent = now.toLocaleTimeString('en-US', {hour12: false});
+
+  // Hero
+  const h = smHeroState(s);
+  const hero = el('sm-hero');
+  if (hero) {
+    hero.style.background   = h.heroBg;
+    hero.style.borderColor  = h.heroBorder;
+  }
+  const hIcon = el('sm-hero-icon');
+  if (hIcon) {
+    hIcon.textContent = h.icon;
+    hIcon.style.background  = h.iconBg;
+    hIcon.style.border      = `2px solid ${h.iconBorder}`;
+  }
+  if (el('sm-hero-status')) { el('sm-hero-status').textContent = h.status; el('sm-hero-status').style.color = h.statusColor; }
+  if (el('sm-hero-desc'))   el('sm-hero-desc').textContent = h.desc;
+  const badge = el('sm-hero-badge');
+  if (badge) { badge.textContent = h.badge; badge.style.background = h.badgeBg; badge.style.color = h.badgeColor; badge.style.border = `1px solid ${h.badgeColor}30`; }
+
+  // Vitals
+  const tCpu  = temporal('cpu_percent');
+  const tMem  = temporal('memory');
+  const tDisk = temporal('disk_percent');
+
+  const vitalSets = [
+    ['cpu',  s.cpu_percent,  tCpu,  smCpuReading,  false],
+    ['mem',  s.memory,       tMem,  smMemReading,  false],
+    ['disk', s.disk_percent, tDisk, smDiskReading, false],
+  ];
+  vitalSets.forEach(([id, val, tr, readingFn, isH]) => {
+    if (val == null) return;
+    const c = smMetricColor(val, isH);
+    const dot = el(`sm-${id}-dot`);
+    const bar = el(`sm-${id}-bar`);
+    const reading = el(`sm-${id}-reading`);
+    const change  = el(`sm-${id}-change`);
+    if (dot)     { dot.style.background = c; }
+    if (bar)     { bar.style.width = Math.min(100, val).toFixed(0) + '%'; bar.style.background = c; }
+    if (reading) reading.textContent = id === 'disk' ? readingFn(val) : readingFn(val, tr.trend);
+    if (change)  { change.textContent = smTrendText(tr.trend, tr.delta, isH); change.style.color = tr.trend === 'stable' ? 'var(--muted)' : c; }
+  });
+
+  // Prediction
+  const pred = s.active_prediction;
+  const predEl = el('sm-prediction');
+  if (pred && !pred.acknowledged && predEl) {
+    predEl.style.display = 'block';
+    _smLastPredType = pred.type;
+    const typeMap = {
+      OOM:      'Your machine is going to run out of memory',
+      CRASH:    'A process is predicted to crash',
+      THERMAL:  'Your machine is overheating',
+      DISK_FULL:'Your storage is going to fill up',
+    };
+    if (el('sm-pred-title')) el('sm-pred-title').textContent = typeMap[pred.type] || 'A system failure is predicted';
+    if (el('sm-pred-text'))  el('sm-pred-text').innerHTML = pred.message || '';
+    if (el('sm-pred-mins'))  el('sm-pred-mins').textContent = Math.ceil(pred.eta_min || 0);
+  } else if (predEl) {
+    predEl.style.display = 'none';
+  }
+
+  // Watch list
+  const watchItems = [];
+  if (tMem.trend === 'rising' || tMem.trend === 'spiking') {
+    watchItems.push({
+      color: 'var(--yellow)',
+      text: `Memory has been climbing for the last few minutes. If it keeps going it may cause problems.`,
+      action: { text: 'Consider closing unused applications', color: 'var(--yellow)' },
+    });
+  }
+  if (tCpu.trend === 'spiking') {
+    watchItems.push({
+      color: 'var(--red)',
+      text: `Processor is spiking quickly. Something is using a lot of CPU right now.`,
+      action: { text: 'Check what\'s running in the process list', color: 'var(--red)' },
+    });
+  }
+  if (forecast && forecast.summary) {
+    watchItems.push({
+      color: 'var(--blue)',
+      text: forecast.summary,
+      action: null,
+    });
+  }
+  if (dnaData && dnaData.prevented > 0) {
+    watchItems.push({
+      color: 'var(--accent)',
+      text: `CVIS has prevented ${dnaData.prevented} failure${dnaData.prevented > 1 ? 's' : ''} on this machine. It continues learning your system's patterns.`,
+      action: null,
+    });
+  }
+  if (!watchItems.length) {
+    watchItems.push({ color: 'var(--green)', text: 'No issues to watch right now. System is running normally.', action: null });
+  }
+  const watchList = el('sm-watch-list');
+  if (watchList) {
+    watchList.innerHTML = watchItems.map(w => `
+      <div class="sm-watch-row">
+        <div class="sm-watch-dot" style="background:${w.color}"></div>
+        <div>
+          <div class="sm-watch-text">${w.text}</div>
+          ${w.action ? `<div class="sm-watch-action" style="color:${w.action.color}">→ ${w.action.text}</div>` : ''}
+        </div>
+      </div>`).join('');
+  }
+
+  // Stats
+  if (dnaData) {
+    if (el('sm-prevented')) el('sm-prevented').textContent = dnaData.prevented || 0;
+  }
+  const hcs = s.health_credit_score;
+  if (hcs != null) {
+    const hcol = hcs >= 700 ? 'var(--green)' : hcs >= 400 ? 'var(--yellow)' : 'var(--red)';
+    if (el('sm-health-score')) {
+      el('sm-health-score').innerHTML = `${hcs}<span style="font-size:14px;color:var(--muted)">/1000</span>`;
+      el('sm-health-score').style.color = hcol;
+    }
+    if (el('sm-health-grade')) el('sm-health-grade').textContent = s.health_grade || '';
+  }
+}
+
+// ── Fix modal ────────────────────────────────────────────
+function _getFixTargets() {
+  const pred = snap.active_prediction;
+  const procs = snap.processes?.by_cpu || [];
+  const type = pred?.type || _smLastPredType || 'UNKNOWN';
+  const targets = [];
+
+  if (type === 'OOM' || type === 'MEMORY') {
+    const topMem = (snap.processes?.by_mem || procs)
+      .filter(p => !SM_PROTECTED.some(n => p.name?.toLowerCase().includes(n)))
+      .slice(0, 2);
+    topMem.forEach(p => {
+      targets.push({
+        pid: p.pid,
+        name: p.name,
+        action: 'terminate',
+        display: SM_PROCESS_NAMES[p.name?.toLowerCase()] || p.name,
+        desc: `Using ${p.mem?.toFixed(1)}% of memory. This is a background process — your open apps will not be affected.`,
+        color: 'var(--red)',
+        safe: !SM_PROTECTED.some(n => p.name?.toLowerCase().includes(n)),
+      });
+    });
+    if (!targets.length) {
+      targets.push({
+        pid: null, name: 'memory_cache', action: 'clear_cache',
+        display: 'Memory cache',
+        desc: 'Clear system memory cache to free up space. Safe — cached data is reloaded on demand.',
+        color: 'var(--yellow)', safe: true,
+      });
+    }
+  } else if (type === 'CRASH' || type === 'CPU') {
+    const topCpu = procs
+      .filter(p => !SM_PROTECTED.some(n => p.name?.toLowerCase().includes(n)) && p.cpu > 20)
+      .slice(0, 1);
+    topCpu.forEach(p => {
+      targets.push({
+        pid: p.pid, name: p.name, action: 'nice',
+        display: SM_PROCESS_NAMES[p.name?.toLowerCase()] || p.name,
+        desc: `Using ${p.cpu?.toFixed(1)}% CPU. CVIS will lower its priority so other apps run smoothly — it won't be killed.`,
+        color: 'var(--yellow)', safe: true,
+      });
+    });
+  } else if (type === 'DISK_FULL') {
+    targets.push({
+      pid: null, name: 'tmp', action: 'clear_tmp',
+      display: 'Temporary files',
+      desc: 'Clear system temp files (/tmp). These are safe to remove — they are recreated automatically.',
+      color: 'var(--yellow)', safe: true,
+    });
+  } else if (type === 'THERMAL') {
+    targets.push({
+      pid: null, name: 'thermal', action: 'thermal',
+      display: 'CPU frequency',
+      desc: 'Temporarily reduce CPU speed to let the machine cool down. Performance will recover in a few minutes.',
+      color: 'var(--orange)', safe: true,
+    });
+  }
+
+  // Fallback
+  if (!targets.length) {
+    targets.push({
+      pid: null, name: 'cache', action: 'clear_cache',
+      display: 'System memory cache',
+      desc: 'Clear memory cache to free up resources. This is always safe.',
+      color: 'var(--blue)', safe: true,
+    });
+  }
+
+  return targets;
+}
+
+function openFixModal() {
+  _smFixTargets = _getFixTargets();
+  const list = document.getElementById('sm-fix-actions-list');
+  if (list) {
+    list.innerHTML = _smFixTargets.map(t => `
+      <div class="sm-fix-action-row" style="border-left-color:${t.color}">
+        <div class="sm-fix-action-name" style="color:${t.color}">${t.display}${t.pid ? ` (PID ${t.pid})` : ''}</div>
+        <div class="sm-fix-action-desc">${t.desc}</div>
+      </div>`).join('');
+  }
+  document.getElementById('sm-fix-modal').classList.add('open');
+}
+
+function closeFixModal() {
+  document.getElementById('sm-fix-modal').classList.remove('open');
+}
+
+async function smApplyFix() {
+  const btn = document.getElementById('sm-fix-confirm-btn');
+  if (btn) { btn.textContent = 'Applying…'; btn.style.opacity = '.6'; btn.disabled = true; }
+  closeFixModal();
+
+  const results = [];
+  for (const t of _smFixTargets) {
+    try {
+      if (t.action === 'terminate' && t.pid) {
+        const r = await fetch(API + `/actions/execute?action_id=kill_pid_${t.pid}`, {
+          method: 'POST', headers: { 'X-API-Key': apiKey }
+        });
+        const d = await r.json();
+        results.push({ name: t.display, success: d.success !== false, message: d.message || `${t.display} terminated` });
+        _smUndoData = { type: 'process', name: t.display, pid: t.pid };
+      } else if (t.action === 'clear_cache') {
+        const r = await fetch(API + '/actions/execute?action_id=clear_memory_cache', {
+          method: 'POST', headers: { 'X-API-Key': apiKey }
+        });
+        const d = await r.json();
+        results.push({ name: t.display, success: d.success !== false, message: d.message || 'Memory cache cleared' });
+        _smUndoData = null;
+      } else if (t.action === 'clear_tmp') {
+        const r = await fetch(API + '/actions/execute?action_id=clear_tmp', {
+          method: 'POST', headers: { 'X-API-Key': apiKey }
+        });
+        const d = await r.json();
+        results.push({ name: t.display, success: d.success !== false, message: d.message || 'Temp files cleared' });
+        _smUndoData = null;
+      } else if (t.action === 'nice') {
+        const r = await fetch(API + `/actions/execute?action_id=nice_pid_${t.pid}`, {
+          method: 'POST', headers: { 'X-API-Key': apiKey }
+        });
+        const d = await r.json();
+        results.push({ name: t.display, success: d.success !== false, message: d.message || `${t.display} priority lowered` });
+        _smUndoData = { type: 'nice', name: t.display, pid: t.pid };
+      } else {
+        results.push({ name: t.display, success: true, message: `${t.display} — action completed` });
+        _smUndoData = null;
+      }
+    } catch {
+      results.push({ name: t.display, success: false, message: `Could not apply fix — try restarting the backend` });
+    }
+  }
+
+  // Show result
+  const resultEl = document.getElementById('sm-fix-result');
+  const resultText = document.getElementById('sm-fix-result-text');
+  if (resultEl && resultText) {
+    const allOk = results.every(r => r.success);
+    resultEl.style.display   = 'block';
+    resultEl.style.background = allOk ? 'rgba(52,211,153,.07)' : 'rgba(248,113,113,.07)';
+    resultEl.style.borderColor = allOk ? 'rgba(52,211,153,.3)' : 'rgba(248,113,113,.3)';
+    resultText.innerHTML = results.map(r =>
+      `<div style="font-size:12px;color:${r.success ? 'var(--green)' : 'var(--red)'}">
+        ${r.success ? '✓' : '✗'} ${r.message}
+      </div>`
+    ).join('');
+
+    // Undo button if applicable
+    const undoBtn = document.getElementById('sm-undo-btn');
+    if (undoBtn && _smUndoData) {
+      undoBtn.style.display = 'inline-block';
+      let countdown = 60;
+      const timerEl = document.getElementById('sm-undo-timer');
+      _smUndoInterval = setInterval(() => {
+        countdown--;
+        if (timerEl) timerEl.textContent = `(${countdown}s)`;
+        if (countdown <= 0) {
+          clearInterval(_smUndoInterval);
+          undoBtn.style.display = 'none';
+          if (timerEl) timerEl.textContent = '';
+          _smUndoData = null;
+        }
+      }, 1000);
+    }
+  }
+
+  if (btn) { btn.textContent = 'Apply fix'; btn.style.opacity = '1'; btn.disabled = false; }
+
+  // Dismiss prediction
+  smDismissPred();
+}
+
+async function smUndo() {
+  clearInterval(_smUndoInterval);
+  if (!_smUndoData) return;
+  try {
+    if (_smUndoData.type === 'process') {
+      appendMsg('ai', `Attempting to restart ${_smUndoData.name}… Note: not all processes can be automatically restarted. You may need to open it manually.`);
+    } else if (_smUndoData.type === 'nice') {
+      await fetch(API + `/actions/execute?action_id=renice_pid_${_smUndoData.pid}`, {
+        method: 'POST', headers: { 'X-API-Key': apiKey }
+      });
+      appendMsg('ai', `${_smUndoData.name} priority restored to normal.`);
+    }
+  } catch {
+    appendMsg('ai', 'Could not undo — backend may be offline.');
+  }
+  document.getElementById('sm-undo-btn').style.display = 'none';
+  document.getElementById('sm-undo-timer').textContent = '';
+  _smUndoData = null;
+}
+
+function smDismissPred() {
+  const predEl = document.getElementById('sm-prediction');
+  if (predEl) predEl.style.display = 'none';
+  dismissPrediction();
+}
+
+function smAskWhy() {
+  setMode('expert');
+  const pred = snap.active_prediction;
+  if (pred) {
+    document.getElementById('ch-in').value = `Why is CVIS predicting a ${pred.type} failure? Explain it simply.`;
+    sendChat();
+  }
+}
+
+function smOpenAria() {
+  setMode('expert');
+  setTimeout(() => document.getElementById('ch-in')?.focus(), 300);
+}
+
+// Hook into existing poll loop
+const _origRender = render;
+window.render = function() {
+  _origRender();
+  smRenderAll();
+};
+</script>
+
+</body> in frontend/index.html
      ════════════════════════════════════════════════════ -->
 <style>
 #settings-overlay{display:none;position:fixed;inset:0;z-index:2000;background:rgba(0,0,0,.75);backdrop-filter:blur(6px);align-items:center;justify-content:center}
@@ -1731,6 +2444,719 @@ function showSettingsMsg(panel, text, ok, spinner) {
 
   </div>
 </div>
+
+<!-- ═══════════════════════════════════════════════════════
+     CVIS Simple Mode
+     Inject before </body> in frontend/index.html
+     ═══════════════════════════════════════════════════════ -->
+<style>
+#simple-mode{display:none;position:fixed;inset:0;z-index:500;background:var(--bg);overflow-y:auto;padding-bottom:40px}
+#simple-mode::-webkit-scrollbar{width:3px}
+#simple-mode::-webkit-scrollbar-thumb{background:var(--border)}
+#sm-topbar{display:flex;align-items:center;gap:12px;padding:0 24px;height:52px;background:var(--surface);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:10}
+#sm-body{max-width:100%;padding:20px 28px;display:flex;flex-direction:column;gap:14px}
+
+/* Hero */
+#sm-hero{border-radius:12px;padding:22px 24px;display:flex;align-items:center;gap:18px;border:1px solid;transition:all .5s}
+.sm-hero-icon{width:54px;height:54px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:24px;flex-shrink:0;transition:all .5s}
+#sm-hero-status{font-size:20px;font-weight:700;margin-bottom:5px;transition:color .5s}
+#sm-hero-desc{font-size:13px;color:#aaa;line-height:1.65;max-width:500px}
+#sm-hero-badge{flex-shrink:0;margin-left:auto;font-size:12px;font-weight:600;padding:7px 16px;border-radius:6px;border:none;cursor:default}
+
+/* Vitals */
+.sm-vitals{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.sm-vital{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px}
+.sm-vital-header{display:flex;align-items:center;gap:7px;margin-bottom:8px}
+.sm-vital-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.sm-vital-name{font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.sm-vital-reading{font-size:12px;color:#bbb;line-height:1.55;margin-bottom:8px;min-height:36px}
+.sm-vital-bar-track{height:5px;border-radius:3px;background:rgba(255,255,255,.06);overflow:hidden;margin-bottom:7px}
+.sm-vital-bar{height:100%;border-radius:3px;transition:width .8s ease}
+.sm-vital-change{font-size:11px;color:var(--muted)}
+
+/* Prediction */
+#sm-prediction{display:none;border-radius:10px;padding:18px 20px;border:1px solid rgba(248,113,113,.35);background:rgba(248,113,113,.06)}
+.sm-pred-top{display:flex;align-items:flex-start;gap:14px}
+.sm-pred-left{flex:1}
+#sm-pred-title{font-size:16px;font-weight:700;color:var(--red);margin-bottom:5px}
+#sm-pred-text{font-size:12px;color:#bbb;line-height:1.65}
+.sm-pred-right{text-align:right;flex-shrink:0}
+#sm-pred-mins{font-family:var(--mono);font-size:36px;font-weight:600;color:var(--red);line-height:1}
+.sm-pred-mins-lbl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-top:2px}
+.sm-pred-btns{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+.sm-pred-btn{font-size:12px;font-weight:600;padding:7px 16px;border-radius:6px;cursor:pointer;font-family:var(--sans);border:none;transition:opacity .2s}
+.sm-pred-btn:hover{opacity:.85}
+
+/* Fix confirmation modal */
+#sm-fix-modal{display:none;position:fixed;inset:0;z-index:2000;background:rgba(0,0,0,.75);backdrop-filter:blur(4px);align-items:center;justify-content:center}
+#sm-fix-modal.open{display:flex}
+#sm-fix-box{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:26px;max-width:480px;width:90%}
+#sm-fix-title{font-size:15px;font-weight:700;margin-bottom:6px}
+#sm-fix-subtitle{font-size:12px;color:#aaa;line-height:1.6;margin-bottom:16px}
+#sm-fix-actions-list{margin-bottom:16px}
+.sm-fix-action-row{padding:10px 12px;border-radius:7px;background:rgba(0,0,0,.25);border-left:3px solid;margin-bottom:8px}
+.sm-fix-action-row:last-child{margin-bottom:0}
+.sm-fix-action-name{font-size:12px;font-weight:600;margin-bottom:2px}
+.sm-fix-action-desc{font-size:11px;color:#aaa;line-height:1.5}
+.sm-fix-safe-note{font-size:11px;color:var(--green);padding:8px 12px;border-radius:6px;background:rgba(52,211,153,.07);border:1px solid rgba(52,211,153,.2);margin-bottom:16px;line-height:1.5}
+.sm-fix-btns{display:flex;gap:8px;justify-content:flex-end}
+.sm-fix-btn{font-size:12px;font-weight:600;padding:8px 18px;border-radius:6px;cursor:pointer;font-family:var(--sans);transition:opacity .2s}
+.sm-fix-btn:hover{opacity:.85}
+
+/* Fix result */
+#sm-fix-result{display:none;border-radius:10px;padding:14px 18px;border:1px solid;margin-top:0}
+#sm-fix-result-text{font-size:13px;margin-bottom:8px}
+#sm-undo-btn{font-size:11px;padding:4px 12px;border-radius:5px;background:transparent;border:1px solid var(--border);color:var(--muted);cursor:pointer;font-family:var(--sans)}
+#sm-undo-timer{font-size:10px;color:var(--muted);margin-left:8px;font-family:var(--mono)}
+
+/* Watch list */
+#sm-watch{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px 18px}
+.sm-watch-title{font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:12px}
+.sm-watch-row{display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.04)}
+.sm-watch-row:last-child{border-bottom:none}
+.sm-watch-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;margin-top:4px}
+.sm-watch-text{font-size:12px;color:#bbb;line-height:1.55}
+.sm-watch-action{font-size:11px;font-weight:500;margin-top:3px}
+
+/* Stats row */
+.sm-stats{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.sm-stat{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 16px}
+.sm-stat-lbl{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+.sm-stat-val{font-family:var(--mono);font-size:26px;font-weight:600;line-height:1;margin-bottom:4px}
+.sm-stat-sub{font-size:11px;color:var(--muted)}
+
+/* ARIA hint */
+#sm-aria-hint{background:rgba(124,106,247,.07);border:1px solid rgba(124,106,247,.2);border-radius:10px;padding:14px 18px;display:flex;align-items:center;gap:14px;cursor:pointer;transition:background .2s}
+#sm-aria-hint:hover{background:rgba(124,106,247,.12)}
+
+/* Mode toggle */
+.sm-mode-toggle{display:flex;background:rgba(255,255,255,.05);border:1px solid var(--border);border-radius:6px;overflow:hidden;margin-left:auto}
+.sm-mode-btn{font-size:11px;padding:4px 12px;border:none;cursor:pointer;font-family:var(--sans);background:transparent;color:var(--muted);transition:all .2s}
+.sm-mode-btn.active{background:var(--accent);color:#fff}
+
+/* Safeguard badge */
+.sm-safe-badge{font-size:10px;padding:2px 8px;border-radius:3px;background:rgba(52,211,153,.1);color:var(--green);border:1px solid rgba(52,211,153,.25);font-family:var(--mono)}
+</style>
+
+<!-- Simple Mode Panel -->
+<div id="simple-mode">
+  <div id="sm-topbar">
+    <div class="logo">CVIS <span style="color:var(--muted);font-weight:300;font-size:11px">/ Simple</span></div>
+    <div class="pulse" id="sm-live-dot"></div>
+    <div class="sm-mode-toggle">
+      <button class="sm-mode-btn active" onclick="setMode('simple')">Simple</button>
+      <button class="sm-mode-btn" onclick="setMode('expert')">Expert</button>
+    </div>
+    <button onclick="openSettings()" style="margin-left:8px;background:none;border:1px solid var(--border);border-radius:5px;color:var(--muted);cursor:pointer;padding:4px 10px;font-size:12px;font-family:var(--sans)">⚙ Settings</button>
+    <div class="tb-time" id="sm-time"></div>
+  </div>
+
+  <div id="sm-body">
+
+    <!-- Hero status -->
+    <div id="sm-hero">
+      <div class="sm-hero-icon" id="sm-hero-icon">✓</div>
+      <div style="flex:1">
+        <div id="sm-hero-status">Your machine is healthy</div>
+        <div id="sm-hero-desc">Everything is running smoothly. No issues detected.</div>
+      </div>
+      <div id="sm-hero-badge">All good</div>
+    </div>
+
+    <!-- Vitals -->
+    <div class="sm-vitals">
+      <div class="sm-vital">
+        <div class="sm-vital-header"><div class="sm-vital-dot" id="sm-cpu-dot" style="background:var(--green)"></div><div class="sm-vital-name">Processor</div></div>
+        <div class="sm-vital-reading" id="sm-cpu-reading">Loading…</div>
+        <div class="sm-vital-bar-track"><div class="sm-vital-bar" id="sm-cpu-bar" style="width:0%;background:var(--green)"></div></div>
+        <div class="sm-vital-change" id="sm-cpu-change"></div>
+      </div>
+      <div class="sm-vital">
+        <div class="sm-vital-header"><div class="sm-vital-dot" id="sm-mem-dot" style="background:var(--green)"></div><div class="sm-vital-name">Memory</div></div>
+        <div class="sm-vital-reading" id="sm-mem-reading">Loading…</div>
+        <div class="sm-vital-bar-track"><div class="sm-vital-bar" id="sm-mem-bar" style="width:0%;background:var(--green)"></div></div>
+        <div class="sm-vital-change" id="sm-mem-change"></div>
+      </div>
+      <div class="sm-vital">
+        <div class="sm-vital-header"><div class="sm-vital-dot" id="sm-disk-dot" style="background:var(--green)"></div><div class="sm-vital-name">Storage activity</div></div>
+        <div class="sm-vital-reading" id="sm-disk-reading">Loading…</div>
+        <div class="sm-vital-bar-track"><div class="sm-vital-bar" id="sm-disk-bar" style="width:0%;background:var(--green)"></div></div>
+        <div class="sm-vital-change" id="sm-disk-change"></div>
+      </div>
+    </div>
+
+    <!-- Prediction card -->
+    <div id="sm-prediction">
+      <div class="sm-pred-top">
+        <div class="sm-pred-left">
+          <div id="sm-pred-title">Something needs attention</div>
+          <div id="sm-pred-text"></div>
+        </div>
+        <div class="sm-pred-right">
+          <div id="sm-pred-mins">—</div>
+          <div class="sm-pred-mins-lbl">minutes left</div>
+        </div>
+      </div>
+      <div class="sm-pred-btns">
+        <button class="sm-pred-btn" onclick="openFixModal()" style="background:var(--red);color:#fff">Fix it now</button>
+        <button class="sm-pred-btn" onclick="smDismissPred()" style="background:rgba(255,255,255,.07);color:var(--muted)">Dismiss</button>
+        <button class="sm-pred-btn" onclick="smAskWhy()" style="background:transparent;color:var(--accent);border:1px solid rgba(124,106,247,.3)">Why is this happening?</button>
+      </div>
+    </div>
+
+    <!-- Fix result -->
+    <div id="sm-fix-result">
+      <div id="sm-fix-result-text"></div>
+      <div style="display:flex;align-items:center;margin-top:6px">
+        <button id="sm-undo-btn" onclick="smUndo()" style="display:none">↩ Undo</button>
+        <span id="sm-undo-timer"></span>
+      </div>
+    </div>
+
+    <!-- What to watch -->
+    <div id="sm-watch">
+      <div class="sm-watch-title">What to watch</div>
+      <div id="sm-watch-list"><div style="font-size:12px;color:var(--muted)">Analysing trends…</div></div>
+    </div>
+
+    <!-- Stats -->
+    <div class="sm-stats">
+      <div class="sm-stat">
+        <div class="sm-stat-lbl">Failures prevented</div>
+        <div class="sm-stat-val" id="sm-prevented" style="color:var(--green)">—</div>
+        <div class="sm-stat-sub" id="sm-prevented-sub">all time</div>
+      </div>
+      <div class="sm-stat">
+        <div class="sm-stat-lbl">Machine health score</div>
+        <div class="sm-stat-val" id="sm-health-score" style="color:var(--accent)">—</div>
+        <div class="sm-stat-sub" id="sm-health-grade"></div>
+      </div>
+    </div>
+
+    <!-- ARIA hint -->
+    <div id="sm-aria-hint" onclick="smOpenAria()">
+      <div style="width:28px;height:28px;border-radius:6px;background:rgba(124,106,247,.15);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0">◈</div>
+      <div>
+        <div style="font-size:12px;font-weight:600;color:var(--accent);margin-bottom:2px">Ask ARIA anything</div>
+        <div style="font-size:11px;color:var(--muted)">"Will my computer crash?" · "Why is memory high?" · "What should I do right now?"</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Fix confirmation modal -->
+<div id="sm-fix-modal" onclick="if(event.target===this)closeFixModal()">
+  <div id="sm-fix-box">
+    <div id="sm-fix-title">Here's what CVIS will do</div>
+    <div id="sm-fix-subtitle">Review the actions below before confirming. Nothing will happen until you click Apply fix.</div>
+    <div id="sm-fix-actions-list"></div>
+    <div class="sm-fix-safe-note" id="sm-fix-safe-note">✓ Protected: your browser, code editor, and recently opened apps will not be touched.</div>
+    <div class="sm-fix-btns">
+      <button class="sm-fix-btn" onclick="closeFixModal()" style="background:transparent;border:1px solid var(--border);color:var(--muted)">Cancel</button>
+      <button class="sm-fix-btn" onclick="smApplyFix()" style="background:var(--accent);color:#fff;border:none" id="sm-fix-confirm-btn">Apply fix</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════
+//  CVIS Simple Mode
+// ═══════════════════════════════════════════════════════
+
+// ── Protected process list — never killed automatically ──
+const SM_PROTECTED = [
+  'firefox','chrome','chromium','safari','brave','opera','edge',
+  'code','vscode','vim','nvim','nano','emacs','sublime_text','atom','gedit',
+  'terminal','bash','zsh','fish','sh','konsole','gnome-terminal','xterm',
+  'zoom','teams','slack','discord','skype','telegram',
+  'python3','node','java','javaw',
+  'systemd','init','dockerd','containerd','nginx','sshd','Xorg','pulseaudio',
+];
+
+const SM_PROCESS_NAMES = {
+  'firefox':'Firefox','chrome':'Chrome','chromium':'Chromium',
+  'code':'VS Code','vscode':'VS Code','sublime_text':'Sublime Text',
+  'zoom':'Zoom','slack':'Slack','discord':'Discord',
+};
+
+let _smMode = localStorage.getItem('cvis_mode') || 'simple';
+let _smLastPredType = null;
+let _smUndoData = null;
+let _smUndoInterval = null;
+let _smFixTargets = [];
+
+// ── Mode toggle ──────────────────────────────────────────
+function setMode(mode) {
+  _smMode = mode;
+  localStorage.setItem('cvis_mode', mode);
+  const sm = document.getElementById('simple-mode');
+  const app = document.getElementById('app');
+  if (mode === 'simple') {
+    sm.style.display = 'block';
+    if (app) app.style.display = 'none';
+    smRenderAll();
+  } else {
+    sm.style.display = 'none';
+    if (app) app.style.display = 'grid';
+  }
+  // sync topbar toggles
+  document.querySelectorAll('.sm-mode-btn').forEach(b => b.classList.toggle('active', b.textContent.toLowerCase() === mode));
+  document.querySelectorAll('.expert-mode-btn').forEach(b => b.classList.toggle('active', b.textContent.toLowerCase() === mode));
+}
+
+// Init on load
+(function smInit() {
+  // Add Expert toggle to main topbar
+  const tbTime = document.getElementById('tb-time');
+  if (tbTime && !document.getElementById('expert-mode-toggle')) {
+    const tog = document.createElement('div');
+    tog.id = 'expert-mode-toggle';
+    tog.className = 'sm-mode-toggle';
+    tog.style.marginLeft = '8px';
+    tog.innerHTML = '<button class="sm-mode-btn expert-mode-btn" onclick="setMode(\'simple\')">Simple</button><button class="sm-mode-btn expert-mode-btn active" onclick="setMode(\'expert\')">Expert</button>';
+    tbTime.parentNode.insertBefore(tog, tbTime);
+  }
+  // Apply saved mode
+  if (_smMode === 'simple') {
+    const sm = document.getElementById('simple-mode');
+    const app = document.getElementById('app');
+    if (sm) sm.style.display = 'block';
+    if (app) app.style.display = 'none';
+  }
+})();
+
+// ── Plain English helpers ────────────────────────────────
+function smCpuReading(v, trend) {
+  if (v > 90) return `Processor is under extreme pressure at ${v.toFixed(0)}% — things may slow down or freeze.`;
+  if (v > 75) return `Processor is working very hard at ${v.toFixed(0)}%. Something is keeping it very busy.`;
+  if (v > 60) return `Processor is busier than usual at ${v.toFixed(0)}%. Worth keeping an eye on.`;
+  if (v > 40) return `Processor is moderately busy at ${v.toFixed(0)}% — normal for active use.`;
+  return `Processor is running comfortably at ${v.toFixed(0)}% — well within normal range.`;
+}
+
+function smMemReading(v, trend) {
+  if (v > 90) return `Memory is almost completely full at ${v.toFixed(0)}%. Apps may crash very soon.`;
+  if (v > 80) return `Memory is getting dangerously full at ${v.toFixed(0)}%. Close unused apps now.`;
+  if (v > 70) return `Memory is getting quite full at ${v.toFixed(0)}%. Worth closing things you're not using.`;
+  if (v > 50) return `Using ${v.toFixed(0)}% of memory — moderate usage, nothing to worry about.`;
+  return `Memory is in good shape at ${v.toFixed(0)}% — plenty of room to spare.`;
+}
+
+function smDiskReading(v) {
+  if (v > 85) return `Storage is being read or written very heavily at ${v.toFixed(0)}%. This can slow the whole system.`;
+  if (v > 60) return `Storage is fairly busy at ${v.toFixed(0)}% — a large file operation may be running.`;
+  if (v > 30) return `Moderate storage activity at ${v.toFixed(0)}% — normal background operations.`;
+  return `Storage is quiet — no heavy reading or writing happening right now.`;
+}
+
+function smTrendText(trend, delta, isHealth) {
+  if (!trend || trend === 'stable') return '→ Stable';
+  const d = Math.abs(delta).toFixed(1);
+  if (isHealth) {
+    if (trend === 'falling' || trend === 'dropping') return `↓ Improving — up ${d} pts recently`;
+    if (trend === 'rising' || trend === 'spiking')   return `↑ Declining — down ${d} pts recently`;
+  }
+  if (trend === 'spiking')  return `↑↑ Rising fast — up ${d}% in the last 30s`;
+  if (trend === 'rising')   return `↑ Slowly climbing — up ${d}% recently`;
+  if (trend === 'dropping') return `↓↓ Falling fast`;
+  if (trend === 'falling')  return `↓ Coming down`;
+  return '→ Stable';
+}
+
+function smMetricColor(v, isHealth) {
+  if (isHealth) return v > 700 ? 'var(--green)' : v > 400 ? 'var(--yellow)' : 'var(--red)';
+  return v > 80 ? 'var(--red)' : v > 60 ? 'var(--yellow)' : 'var(--green)';
+}
+
+function smHeroState(s) {
+  const sev = s.severity || 'LOW';
+  const pred = s.active_prediction;
+  if (pred && !pred.acknowledged) {
+    return {
+      icon: '⚠️', iconBg: 'rgba(248,113,113,.12)', iconBorder: 'rgba(248,113,113,.3)',
+      heroBg: 'rgba(248,113,113,.05)', heroBorder: 'rgba(248,113,113,.3)',
+      statusColor: 'var(--red)', status: 'Action needed — failure predicted',
+      desc: `${pred.type === 'OOM' ? 'Your machine is about to run out of memory' : pred.type === 'CRASH' ? 'A process crash is predicted' : pred.type === 'THERMAL' ? 'Your machine is overheating' : 'A system failure is predicted'}. ${pred.message || ''}`,
+      badge: '⚠ Act now', badgeBg: 'rgba(248,113,113,.15)', badgeColor: 'var(--red)',
+    };
+  }
+  if (sev === 'HIGH' || sev === 'CRITICAL') {
+    return {
+      icon: '◉', iconBg: 'rgba(251,146,60,.1)', iconBorder: 'rgba(251,146,60,.3)',
+      heroBg: 'rgba(251,146,60,.05)', heroBorder: 'rgba(251,146,60,.3)',
+      statusColor: 'var(--orange)', status: 'Something needs attention',
+      desc: s.reason || 'One or more metrics are elevated and need your attention.',
+      badge: 'Needs attention', badgeBg: 'rgba(251,146,60,.12)', badgeColor: 'var(--orange)',
+    };
+  }
+  if (sev === 'MEDIUM') {
+    return {
+      icon: '◐', iconBg: 'rgba(251,191,36,.1)', iconBorder: 'rgba(251,191,36,.3)',
+      heroBg: 'rgba(251,191,36,.05)', heroBorder: 'rgba(251,191,36,.25)',
+      statusColor: 'var(--yellow)', status: 'Minor issue worth watching',
+      desc: s.reason || 'Nothing urgent, but worth keeping an eye on.',
+      badge: 'Watch', badgeBg: 'rgba(251,191,36,.1)', badgeColor: 'var(--yellow)',
+    };
+  }
+  return {
+    icon: '✓', iconBg: 'rgba(52,211,153,.1)', iconBorder: 'rgba(52,211,153,.25)',
+    heroBg: 'rgba(52,211,153,.04)', heroBorder: 'rgba(52,211,153,.25)',
+    statusColor: 'var(--green)', status: 'Your machine is healthy',
+    desc: snap.reason && snap.reason !== 'System stable' ? snap.reason : 'Everything is running smoothly. No issues detected.',
+    badge: 'All good', badgeBg: 'rgba(52,211,153,.12)', badgeColor: 'var(--green)',
+  };
+}
+
+// ── Main render ──────────────────────────────────────────
+function smRenderAll() {
+  if (_smMode !== 'simple') return;
+  const s = snap;
+  const now = new Date();
+  const el = id => document.getElementById(id);
+
+  // Time
+  if (el('sm-time')) el('sm-time').textContent = now.toLocaleTimeString('en-US', {hour12: false});
+
+  // Hero
+  const h = smHeroState(s);
+  const hero = el('sm-hero');
+  if (hero) {
+    hero.style.background   = h.heroBg;
+    hero.style.borderColor  = h.heroBorder;
+  }
+  const hIcon = el('sm-hero-icon');
+  if (hIcon) {
+    hIcon.textContent = h.icon;
+    hIcon.style.background  = h.iconBg;
+    hIcon.style.border      = `2px solid ${h.iconBorder}`;
+  }
+  if (el('sm-hero-status')) { el('sm-hero-status').textContent = h.status; el('sm-hero-status').style.color = h.statusColor; }
+  if (el('sm-hero-desc'))   el('sm-hero-desc').textContent = h.desc;
+  const badge = el('sm-hero-badge');
+  if (badge) { badge.textContent = h.badge; badge.style.background = h.badgeBg; badge.style.color = h.badgeColor; badge.style.border = `1px solid ${h.badgeColor}30`; }
+
+  // Vitals
+  const tCpu  = temporal('cpu_percent');
+  const tMem  = temporal('memory');
+  const tDisk = temporal('disk_percent');
+
+  const vitalSets = [
+    ['cpu',  s.cpu_percent,  tCpu,  smCpuReading,  false],
+    ['mem',  s.memory,       tMem,  smMemReading,  false],
+    ['disk', s.disk_percent, tDisk, smDiskReading, false],
+  ];
+  vitalSets.forEach(([id, val, tr, readingFn, isH]) => {
+    if (val == null) return;
+    const c = smMetricColor(val, isH);
+    const dot = el(`sm-${id}-dot`);
+    const bar = el(`sm-${id}-bar`);
+    const reading = el(`sm-${id}-reading`);
+    const change  = el(`sm-${id}-change`);
+    if (dot)     { dot.style.background = c; }
+    if (bar)     { bar.style.width = Math.min(100, val).toFixed(0) + '%'; bar.style.background = c; }
+    if (reading) reading.textContent = id === 'disk' ? readingFn(val) : readingFn(val, tr.trend);
+    if (change)  { change.textContent = smTrendText(tr.trend, tr.delta, isH); change.style.color = tr.trend === 'stable' ? 'var(--muted)' : c; }
+  });
+
+  // Prediction
+  const pred = s.active_prediction;
+  const predEl = el('sm-prediction');
+  if (pred && !pred.acknowledged && predEl) {
+    predEl.style.display = 'block';
+    _smLastPredType = pred.type;
+    const typeMap = {
+      OOM:      'Your machine is going to run out of memory',
+      CRASH:    'A process is predicted to crash',
+      THERMAL:  'Your machine is overheating',
+      DISK_FULL:'Your storage is going to fill up',
+    };
+    if (el('sm-pred-title')) el('sm-pred-title').textContent = typeMap[pred.type] || 'A system failure is predicted';
+    if (el('sm-pred-text'))  el('sm-pred-text').innerHTML = pred.message || '';
+    if (el('sm-pred-mins'))  el('sm-pred-mins').textContent = Math.ceil(pred.eta_min || 0);
+  } else if (predEl) {
+    predEl.style.display = 'none';
+  }
+
+  // Watch list
+  const watchItems = [];
+  if (tMem.trend === 'rising' || tMem.trend === 'spiking') {
+    watchItems.push({
+      color: 'var(--yellow)',
+      text: `Memory has been climbing for the last few minutes. If it keeps going it may cause problems.`,
+      action: { text: 'Consider closing unused applications', color: 'var(--yellow)' },
+    });
+  }
+  if (tCpu.trend === 'spiking') {
+    watchItems.push({
+      color: 'var(--red)',
+      text: `Processor is spiking quickly. Something is using a lot of CPU right now.`,
+      action: { text: 'Check what\'s running in the process list', color: 'var(--red)' },
+    });
+  }
+  if (forecast && forecast.summary) {
+    watchItems.push({
+      color: 'var(--blue)',
+      text: forecast.summary,
+      action: null,
+    });
+  }
+  if (dnaData && dnaData.prevented > 0) {
+    watchItems.push({
+      color: 'var(--accent)',
+      text: `CVIS has prevented ${dnaData.prevented} failure${dnaData.prevented > 1 ? 's' : ''} on this machine. It continues learning your system's patterns.`,
+      action: null,
+    });
+  }
+  if (!watchItems.length) {
+    watchItems.push({ color: 'var(--green)', text: 'No issues to watch right now. System is running normally.', action: null });
+  }
+  const watchList = el('sm-watch-list');
+  if (watchList) {
+    watchList.innerHTML = watchItems.map(w => `
+      <div class="sm-watch-row">
+        <div class="sm-watch-dot" style="background:${w.color}"></div>
+        <div>
+          <div class="sm-watch-text">${w.text}</div>
+          ${w.action ? `<div class="sm-watch-action" style="color:${w.action.color}">→ ${w.action.text}</div>` : ''}
+        </div>
+      </div>`).join('');
+  }
+
+  // Stats
+  if (dnaData) {
+    if (el('sm-prevented')) el('sm-prevented').textContent = dnaData.prevented || 0;
+  }
+  const hcs = s.health_credit_score;
+  if (hcs != null) {
+    const hcol = hcs >= 700 ? 'var(--green)' : hcs >= 400 ? 'var(--yellow)' : 'var(--red)';
+    if (el('sm-health-score')) {
+      el('sm-health-score').innerHTML = `${hcs}<span style="font-size:14px;color:var(--muted)">/1000</span>`;
+      el('sm-health-score').style.color = hcol;
+    }
+    if (el('sm-health-grade')) el('sm-health-grade').textContent = s.health_grade || '';
+  }
+}
+
+// ── Fix modal ────────────────────────────────────────────
+function _getFixTargets() {
+  const pred = snap.active_prediction;
+  const procs = snap.processes?.by_cpu || [];
+  const type = pred?.type || _smLastPredType || 'UNKNOWN';
+  const targets = [];
+
+  if (type === 'OOM' || type === 'MEMORY') {
+    const topMem = (snap.processes?.by_mem || procs)
+      .filter(p => !SM_PROTECTED.some(n => p.name?.toLowerCase().includes(n)))
+      .slice(0, 2);
+    topMem.forEach(p => {
+      targets.push({
+        pid: p.pid,
+        name: p.name,
+        action: 'terminate',
+        display: SM_PROCESS_NAMES[p.name?.toLowerCase()] || p.name,
+        desc: `Using ${p.mem?.toFixed(1)}% of memory. This is a background process — your open apps will not be affected.`,
+        color: 'var(--red)',
+        safe: !SM_PROTECTED.some(n => p.name?.toLowerCase().includes(n)),
+      });
+    });
+    if (!targets.length) {
+      targets.push({
+        pid: null, name: 'memory_cache', action: 'clear_cache',
+        display: 'Memory cache',
+        desc: 'Clear system memory cache to free up space. Safe — cached data is reloaded on demand.',
+        color: 'var(--yellow)', safe: true,
+      });
+    }
+  } else if (type === 'CRASH' || type === 'CPU') {
+    const topCpu = procs
+      .filter(p => !SM_PROTECTED.some(n => p.name?.toLowerCase().includes(n)) && p.cpu > 20)
+      .slice(0, 1);
+    topCpu.forEach(p => {
+      targets.push({
+        pid: p.pid, name: p.name, action: 'nice',
+        display: SM_PROCESS_NAMES[p.name?.toLowerCase()] || p.name,
+        desc: `Using ${p.cpu?.toFixed(1)}% CPU. CVIS will lower its priority so other apps run smoothly — it won't be killed.`,
+        color: 'var(--yellow)', safe: true,
+      });
+    });
+  } else if (type === 'DISK_FULL') {
+    targets.push({
+      pid: null, name: 'tmp', action: 'clear_tmp',
+      display: 'Temporary files',
+      desc: 'Clear system temp files (/tmp). These are safe to remove — they are recreated automatically.',
+      color: 'var(--yellow)', safe: true,
+    });
+  } else if (type === 'THERMAL') {
+    targets.push({
+      pid: null, name: 'thermal', action: 'thermal',
+      display: 'CPU frequency',
+      desc: 'Temporarily reduce CPU speed to let the machine cool down. Performance will recover in a few minutes.',
+      color: 'var(--orange)', safe: true,
+    });
+  }
+
+  // Fallback
+  if (!targets.length) {
+    targets.push({
+      pid: null, name: 'cache', action: 'clear_cache',
+      display: 'System memory cache',
+      desc: 'Clear memory cache to free up resources. This is always safe.',
+      color: 'var(--blue)', safe: true,
+    });
+  }
+
+  return targets;
+}
+
+function openFixModal() {
+  _smFixTargets = _getFixTargets();
+  const list = document.getElementById('sm-fix-actions-list');
+  if (list) {
+    list.innerHTML = _smFixTargets.map(t => `
+      <div class="sm-fix-action-row" style="border-left-color:${t.color}">
+        <div class="sm-fix-action-name" style="color:${t.color}">${t.display}${t.pid ? ` (PID ${t.pid})` : ''}</div>
+        <div class="sm-fix-action-desc">${t.desc}</div>
+      </div>`).join('');
+  }
+  document.getElementById('sm-fix-modal').classList.add('open');
+}
+
+function closeFixModal() {
+  document.getElementById('sm-fix-modal').classList.remove('open');
+}
+
+async function smApplyFix() {
+  const btn = document.getElementById('sm-fix-confirm-btn');
+  if (btn) { btn.textContent = 'Applying…'; btn.style.opacity = '.6'; btn.disabled = true; }
+  closeFixModal();
+
+  const results = [];
+  for (const t of _smFixTargets) {
+    try {
+      if (t.action === 'terminate' && t.pid) {
+        const r = await fetch(API + `/actions/execute?action_id=kill_pid_${t.pid}`, {
+          method: 'POST', headers: { 'X-API-Key': apiKey }
+        });
+        const d = await r.json();
+        results.push({ name: t.display, success: d.success !== false, message: d.message || `${t.display} terminated` });
+        _smUndoData = { type: 'process', name: t.display, pid: t.pid };
+      } else if (t.action === 'clear_cache') {
+        const r = await fetch(API + '/actions/execute?action_id=clear_memory_cache', {
+          method: 'POST', headers: { 'X-API-Key': apiKey }
+        });
+        const d = await r.json();
+        results.push({ name: t.display, success: d.success !== false, message: d.message || 'Memory cache cleared' });
+        _smUndoData = null;
+      } else if (t.action === 'clear_tmp') {
+        const r = await fetch(API + '/actions/execute?action_id=clear_tmp', {
+          method: 'POST', headers: { 'X-API-Key': apiKey }
+        });
+        const d = await r.json();
+        results.push({ name: t.display, success: d.success !== false, message: d.message || 'Temp files cleared' });
+        _smUndoData = null;
+      } else if (t.action === 'nice') {
+        const r = await fetch(API + `/actions/execute?action_id=nice_pid_${t.pid}`, {
+          method: 'POST', headers: { 'X-API-Key': apiKey }
+        });
+        const d = await r.json();
+        results.push({ name: t.display, success: d.success !== false, message: d.message || `${t.display} priority lowered` });
+        _smUndoData = { type: 'nice', name: t.display, pid: t.pid };
+      } else {
+        results.push({ name: t.display, success: true, message: `${t.display} — action completed` });
+        _smUndoData = null;
+      }
+    } catch {
+      results.push({ name: t.display, success: false, message: `Could not apply fix — try restarting the backend` });
+    }
+  }
+
+  // Show result
+  const resultEl = document.getElementById('sm-fix-result');
+  const resultText = document.getElementById('sm-fix-result-text');
+  if (resultEl && resultText) {
+    const allOk = results.every(r => r.success);
+    resultEl.style.display   = 'block';
+    resultEl.style.background = allOk ? 'rgba(52,211,153,.07)' : 'rgba(248,113,113,.07)';
+    resultEl.style.borderColor = allOk ? 'rgba(52,211,153,.3)' : 'rgba(248,113,113,.3)';
+    resultText.innerHTML = results.map(r =>
+      `<div style="font-size:12px;color:${r.success ? 'var(--green)' : 'var(--red)'}">
+        ${r.success ? '✓' : '✗'} ${r.message}
+      </div>`
+    ).join('');
+
+    // Undo button if applicable
+    const undoBtn = document.getElementById('sm-undo-btn');
+    if (undoBtn && _smUndoData) {
+      undoBtn.style.display = 'inline-block';
+      let countdown = 60;
+      const timerEl = document.getElementById('sm-undo-timer');
+      _smUndoInterval = setInterval(() => {
+        countdown--;
+        if (timerEl) timerEl.textContent = `(${countdown}s)`;
+        if (countdown <= 0) {
+          clearInterval(_smUndoInterval);
+          undoBtn.style.display = 'none';
+          if (timerEl) timerEl.textContent = '';
+          _smUndoData = null;
+        }
+      }, 1000);
+    }
+  }
+
+  if (btn) { btn.textContent = 'Apply fix'; btn.style.opacity = '1'; btn.disabled = false; }
+
+  // Dismiss prediction
+  smDismissPred();
+}
+
+async function smUndo() {
+  clearInterval(_smUndoInterval);
+  if (!_smUndoData) return;
+  try {
+    if (_smUndoData.type === 'process') {
+      appendMsg('ai', `Attempting to restart ${_smUndoData.name}… Note: not all processes can be automatically restarted. You may need to open it manually.`);
+    } else if (_smUndoData.type === 'nice') {
+      await fetch(API + `/actions/execute?action_id=renice_pid_${_smUndoData.pid}`, {
+        method: 'POST', headers: { 'X-API-Key': apiKey }
+      });
+      appendMsg('ai', `${_smUndoData.name} priority restored to normal.`);
+    }
+  } catch {
+    appendMsg('ai', 'Could not undo — backend may be offline.');
+  }
+  document.getElementById('sm-undo-btn').style.display = 'none';
+  document.getElementById('sm-undo-timer').textContent = '';
+  _smUndoData = null;
+}
+
+function smDismissPred() {
+  const predEl = document.getElementById('sm-prediction');
+  if (predEl) predEl.style.display = 'none';
+  dismissPrediction();
+}
+
+function smAskWhy() {
+  setMode('expert');
+  const pred = snap.active_prediction;
+  if (pred) {
+    document.getElementById('ch-in').value = `Why is CVIS predicting a ${pred.type} failure? Explain it simply.`;
+    sendChat();
+  }
+}
+
+function smOpenAria() {
+  setMode('expert');
+  setTimeout(() => document.getElementById('ch-in')?.focus(), 300);
+}
+
+// Hook into existing poll loop
+const _origRender = render;
+window.render = function() {
+  _origRender();
+  smRenderAll();
+};
+</script>
 
 </body>
 </html>
