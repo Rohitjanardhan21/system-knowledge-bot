@@ -1,0 +1,294 @@
+<!-- ═══════════════════════════════════════════════════════
+     CVIS Demo Mode — Stress Test Panel
+     Inject before </body> in frontend/index.html
+     ═══════════════════════════════════════════════════════ -->
+<style>
+/* ── Demo button in topbar ── */
+#demo-trigger{font-size:11px;padding:4px 12px;border-radius:5px;border:1px solid rgba(124,106,247,.4);background:rgba(124,106,247,.1);color:var(--accent);cursor:pointer;font-family:var(--sans);font-weight:500;transition:all .2s;margin-left:6px}
+#demo-trigger:hover{background:rgba(124,106,247,.2)}
+#demo-trigger.running{border-color:rgba(248,113,113,.4);background:rgba(248,113,113,.1);color:var(--red);animation:demopulse 1.5s infinite}
+@keyframes demopulse{0%,100%{opacity:1}50%{opacity:.6}}
+
+/* ── Stress panel overlay ── */
+#stress-panel{display:none;position:fixed;inset:0;z-index:2500;background:rgba(0,0,0,.8);backdrop-filter:blur(6px);align-items:center;justify-content:center;padding:20px}
+#stress-panel.open{display:flex}
+#stress-box{background:var(--surface);border:1px solid var(--border);border-radius:14px;max-width:560px;width:100%;overflow:hidden}
+
+/* Header */
+#stress-header{padding:22px 26px 16px;border-bottom:1px solid var(--border)}
+#stress-header h2{font-size:16px;font-weight:700;margin-bottom:4px}
+#stress-header p{font-size:12px;color:var(--muted);line-height:1.5}
+
+/* Scenarios */
+#stress-scenarios{padding:16px 26px;display:flex;flex-direction:column;gap:10px}
+.stress-scenario{border:1px solid var(--border);border-radius:10px;padding:14px 16px;cursor:pointer;transition:all .2s;position:relative}
+.stress-scenario:hover{border-color:rgba(124,106,247,.4);background:rgba(124,106,247,.04)}
+.stress-scenario.selected{border-color:var(--accent);background:rgba(124,106,247,.07)}
+.stress-scenario.running{border-color:var(--red);background:rgba(248,113,113,.06);cursor:default}
+.stress-sc-top{display:flex;align-items:center;gap:10px;margin-bottom:5px}
+.stress-sc-icon{width:28px;height:28px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
+.stress-sc-label{font-size:13px;font-weight:600}
+.stress-sc-badge{font-size:10px;padding:2px 8px;border-radius:3px;font-family:var(--mono);margin-left:auto}
+.stress-sc-desc{font-size:11px;color:var(--muted);line-height:1.5;margin-bottom:6px}
+.stress-sc-what{font-size:11px;color:#aaa;padding:7px 10px;background:rgba(0,0,0,.2);border-radius:5px;border-left:2px solid rgba(124,106,247,.3);line-height:1.5}
+
+/* Progress bar when running */
+.stress-progress{height:3px;border-radius:2px;background:rgba(255,255,255,.06);overflow:hidden;margin-top:8px;display:none}
+.stress-progress.visible{display:block}
+.stress-progress-fill{height:100%;border-radius:2px;background:var(--red);transition:width 1s linear}
+
+/* Controls */
+#stress-controls{padding:14px 26px;border-top:1px solid var(--border);display:flex;align-items:center;gap:10px}
+#stress-start-btn{font-size:12px;font-weight:600;padding:8px 20px;border-radius:6px;background:var(--accent);color:#fff;border:none;cursor:pointer;font-family:var(--sans);transition:opacity .2s}
+#stress-start-btn:hover{opacity:.85}
+#stress-start-btn:disabled{opacity:.35;cursor:not-allowed}
+#stress-stop-btn{font-size:12px;font-weight:600;padding:8px 20px;border-radius:6px;background:rgba(248,113,113,.15);color:var(--red);border:1px solid rgba(248,113,113,.3);cursor:pointer;font-family:var(--sans);display:none}
+#stress-cancel-btn{font-size:12px;padding:8px 16px;border-radius:6px;background:transparent;color:var(--muted);border:1px solid var(--border);cursor:pointer;font-family:var(--sans)}
+#stress-status-text{font-size:11px;color:var(--muted);font-family:var(--mono);margin-left:auto}
+
+/* Live indicator */
+#stress-live{display:none;align-items:center;gap:8px;padding:10px 26px;background:rgba(248,113,113,.05);border-top:1px solid rgba(248,113,113,.15)}
+#stress-live.visible{display:flex}
+.stress-live-dot{width:7px;height:7px;border-radius:50%;background:var(--red);box-shadow:0 0 6px var(--red);animation:blink 1s infinite}
+#stress-live-text{font-size:11px;color:#aaa}
+#stress-live-metrics{font-family:var(--mono);font-size:11px;color:var(--red);margin-left:auto}
+</style>
+
+<!-- Stress panel -->
+<div id="stress-panel" onclick="if(event.target===this)closeStressPanel()">
+  <div id="stress-box">
+    <div id="stress-header">
+      <h2>🧪 Demo stress test</h2>
+      <p>Deliberately stress your machine to trigger real CVIS predictions. Safe — automatic ceiling on all metrics. Use this to demonstrate CVIS catching a failure live.</p>
+    </div>
+
+    <div id="stress-scenarios">
+      <!-- Populated by JS -->
+    </div>
+
+    <div id="stress-live">
+      <div class="stress-live-dot"></div>
+      <div id="stress-live-text">Stress test running…</div>
+      <div id="stress-live-metrics"></div>
+    </div>
+
+    <div id="stress-controls">
+      <button id="stress-start-btn" onclick="startStress()">Start scenario</button>
+      <button id="stress-stop-btn" onclick="stopAllStress()">⬛ Stop now</button>
+      <button id="stress-cancel-btn" onclick="closeStressPanel()">Close</button>
+      <div id="stress-status-text">Select a scenario</div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════
+//  CVIS Stress Test Panel
+// ═══════════════════════════════════════════════════════
+
+let _selectedScenario = null;
+let _stressRunning = false;
+let _stressInterval = null;
+let _stressStarted = null;
+let _stressDuration = 0;
+
+// Inject demo button into topbar
+(function injectDemoButton() {
+  const tb = document.getElementById('sm-topbar') || document.getElementById('topbar');
+  if (!tb || document.getElementById('demo-trigger')) return;
+  const btn = document.createElement('button');
+  btn.id = 'demo-trigger';
+  btn.textContent = '🧪 Demo';
+  btn.onclick = openStressPanel;
+  // Insert before settings button
+  const settingsBtn = tb.querySelector('button[onclick*="openSettings"]');
+  if (settingsBtn) tb.insertBefore(btn, settingsBtn);
+  else tb.appendChild(btn);
+})();
+
+async function openStressPanel() {
+  document.getElementById('stress-panel').classList.add('open');
+  await loadScenarios();
+  pollStressStatus();
+}
+
+function closeStressPanel() {
+  document.getElementById('stress-panel').classList.remove('open');
+  clearInterval(_stressInterval);
+}
+
+async function loadScenarios() {
+  try {
+    const scenarios = await fetch_(API + '/stress/scenarios');
+    const container = document.getElementById('stress-scenarios');
+    if (!container || !scenarios.length) return;
+
+    container.innerHTML = scenarios.map(sc => `
+      <div class="stress-scenario" id="sc-${sc.id}" onclick="selectScenario('${sc.id}')">
+        <div class="stress-sc-top">
+          <div class="stress-sc-icon" style="background:rgba(124,106,247,.1)">
+            ${sc.id === 'memory_pressure' ? '🧠' : sc.id === 'cpu_spike' ? '⚡' : '💥'}
+          </div>
+          <div class="stress-sc-label">${sc.label}</div>
+          <div class="stress-sc-badge" style="background:rgba(255,255,255,.06);color:var(--muted)">
+            ${sc.duration_s}s max
+          </div>
+        </div>
+        <div class="stress-sc-desc">${sc.description}</div>
+        <div class="stress-sc-what">
+          <span style="color:var(--accent)">What to watch: </span>${sc.what_happens}
+        </div>
+        <div class="stress-progress" id="prog-${sc.id}">
+          <div class="stress-progress-fill" id="progfill-${sc.id}" style="width:0%"></div>
+        </div>
+      </div>`).join('');
+
+    // Auto-select combined as default
+    selectScenario('combined');
+  } catch(e) {
+    document.getElementById('stress-scenarios').innerHTML =
+      '<div style="color:var(--muted);font-size:12px;padding:8px">Could not load scenarios — backend offline.</div>';
+  }
+}
+
+function selectScenario(id) {
+  if (_stressRunning) return;
+  _selectedScenario = id;
+  document.querySelectorAll('.stress-scenario').forEach(el => el.classList.remove('selected'));
+  const el = document.getElementById('sc-' + id);
+  if (el) el.classList.add('selected');
+  document.getElementById('stress-status-text').textContent = 'Ready to start';
+  document.getElementById('stress-start-btn').disabled = false;
+}
+
+async function startStress() {
+  if (!_selectedScenario || _stressRunning) return;
+
+  const startBtn = document.getElementById('stress-start-btn');
+  const stopBtn  = document.getElementById('stress-stop-btn');
+  startBtn.disabled = true;
+  startBtn.textContent = 'Starting…';
+
+  try {
+    const r = await fetch(API + '/stress/start/' + _selectedScenario, {
+      method: 'POST', headers: {'X-API-Key': apiKey}
+    });
+    const d = await r.json();
+
+    if (d.success) {
+      _stressRunning  = true;
+      _stressStarted  = Date.now();
+      _stressDuration = (d.duration_s || 180) * 1000;
+
+      startBtn.style.display = 'none';
+      stopBtn.style.display  = 'inline-block';
+
+      // Show live indicator
+      const liveEl = document.getElementById('stress-live');
+      if (liveEl) liveEl.classList.add('visible');
+
+      // Show progress bar
+      const prog = document.getElementById('prog-' + _selectedScenario);
+      if (prog) prog.classList.add('visible');
+
+      // Mark demo button as running
+      const demoBtn = document.getElementById('demo-trigger');
+      if (demoBtn) demoBtn.classList.add('running');
+      if (demoBtn) demoBtn.textContent = '⬛ Stop demo';
+
+      // Update progress
+      _stressInterval = setInterval(updateStressProgress, 1000);
+
+      document.getElementById('stress-status-text').textContent = 'Running — watch CVIS predictions…';
+
+      // Notify ARIA
+      appendMsg && appendMsg('ai', `🧪 Stress test started — ${d.label}. Watch for a prediction to appear in the next 1-3 minutes. CPU and memory will climb deliberately.`);
+
+    } else {
+      startBtn.disabled = false;
+      startBtn.textContent = 'Start scenario';
+      document.getElementById('stress-status-text').textContent = d.error || 'Failed to start';
+    }
+  } catch(e) {
+    startBtn.disabled = false;
+    startBtn.textContent = 'Start scenario';
+    document.getElementById('stress-status-text').textContent = 'Backend offline';
+  }
+}
+
+function updateStressProgress() {
+  if (!_stressRunning || !_stressStarted) return;
+
+  const elapsed   = Date.now() - _stressStarted;
+  const pct       = Math.min(100, (elapsed / _stressDuration) * 100);
+  const remaining = Math.max(0, Math.ceil((_stressDuration - elapsed) / 1000));
+
+  // Update progress bar
+  const fill = document.getElementById('progfill-' + _selectedScenario);
+  if (fill) fill.style.width = pct + '%';
+
+  // Update live metrics
+  const liveMetrics = document.getElementById('stress-live-metrics');
+  if (liveMetrics) {
+    liveMetrics.textContent = `CPU ${(snap.cpu_percent||0).toFixed(0)}% · MEM ${(snap.memory||0).toFixed(0)}% · ${remaining}s remaining`;
+  }
+
+  document.getElementById('stress-status-text').textContent =
+    `Running · ${remaining}s remaining · watch for prediction`;
+
+  // Auto-stop when done
+  if (elapsed >= _stressDuration) {
+    onStressStopped();
+  }
+}
+
+async function stopAllStress() {
+  try {
+    await fetch(API + '/stress/stop', {method: 'POST', headers: {'X-API-Key': apiKey}});
+  } catch {}
+  onStressStopped();
+}
+
+function onStressStopped() {
+  _stressRunning = false;
+  clearInterval(_stressInterval);
+
+  const startBtn = document.getElementById('stress-start-btn');
+  const stopBtn  = document.getElementById('stress-stop-btn');
+  if (startBtn) { startBtn.style.display = 'inline-block'; startBtn.disabled = false; startBtn.textContent = 'Start scenario'; }
+  if (stopBtn)  stopBtn.style.display = 'none';
+
+  const liveEl = document.getElementById('stress-live');
+  if (liveEl) liveEl.classList.remove('visible');
+
+  // Reset progress bars
+  document.querySelectorAll('.stress-progress').forEach(p => p.classList.remove('visible'));
+  document.querySelectorAll('.stress-progress-fill').forEach(p => p.style.width = '0%');
+
+  // Reset demo button
+  const demoBtn = document.getElementById('demo-trigger');
+  if (demoBtn) { demoBtn.classList.remove('running'); demoBtn.textContent = '🧪 Demo'; }
+
+  document.getElementById('stress-status-text').textContent = 'Stopped — metrics will recover shortly';
+
+  appendMsg && appendMsg('ai', 'Stress test stopped. Metrics will return to baseline in 1-2 minutes. Check if a prediction was triggered.');
+}
+
+async function pollStressStatus() {
+  try {
+    const status = await fetch_(API + '/stress/status');
+    if (status.running && !_stressRunning) {
+      // Something is running externally
+      _stressRunning = true;
+    } else if (!status.running && _stressRunning) {
+      onStressStopped();
+    }
+  } catch {}
+}
+
+// Override demo button click when running
+document.getElementById('demo-trigger')?.addEventListener('click', function() {
+  if (_stressRunning) { stopAllStress(); return; }
+  openStressPanel();
+});
+</script>
