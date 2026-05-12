@@ -1,0 +1,310 @@
+<!-- ═══════════════════════════════════════════════════════
+     CVIS Simple Mode — ARIA Panel + Onboarding Indicator
+     Inject before </body> in frontend/index.html
+     ═══════════════════════════════════════════════════════ -->
+<style>
+/* ── ARIA slide-in ── */
+#sm-aria-panel{position:fixed;top:0;right:-420px;width:420px;height:100vh;background:var(--surface);border-left:1px solid var(--border);z-index:1500;display:flex;flex-direction:column;transition:right .3s cubic-bezier(.4,0,.2,1);box-shadow:-8px 0 32px rgba(0,0,0,.4)}
+#sm-aria-panel.open{right:0}
+#sm-aria-head{padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-shrink:0}
+#sm-aria-close{margin-left:auto;background:none;border:none;color:var(--muted);cursor:pointer;font-size:18px;line-height:1;padding:4px}
+#sm-aria-close:hover{color:var(--text)}
+#sm-aria-msgs{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px}
+#sm-aria-msgs::-webkit-scrollbar{width:3px}
+#sm-aria-msgs::-webkit-scrollbar-thumb{background:var(--border)}
+#sm-aria-sugg{display:flex;flex-wrap:wrap;gap:5px;padding:10px 12px;border-top:1px solid var(--border)}
+#sm-aria-input-area{padding:12px;border-top:1px solid var(--border);flex-shrink:0}
+#sm-aria-form{display:flex;gap:8px}
+#sm-aria-in{flex:1;background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--sans);font-size:13px;padding:8px 12px;outline:none;transition:border-color .2s}
+#sm-aria-in:focus{border-color:var(--accent)}
+#sm-aria-send{background:var(--accent);border:none;border-radius:6px;color:#fff;cursor:pointer;padding:0 14px;font-size:13px;font-weight:600;font-family:var(--sans)}
+#sm-aria-send:disabled{opacity:.35;cursor:not-allowed}
+#sm-aria-overlay{display:none;position:fixed;inset:0;z-index:1400;background:rgba(0,0,0,.3)}
+#sm-aria-overlay.open{display:block}
+
+/* ── Onboarding indicator ── */
+#sm-onboarding{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px 20px;margin-bottom:0;display:none}
+#sm-onboarding.visible{display:block}
+.sm-ob-title{font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:14px;display:flex;align-items:center;justify-content:space-between}
+.sm-ob-steps{display:flex;align-items:center;gap:0;position:relative}
+.sm-ob-steps::before{content:'';position:absolute;top:14px;left:14px;right:14px;height:2px;background:rgba(255,255,255,.06);z-index:0}
+.sm-ob-step{display:flex;flex-direction:column;align-items:center;flex:1;position:relative;z-index:1}
+.sm-ob-dot{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;margin-bottom:6px;border:2px solid;transition:all .4s}
+.sm-ob-dot.done{background:var(--green);border-color:var(--green);color:#000}
+.sm-ob-dot.active{background:rgba(124,106,247,.2);border-color:var(--accent);color:var(--accent);animation:obpulse 1.5s infinite}
+.sm-ob-dot.pending{background:transparent;border-color:rgba(255,255,255,.1);color:var(--muted)}
+@keyframes obpulse{0%,100%{box-shadow:0 0 0 0 rgba(124,106,247,.4)}50%{box-shadow:0 0 0 6px rgba(124,106,247,0)}}
+.sm-ob-label{font-size:10px;color:var(--muted);text-align:center;line-height:1.4;max-width:80px}
+.sm-ob-label.active{color:var(--text)}
+.sm-ob-label.done{color:var(--green)}
+.sm-ob-progress{margin-top:14px;height:3px;border-radius:2px;background:rgba(255,255,255,.06);overflow:hidden}
+.sm-ob-progress-fill{height:100%;border-radius:2px;background:var(--accent);transition:width .8s ease}
+.sm-ob-message{margin-top:10px;font-size:12px;color:#aaa;line-height:1.6;padding:10px 12px;background:rgba(0,0,0,.2);border-radius:6px}
+.sm-ob-dismiss{font-size:10px;color:var(--muted);background:none;border:none;cursor:pointer;font-family:var(--sans);padding:0;text-decoration:underline;text-underline-offset:2px}
+.sm-ob-dismiss:hover{color:var(--text)}
+</style>
+
+<!-- ARIA overlay (closes panel on outside click) -->
+<div id="sm-aria-overlay" onclick="smCloseAria()"></div>
+
+<!-- ARIA slide-in panel -->
+<div id="sm-aria-panel">
+  <div id="sm-aria-head">
+    <div style="width:28px;height:28px;border-radius:6px;background:var(--accent-dim);border:1px solid rgba(124,106,247,.3);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0">◈</div>
+    <div>
+      <div style="font-size:12px;font-weight:600;letter-spacing:.04em">ARIA</div>
+      <div style="font-size:10px;color:var(--muted)">Adaptive Real-time Intelligence</div>
+    </div>
+    <button id="sm-aria-close" onclick="smCloseAria()">✕</button>
+  </div>
+  <div id="sm-aria-msgs">
+    <div class="msg msg-ai">
+      <div class="bubble">I know everything about your machine — its history, current state, and what's coming next.<br><br>Ask me anything in plain English.</div>
+      <div class="mtime">ARIA</div>
+    </div>
+  </div>
+  <div id="sm-aria-sugg">
+    <button class="sugg" onclick="smAriasugg(this)">Will my computer crash?</button>
+    <button class="sugg" onclick="smAriasugg(this)">What's using all my memory?</button>
+    <button class="sugg" onclick="smAriasugg(this)">Is this getting worse?</button>
+    <button class="sugg" onclick="smAriasugg(this)">What should I do right now?</button>
+  </div>
+  <div id="sm-aria-input-area">
+    <div id="sm-aria-form">
+      <input id="sm-aria-in" type="text" placeholder="Ask about your system…">
+      <button id="sm-aria-send" onclick="smAriaSend()">→</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════
+//  ARIA in Simple Mode
+// ═══════════════════════════════════════════════════════
+
+let _smAriaChatHistory = [];
+
+function smOpenAria() {
+  document.getElementById('sm-aria-panel').classList.add('open');
+  document.getElementById('sm-aria-overlay').classList.add('open');
+  document.getElementById('sm-aria-in').focus();
+}
+
+function smCloseAria() {
+  document.getElementById('sm-aria-panel').classList.remove('open');
+  document.getElementById('sm-aria-overlay').classList.remove('open');
+}
+
+function smAriasugg(btn) {
+  document.getElementById('sm-aria-in').value = btn.textContent;
+  smAriaSend();
+}
+
+function smAriaAppendMsg(role, text) {
+  const m = document.getElementById('sm-aria-msgs');
+  const d = document.createElement('div');
+  d.className = `msg msg-${role}`;
+  const t = new Date().toLocaleTimeString('en-US', {hour12: false, hour: '2-digit', minute: '2-digit'});
+  d.innerHTML = `<div class="bubble">${text.replace(/\n/g, '<br>')}</div><div class="mtime">${t}</div>`;
+  m.appendChild(d);
+  m.scrollTop = m.scrollHeight;
+}
+
+function smAriaAppendTyping() {
+  const id = 'smt' + Date.now();
+  const m = document.getElementById('sm-aria-msgs');
+  const d = document.createElement('div');
+  d.className = 'msg msg-ai';
+  d.id = id;
+  d.innerHTML = '<div class="bubble"><span class="tdot"></span><span class="tdot"></span><span class="tdot"></span></div>';
+  m.appendChild(d);
+  m.scrollTop = m.scrollHeight;
+  return id;
+}
+
+async function smAriaSend() {
+  const inp = document.getElementById('sm-aria-in');
+  const msg = inp.value.trim();
+  if (!msg) return;
+  inp.value = '';
+  document.getElementById('sm-aria-send').disabled = true;
+  smAriaAppendMsg('user', msg);
+  const tid = smAriaAppendTyping();
+  _smAriaChatHistory.push({role: 'user', content: msg});
+
+  // Build plain-English context
+  const s = snap;
+  const procs = s.processes?.by_cpu || [];
+  const topProcs = procs.slice(0, 4).map(p => {
+    const n = p.name?.toLowerCase();
+    const friendly = n?.includes('chrome') ? 'Chrome'
+      : n?.includes('code') || n?.includes('vscode') ? 'VS Code'
+      : n?.includes('firefox') ? 'Firefox'
+      : n?.includes('python') ? 'Python'
+      : p.name;
+    return `${friendly} (${(p.cpu||0).toFixed(0)}% CPU, ${(p.mem||0).toFixed(0)}% memory)`;
+  }).join(', ');
+
+  const ctx = `You are ARIA, the friendly AI assistant inside CVIS — a system monitor.
+Speak in plain English. No jargon. Be warm, direct, and helpful. 2-4 sentences max.
+If a failure is predicted, say so immediately and simply.
+Never use technical terms like "ensemble score", "LSTM", "VAE", "anomaly score".
+Instead say "something unusual is happening" or "the system is behaving differently than normal".
+
+RIGHT NOW:
+- Overall: ${s.severity === 'LOW' ? 'Everything looks fine' : s.severity === 'MEDIUM' ? 'Minor issue detected' : s.severity === 'HIGH' ? 'Something needs attention' : 'Action required immediately'}
+- Processor: ${(s.cpu_percent||0).toFixed(0)}% busy
+- Memory: ${(s.memory||0).toFixed(0)}% full  
+- Storage activity: ${(s.disk_percent||0).toFixed(0)}%
+- Health score: ${s.health_credit_score || '?'}/1000
+- Status: ${s.reason || 'System stable'}
+- Running apps: ${topProcs || 'unknown'}
+${s.active_prediction ? `- WARNING: ${s.active_prediction.type} failure predicted in ${Math.ceil(s.active_prediction.eta_min||0)} minutes — ${s.active_prediction.message}` : '- No failures predicted right now'}
+${forecast ? `- Next hour: ${forecast.summary}` : ''}
+${dnaData ? `- Machine has learned ${dnaData.patterns} failure patterns, prevented ${dnaData.prevented} failures` : ''}`;
+
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 300,
+        system: ctx,
+        messages: _smAriaChatHistory,
+      })
+    });
+    if (!res.ok) throw new Error();
+    const d = await res.json();
+    const reply = d.content[0].text;
+    _smAriaChatHistory.push({role: 'assistant', content: reply});
+    if (_smAriaChatHistory.length > 20) _smAriaChatHistory = _smAriaChatHistory.slice(-20);
+    document.getElementById(tid)?.remove();
+    smAriaAppendMsg('ai', reply);
+  } catch {
+    document.getElementById(tid)?.remove();
+    // Plain English fallback
+    const s2 = snap;
+    const pred = s2.active_prediction;
+    const lq = msg.toLowerCase();
+    let fb = '';
+    if (pred && (lq.includes('crash') || lq.includes('will') || lq.includes('fail')))
+      fb = `Yes — ${pred.type === 'OOM' ? 'your machine is going to run out of memory' : pred.message} in about ${Math.ceil(pred.eta_min||0)} minutes. ${pred.action || ''}`;
+    else if (lq.includes('memory') || lq.includes('ram'))
+      fb = `Memory is at ${(s2.memory||0).toFixed(0)}%. ${s2.memory > 75 ? 'That\'s getting high — consider closing some unused apps or browser tabs.' : 'That\'s completely normal — nothing to worry about.'}`;
+    else if (lq.includes('cpu') || lq.includes('processor') || lq.includes('slow'))
+      fb = `Your processor is at ${(s2.cpu_percent||0).toFixed(0)}%. ${s2.cpu_percent > 70 ? 'Something is keeping it very busy right now.' : 'That\'s normal for what you\'re doing.'}`;
+    else if (lq.includes('worse') || lq.includes('trend'))
+      fb = forecast?.summary || `Health score is ${s2.health_credit_score || '?'}/1000. ${s2.severity === 'LOW' ? 'Things look stable.' : 'Worth keeping an eye on.'}`;
+    else if (lq.includes('do') || lq.includes('action') || lq.includes('fix'))
+      fb = s2.actions?.length ? s2.actions[0] : 'Everything looks fine — no action needed right now.';
+    else
+      fb = `Health score: ${s2.health_credit_score || '?'}/1000. ${s2.reason || 'System is running normally.'}`;
+    smAriaAppendMsg('ai', fb);
+    _smAriaChatHistory.push({role: 'assistant', content: fb});
+  }
+  document.getElementById('sm-aria-send').disabled = false;
+}
+
+document.getElementById('sm-aria-in')?.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); smAriaSend(); }
+});
+
+// Override smOpenAria from simple_mode.html
+window.smOpenAria = smOpenAria;
+
+// ═══════════════════════════════════════════════════════
+//  Onboarding Indicator
+// ═══════════════════════════════════════════════════════
+
+const SM_OB_KEY = 'cvis_ob_dismissed';
+
+const OB_STEPS = [
+  { label: 'Collecting data',    message: 'CVIS is gathering your first metrics. This takes about 30 seconds.' },
+  { label: 'ML models warming',  message: 'The AI models are learning what normal looks like on your machine. This takes a few minutes.' },
+  { label: 'Baseline learned',   message: 'CVIS now knows your machine\'s normal behaviour. Predictions will start appearing soon.' },
+  { label: 'First prediction',   message: 'CVIS is ready. It will now warn you before failures happen — typically 10-30 minutes in advance.' },
+  { label: 'Learning patterns',  message: 'CVIS is building failure patterns unique to your machine. The longer it runs, the smarter it gets.' },
+];
+
+function smGetOnboardingStep(s) {
+  const steps_total = (s.steps_lstm || 0) + (s.steps_vae || 0);
+  const fitted = s.model_fitted;
+  const patterns = dnaData?.patterns || 0;
+  const prevented = dnaData?.prevented || 0;
+
+  if (steps_total === 0)           return 0;
+  if (!fitted && steps_total < 100) return 1;
+  if (!fitted)                      return 2;
+  if (fitted && prevented === 0)    return 3;
+  return 4;
+}
+
+function smRenderOnboarding() {
+  if (localStorage.getItem(SM_OB_KEY) === 'true') return;
+
+  const s = snap;
+  const step = smGetOnboardingStep(s);
+
+  // Hide onboarding once fully established (step 4 + patterns > 2)
+  if (step === 4 && (dnaData?.patterns || 0) > 2) {
+    const el = document.getElementById('sm-onboarding');
+    if (el) el.classList.remove('visible');
+    return;
+  }
+
+  const el = document.getElementById('sm-onboarding');
+  if (!el) return;
+  el.classList.add('visible');
+
+  const progress = Math.round((step / (OB_STEPS.length - 1)) * 100);
+
+  el.innerHTML = `
+    <div class="sm-ob-title">
+      <span>CVIS is getting to know your machine</span>
+      <button class="sm-ob-dismiss" onclick="smDismissOnboarding()">Dismiss</button>
+    </div>
+    <div class="sm-ob-steps">
+      ${OB_STEPS.map((st, i) => {
+        const cls = i < step ? 'done' : i === step ? 'active' : 'pending';
+        const icon = i < step ? '✓' : i === step ? '●' : String(i + 1);
+        return `<div class="sm-ob-step">
+          <div class="sm-ob-dot ${cls}">${icon}</div>
+          <div class="sm-ob-label ${cls}">${st.label}</div>
+        </div>`;
+      }).join('')}
+    </div>
+    <div class="sm-ob-progress">
+      <div class="sm-ob-progress-fill" style="width:${progress}%"></div>
+    </div>
+    <div class="sm-ob-message">${OB_STEPS[step].message}</div>
+  `;
+}
+
+function smDismissOnboarding() {
+  localStorage.setItem(SM_OB_KEY, 'true');
+  const el = document.getElementById('sm-onboarding');
+  if (el) el.classList.remove('visible');
+}
+
+// Inject onboarding card into simple mode body after hero
+(function smInjectOnboarding() {
+  const body = document.getElementById('sm-body');
+  if (!body) return;
+  const hero = document.getElementById('sm-hero');
+  const ob = document.createElement('div');
+  ob.id = 'sm-onboarding';
+  if (hero && hero.nextSibling) {
+    body.insertBefore(ob, hero.nextSibling);
+  } else if (hero) {
+    body.appendChild(ob);
+  }
+})();
+
+// Hook into render cycle
+const _smOrigRenderAll = window.smRenderAll;
+window.smRenderAll = function() {
+  if (_smOrigRenderAll) _smOrigRenderAll();
+  smRenderOnboarding();
+};
+</script>
