@@ -1,5 +1,5 @@
 """
-CVIS v9 Backend — FastAPI
+Synapse Backend — FastAPI
 PyTorch LSTM + β-VAE + sklearn IF + Versioning + Alerts + Auth + Redis
 
 Run (dev):  uvicorn backend.main:app --reload
@@ -345,16 +345,16 @@ async def lifespan(app: FastAPI):
             await asyncio.sleep(5)
 
     asyncio.create_task(_alert_loop())
-    log.info("CVIS v9 started — SQLite at %s", os.environ.get("DB_PATH", "cvis.db"))
+    log.info("Synapse started — SQLite at %s", os.environ.get("DB_PATH", "cvis.db"))
     yield
     await close_db()
-    log.info("CVIS v9 shutdown — DB closed")
+    log.info("Synapse shutdown — DB closed")
 
 
 app = FastAPI(
-    title="CVIS v9 AIOps Backend",
-    version="9.0.0",
-    description="PyTorch LSTM + beta-VAE + sklearn IF · Versioning · Alerts · Auth · Redis",
+    title="Synapse AI Backend",
+    version="1.0.6",
+    description="Synapse — PyTorch LSTM + beta-VAE + sklearn IF · Versioning · Alerts · Auth · Redis",
     lifespan=lifespan,
     docs_url="/docs" if os.environ.get("ENV") != "prod" else None,
     redoc_url=None,

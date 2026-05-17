@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CVIS · Cognitive AIOps</title>
+<title>Synapse · AI System Monitor</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap');
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -151,7 +151,7 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:1
 <div id="app">
 
 <header id="topbar">
-  <div class="logo">CVIS <span>/ Cognitive</span></div>
+  <div class="logo">Synapse <span>/ AI</span></div>
   <div class="pulse" id="live-dot"></div>
   <div id="conn-warn">Demo mode — backend offline</div>
   <div id="tb-badge" class="tb-badge" style="color:var(--green);border-color:rgba(52,211,153,.3);background:rgba(52,211,153,.07)">OPTIMAL</div>
@@ -349,14 +349,14 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:1
   <div id="ch-head">
     <div style="width:28px;height:28px;border-radius:6px;background:var(--accent-dim);border:1px solid rgba(124,106,247,.3);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0">◈</div>
     <div>
-      <div style="font-size:12px;font-weight:600;letter-spacing:.04em">Cognitive Assistant</div>
+      <div style="font-size:12px;font-weight:600;letter-spacing:.04em">ARIA — Synapse Intelligence</div>
       <div style="font-size:10px;color:var(--muted)">Predicts · Explains · Acts · Claude</div>
     </div>
   </div>
   <div id="ch-msgs">
     <div class="msg msg-ai">
-      <div class="bubble">I know your machine's failure history, current trends, and what's predicted to happen next.<br><br>Ask me anything — I reason across past, present, and future.</div>
-      <div class="mtime">System</div>
+      <div class="bubble">I'm monitoring this machine in real time. I know its failure history, current trends, and what's predicted next.<br><br>Ask me anything — I reason across past, present, and future.</div>
+      <div class="mtime">Synapse · ARIA</div>
     </div>
   </div>
   <div id="ch-input-area">
@@ -781,7 +781,7 @@ async function sendChat(){
   inp.value='';$('ch-send').disabled=true;
   appendMsg('user',msg);const tid=appendTyping();chatHistory.push({role:'user',content:msg});
   try{
-    const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:500,system:`You are the cognitive intelligence layer of CVIS — a system monitor that predicts failures before they happen. You have live metrics, ML signals, active failure predictions, 60-minute forecasts, and this machine's learned failure history.\n\nStyle:\n- Lead with the most important thing (prediction > problem > normal)\n- Connect metrics → causes → predictions — show the chain\n- Use actual numbers. Be direct: 2-4 sentences.\n- If a failure is predicted, make that your first sentence.\n- Speak like a knowledgeable friend.\n\n${buildCtx()}`,messages:chatHistory})});
+    const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:500,system:`You are the cognitive intelligence layer of Synapse — a system monitor that predicts failures before they happen. You have live metrics, ML signals, active failure predictions, 60-minute forecasts, and this machine's learned failure history.\n\nStyle:\n- Lead with the most important thing (prediction > problem > normal)\n- Connect metrics → causes → predictions — show the chain\n- Use actual numbers. Be direct: 2-4 sentences.\n- If a failure is predicted, make that your first sentence.\n- Speak like a knowledgeable friend.\n\n${buildCtx()}`,messages:chatHistory})});
     if(!res.ok)throw new Error();const d=await res.json(),reply=d.content[0].text;
     chatHistory.push({role:'assistant',content:reply});if(chatHistory.length>20)chatHistory=chatHistory.slice(-20);
     removeTyping(tid);appendMsg('ai',reply);
@@ -1522,12 +1522,13 @@ function showSettingsMsg(panel, text, ok, spinner) {
       <div class="sm-stat">
         <div class="sm-stat-lbl">Failures prevented</div>
         <div class="sm-stat-val" id="sm-prevented" style="color:var(--green)">—</div>
-        <div class="sm-stat-sub" id="sm-prevented-sub">all time</div>
+        <div class="sm-stat-sub" id="sm-prevented-sub">Synapse is learning — predictions improve daily</div>
       </div>
       <div class="sm-stat">
         <div class="sm-stat-lbl">Machine health score</div>
         <div class="sm-stat-val" id="sm-health-score" style="color:var(--accent)">—</div>
         <div class="sm-stat-sub" id="sm-health-grade"></div>
+      <div style="font-size:10px;color:var(--muted);margin-top:6px;line-height:1.5">Score improves as Synapse learns your machine's patterns · Full accuracy after 7 days</div>
       </div>
     </div>
 
@@ -1546,7 +1547,7 @@ function showSettingsMsg(panel, text, ok, spinner) {
 <!-- Fix confirmation modal -->
 <div id="sm-fix-modal" onclick="if(event.target===this)closeFixModal()">
   <div id="sm-fix-box">
-    <div id="sm-fix-title">Here's what CVIS will do</div>
+    <div id="sm-fix-title">Here's what Synapse will do</div>
     <div id="sm-fix-subtitle">Review the actions below before confirming. Nothing will happen until you click Apply fix.</div>
     <div id="sm-fix-actions-list"></div>
     <div class="sm-fix-safe-note" id="sm-fix-safe-note">✓ Protected: your browser, code editor, and recently opened apps will not be touched.</div>
@@ -1615,6 +1616,11 @@ function setMode(mode) {
     tog.innerHTML = '<button class="sm-mode-btn expert-mode-btn" onclick="setMode(\'simple\')">Simple</button><button class="sm-mode-btn expert-mode-btn active" onclick="setMode(\'expert\')">Expert</button>';
     tbTime.parentNode.insertBefore(tog, tbTime);
   }
+  // Hide welcome if seen
+  if (localStorage.getItem('synapse_welcomed')) {
+    const wb = document.getElementById('welcome-banner');
+    if (wb) wb.style.display = 'none';
+  }
   // Apply saved mode
   if (_smMode === 'simple') {
     const sm = document.getElementById('simple-mode');
@@ -1642,7 +1648,7 @@ function smMemReading(v, trend) {
 }
 
 function smDiskReading(v) {
-  if (v > 85) return `Storage is being read or written very heavily at ${v.toFixed(0)}%. This can slow the whole system.`;
+  if (v > 85) return `Storage is active at ${v.toFixed(0)}%. This can slow the whole system.`;
   if (v > 60) return `Storage is fairly busy at ${v.toFixed(0)}% — a large file operation may be running.`;
   if (v > 30) return `Moderate storage activity at ${v.toFixed(0)}% — normal background operations.`;
   return `Storage is quiet — no heavy reading or writing happening right now.`;
@@ -1802,7 +1808,7 @@ function smRenderAll() {
   if (dnaData && dnaData.prevented > 0) {
     watchItems.push({
       color: 'var(--accent)',
-      text: `CVIS has prevented ${dnaData.prevented} failure${dnaData.prevented > 1 ? 's' : ''} on this machine. It continues learning your system's patterns.`,
+      text: `Synapse has prevented ${dnaData.prevented} failure${dnaData.prevented > 1 ? 's' : ''} on this machine. It continues learning your system's patterns.`,
       action: null,
     });
   }
@@ -1874,7 +1880,7 @@ function _getFixTargets() {
       targets.push({
         pid: p.pid, name: p.name, action: 'nice',
         display: SM_PROCESS_NAMES[p.name?.toLowerCase()] || p.name,
-        desc: `Using ${p.cpu?.toFixed(1)}% CPU. CVIS will lower its priority so other apps run smoothly — it won't be killed.`,
+        desc: `Using ${p.cpu?.toFixed(1)}% CPU. Synapse will lower its priority so other apps run smoothly — it won't be killed.`,
         color: 'var(--yellow)', safe: true,
       });
     });
@@ -2117,8 +2123,8 @@ window.render = function() {
   </div>
   <div id="sm-aria-msgs">
     <div class="msg msg-ai">
-      <div class="bubble">I know everything about your machine — its history, current state, and what's coming next.<br><br>Ask me anything in plain English.</div>
-      <div class="mtime">ARIA</div>
+      <div class="bubble">I'm watching this machine right now and I'll warn you before anything goes wrong.<br><br>Ask me anything — "Will my computer crash?", "What's using all my memory?", "Should I be worried?"</div>
+      <div class="mtime">ARIA · Synapse Intelligence</div>
     </div>
   </div>
   <div id="sm-aria-sugg">
@@ -2203,7 +2209,7 @@ async function smAriaSend() {
     return `${friendly} (${(p.cpu||0).toFixed(0)}% CPU, ${(p.mem||0).toFixed(0)}% memory)`;
   }).join(', ');
 
-  const ctx = `You are ARIA, the friendly AI assistant inside CVIS — a system monitor.
+  const ctx = `You are ARIA, the friendly AI assistant inside Synapse — a system monitor.
 Speak in plain English. No jargon. Be warm, direct, and helpful. 2-4 sentences max.
 If a failure is predicted, say so immediately and simply.
 Never use technical terms like "ensemble score", "LSTM", "VAE", "anomaly score".
@@ -2278,11 +2284,11 @@ window.smOpenAria = smOpenAria;
 const SM_OB_KEY = 'cvis_ob_dismissed';
 
 const OB_STEPS = [
-  { label: 'Collecting data',    message: 'CVIS is gathering your first metrics. This takes about 30 seconds.' },
+  { label: 'Collecting data',    message: 'Synapse is gathering your first metrics. This takes about 30 seconds.' },
   { label: 'ML models warming',  message: 'The AI models are learning what normal looks like on your machine. This takes a few minutes.' },
   { label: 'Baseline learned',   message: 'CVIS now knows your machine\'s normal behaviour. Predictions will start appearing soon.' },
-  { label: 'First prediction',   message: 'CVIS is ready. It will now warn you before failures happen — typically 10-30 minutes in advance.' },
-  { label: 'Learning patterns',  message: 'CVIS is building failure patterns unique to your machine. The longer it runs, the smarter it gets.' },
+  { label: 'First prediction',   message: 'Synapse is ready. It will now warn you before failures happen — typically 10-30 minutes in advance.' },
+  { label: 'Learning patterns',  message: 'Synapse is building failure patterns unique to your machine. The longer it runs, the smarter it gets.' },
 ];
 
 function smGetOnboardingStep(s) {
@@ -2319,7 +2325,7 @@ function smRenderOnboarding() {
 
   el.innerHTML = `
     <div class="sm-ob-title">
-      <span>CVIS is getting to know your machine</span>
+      <span>Synapse is getting to know your machine</span>
       <button class="sm-ob-dismiss" onclick="smDismissOnboarding()">Dismiss</button>
     </div>
     <div class="sm-ob-steps">
@@ -2368,7 +2374,7 @@ window.smRenderAll = function() {
 </script>
 
 <!-- ═══════════════════════════════════════════════════════
-     CVIS — The Save Moment
+     Synapse — The Save Moment
      Shows when a real failure was prevented.
      No fake data — only fires on real resolved predictions.
      Inject before </body> in frontend/index.html
@@ -2437,7 +2443,7 @@ window.smRenderAll = function() {
     <div id="save-header">
       <div id="save-icon">🛡️</div>
       <div id="save-headline">Your machine was just saved</div>
-      <div id="save-subheadline">CVIS detected a failure before it happened and took action.</div>
+      <div id="save-subheadline">Synapse detected a failure before it happened and took action.</div>
     </div>
     <div id="save-body">
       <div>
@@ -2558,7 +2564,7 @@ function buildAndShowSaveMoment(predId, before, after) {
     OOM:      `Memory was climbing steadily and reached ${before.memory.toFixed(0)}%. CVIS predicted an out-of-memory crash ${minsBefore} minutes in advance and flagged it for action. Memory has since recovered to ${after.memory.toFixed(0)}%.`,
     CRASH:    `CPU pressure reached ${before.cpu.toFixed(0)}% and a process crash was predicted ${minsBefore} minutes out. CVIS identified the cause and the issue has resolved — CPU is now at ${after.cpu.toFixed(0)}%.`,
     THERMAL:  `CPU temperature was rising unsustainably at ${before.cpu.toFixed(0)}%. CVIS predicted thermal throttling ${minsBefore} minutes ahead. The machine has cooled — CPU is now at ${after.cpu.toFixed(0)}%.`,
-    DISK_FULL:`Storage activity hit ${before.disk.toFixed(0)}% and was heading toward saturation. CVIS caught it ${minsBefore} minutes before it became critical. Disk activity has returned to normal.`,
+    DISK_FULL:`Storage activity hit ${before.disk.toFixed(0)}% and was heading toward saturation. Synapse caught it ${minsBefore} minutes before it became critical. Disk activity has returned to normal.`,
   };
   document.getElementById('save-what-happened').textContent =
     whatMap[type] || before.message || 'A failure was predicted and the system recovered before it occurred.';
@@ -2571,7 +2577,7 @@ function buildAndShowSaveMoment(predId, before, after) {
     {
       dot: 'warning', icon: '!',
       time: warningTimeStr,
-      event: 'CVIS detected the warning signs',
+      event: 'Synapse detected the warning signs',
       detail: _buildWarningDetail(type, before),
     },
     {
@@ -2792,8 +2798,8 @@ window.checkPredictionExpiry = function() {
 <div id="stress-panel" onclick="if(event.target===this)closeStressPanel()">
   <div id="stress-box">
     <div id="stress-header">
-      <h2>🧪 Demo stress test</h2>
-      <p>Deliberately stress your machine to trigger real CVIS predictions. Safe — automatic ceiling on all metrics. Use this to demonstrate CVIS catching a failure live.</p>
+      <h2>🧪 Synapse Demo</h2>
+      <p>Deliberately stress the machine to trigger real Synapse predictions. Safe — automatic ceiling on all metrics. Use this to demonstrate CVIS catching a failure live.</p>
     </div>
 
     <div id="stress-scenarios">

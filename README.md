@@ -1,4 +1,4 @@
-# CVIS — Cognitive AIOps Engine
+# Synapse — Cognitive AIOps Engine
 
 > Note: Live demo runs on Render free tier — disk metric shows 100% due to 
 > container filesystem limits. Local/Docker installs show real disk usage.
@@ -20,7 +20,7 @@ Open http://localhost:8000
 ## Architecture
 
 ```
-Browser (CVIS Dashboard)
+Browser (Synapse Dashboard)
   │  JWT / API-key auth on every request
   ▼
 nginx :443  (TLS, rate-limit, SPA)
@@ -107,7 +107,7 @@ Every endpoint requires a credential. Three ways to authenticate:
 
 ```bash
 # 1. API key header (machine-to-machine, CI/CD)
-curl -H "X-API-Key: $CVIS_API_KEY" http://localhost:8000/ml/status
+curl -H "X-API-Key: $Synapse_API_KEY" http://localhost:8000/ml/status
 
 # 2. JWT — login, then use Bearer token (browser sessions)
 TOKEN=$(curl -s -X POST http://localhost:8000/auth/login \
@@ -132,7 +132,7 @@ NEW=$(curl -s -X POST http://localhost:8000/auth/refresh \
 
 ```bash
 # Create a read-only key for your monitoring service
-curl -X POST -H "X-API-Key: $CVIS_API_KEY" http://localhost:8000/auth/api-keys \
+curl -X POST -H "X-API-Key: $Synapse_API_KEY" http://localhost:8000/auth/api-keys \
   -H "Content-Type: application/json" \
   -d '{"name":"grafana-read","scope":"read"}'
 ```
@@ -159,21 +159,21 @@ All three warm up within ~60 ticks (~1 minute at default poll rate).
 
 ```bash
 # Save the current model weights manually
-curl -X POST -H "X-API-Key: $CVIS_API_KEY" http://localhost:8000/models/save \
+curl -X POST -H "X-API-Key: $Synapse_API_KEY" http://localhost:8000/models/save \
   -H "Content-Type: application/json" \
   -d '{"description":"pre-deploy snapshot","tag":"stable"}'
 
 # List all saved versions
-curl -H "X-API-Key: $CVIS_API_KEY" http://localhost:8000/models/versions
+curl -H "X-API-Key: $Synapse_API_KEY" http://localhost:8000/models/versions
 
 # Roll back to the previous version
-curl -X POST -H "X-API-Key: $CVIS_API_KEY" http://localhost:8000/models/rollback/ensemble
+curl -X POST -H "X-API-Key: $Synapse_API_KEY" http://localhost:8000/models/rollback/ensemble
 
 # Restore the best-scoring version ever recorded
-curl -X POST -H "X-API-Key: $CVIS_API_KEY" http://localhost:8000/models/rollback_best/ensemble
+curl -X POST -H "X-API-Key: $Synapse_API_KEY" http://localhost:8000/models/rollback_best/ensemble
 
 # Activate a specific version by ID
-curl -X POST -H "X-API-Key: $CVIS_API_KEY" \
+curl -X POST -H "X-API-Key: $Synapse_API_KEY" \
   http://localhost:8000/models/activate/ensemble/ensemble_1704067200_abc123
 ```
 
@@ -185,28 +185,28 @@ Models auto-save every 5 minutes when training steps > 50. Up to 10 versions are
 
 ```bash
 # Add a Slack webhook
-curl -X POST -H "X-API-Key: $CVIS_API_KEY" http://localhost:8000/alerts/webhooks \
+curl -X POST -H "X-API-Key: $Synapse_API_KEY" http://localhost:8000/alerts/webhooks \
   -H "Content-Type: application/json" \
   -d '{"url":"https://hooks.slack.com/services/T.../B.../xxx","name":"ops-slack"}'
 
 # Test it
-curl -X POST -H "X-API-Key: $CVIS_API_KEY" http://localhost:8000/alerts/webhooks/{id}/test
+curl -X POST -H "X-API-Key: $Synapse_API_KEY" http://localhost:8000/alerts/webhooks/{id}/test
 
 # Configure email (Gmail example)
-curl -X PUT -H "X-API-Key: $CVIS_API_KEY" http://localhost:8000/alerts/email \
+curl -X PUT -H "X-API-Key: $Synapse_API_KEY" http://localhost:8000/alerts/email \
   -H "Content-Type: application/json" \
   -d '{"host":"smtp.gmail.com","port":587,"username":"you@gmail.com",
        "password":"app-password","from_addr":"you@gmail.com",
        "to_addrs":["team@yourco.com"]}'
 
 # Add a custom rule
-curl -X POST -H "X-API-Key: $CVIS_API_KEY" http://localhost:8000/alerts/rules \
+curl -X POST -H "X-API-Key: $Synapse_API_KEY" http://localhost:8000/alerts/rules \
   -H "Content-Type: application/json" \
   -d '{"name":"Ensemble spike","metric":"ensemble","operator":"gt",
        "threshold":0.75,"severity":"CRITICAL","cooldown_s":120}'
 
 # View recent alerts
-curl -H "X-API-Key: $CVIS_API_KEY" "http://localhost:8000/alerts/history?limit=20"
+curl -H "X-API-Key: $Synapse_API_KEY" "http://localhost:8000/alerts/history?limit=20"
 ```
 
 Default rules: CPU >90% (CRITICAL), CPU >75% (WARNING), MEM >90%, MEM >75%, Disk >85%, Anomaly >0.8, Health <60%.
@@ -294,17 +294,17 @@ Secrets are read in priority order: Docker Swarm secret file (`/run/secrets/`) �
 pip install locust
 
 # Smoke test (30s, 10 users)
-CVIS_API_KEY=$CVIS_API_KEY \
+Synapse_API_KEY=$Synapse_API_KEY \
   locust -f scripts/load_test.py --host http://localhost:8000 \
   --headless -u 10 -r 2 -t 30s --only-summary
 
 # Ramp test (5 min, 50 concurrent users)
-CVIS_API_KEY=$CVIS_API_KEY \
+Synapse_API_KEY=$Synapse_API_KEY \
   locust -f scripts/load_test.py --host http://localhost:8000 \
   --headless -u 50 -r 5 -t 5m --only-summary
 
 # Interactive UI
-CVIS_API_KEY=$CVIS_API_KEY \
+Synapse_API_KEY=$Synapse_API_KEY \
   locust -f scripts/load_test.py --host http://localhost:8000
 # Open http://localhost:8089
 ```
@@ -326,7 +326,7 @@ GitHub Actions pipeline (`.github/workflows/ci.yml`):
 | `deploy-staging` | `develop` branch | SSH deploy + smoke test |
 | `deploy-production` | GitHub Release tag | SSH deploy + Slack notification |
 
-Required GitHub secrets: `JWT_SECRET`, `CVIS_API_KEY`, `CVIS_ADMIN_PASS`, `STAGING_HOST`, `STAGING_SSH_KEY`, `PROD_HOST`, `PROD_SSH_KEY`, `SLACK_WEBHOOK_URL`.
+Required GitHub secrets: `JWT_SECRET`, `Synapse_API_KEY`, `Synapse_ADMIN_PASS`, `STAGING_HOST`, `STAGING_SSH_KEY`, `PROD_HOST`, `PROD_SSH_KEY`, `SLACK_WEBHOOK_URL`.
 
 ---
 
@@ -383,7 +383,7 @@ cvis_v9/
 │   ├── grafana-dashboard.yml
 │   └── dashboards/cvis-main.json  9-panel pre-built dashboard
 ├── scripts/
-│   ├── bootstrap.sh       Fresh EC2 → running CVIS in one command
+│   ├── bootstrap.sh       Fresh EC2 → running Synapse in one command
 │   ├── https-setup.sh     Cloudflare or Let's Encrypt TLS
 │   ├── secrets-setup.sh   Generate, rotate, push to Docker secrets
 │   ├── backup.sh          Snapshot + restore + S3 offload
@@ -395,7 +395,7 @@ cvis_v9/
 │   ├── test_suite.py      Auth, ML, alert engine, API endpoints
 │   └── test_refresh_redis_load.py  Token refresh, Redis, concurrency
 └── frontend/
-    └── index.html         CVIS dashboard SPA (no build step)
+    └── index.html         Synapse dashboard SPA (no build step)
 ```
 
 ---

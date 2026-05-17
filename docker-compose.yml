@@ -12,8 +12,8 @@ services:
       context: .
       dockerfile: Dockerfile
       target: runtime
-    image: cvis-backend:9.0
-    container_name: cvis-backend
+    image: synapse-backend:9.0
+    container_name: synapse-backend
     restart: unless-stopped
     env_file:
       - .env
