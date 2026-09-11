@@ -66,7 +66,11 @@ async def is_healthy() -> bool:
 #    ttl: cooldown_seconds
 # ─────────────────────────────────────────────────────────
 
-async def alert_check_and_set(rule_id: str, cooldown_s: int) -> bool:
+async def alert_check_and_set(
+    rule_id: str,
+    cooldown_s: int,
+    device_id: str | None = None,
+) -> bool:
     """
     Returns True if this alert should fire (not in cooldown).
     Atomically sets the key so concurrent workers agree.
@@ -76,7 +80,14 @@ async def alert_check_and_set(rule_id: str, cooldown_s: int) -> bool:
     if not c:
         return True  # no Redis → fire (in-memory cooldown still applies)
 
-    key = f"cvis:alert_cooldown:{rule_id}"
+    # Remote-device alerts get an independent cooldown.
+    # Local backend alerts retain the original rule-level key.
+    cooldown_key = (
+        f"{device_id}:{rule_id}"
+        if device_id
+        else rule_id
+    )
+    key = f"cvis:alert_cooldown:{cooldown_key}"
     try:
         # SET NX EX = set only if key doesn't exist, with TTL
         result = await c.set(key, "1", nx=True, ex=cooldown_s)
@@ -86,12 +97,20 @@ async def alert_check_and_set(rule_id: str, cooldown_s: int) -> bool:
         return True
 
 
-async def alert_clear_cooldown(rule_id: str):
+async def alert_clear_cooldown(
+    rule_id: str,
+    device_id: str | None = None,
+):
     c = await get_client()
     if not c:
         return
     try:
-        await c.delete(f"cvis:alert_cooldown:{rule_id}")
+        cooldown_key = (
+            f"{device_id}:{rule_id}"
+            if device_id
+            else rule_id
+        )
+        await c.delete(f"cvis:alert_cooldown:{cooldown_key}")
     except Exception:
         pass
 

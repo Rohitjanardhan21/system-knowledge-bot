@@ -51,22 +51,24 @@ def collect_metrics():
             "simulated":       True,
         }
 
-    cpu  = psutil.cpu_percent(interval=0.1)
+    cpu  = psutil.cpu_percent(interval=0.5)
     mem  = psutil.virtual_memory().percent
 
     try:
-        io   = psutil.disk_io_counters()
-        disk = min(100, (io.read_bytes + io.write_bytes) / 1e8 * 5) if io else 0.0
+        path = "C:\\" if OS == "Windows" else "/"
+        disk = psutil.disk_usage(path).percent
     except Exception:
-        try:
-            path = "C:\\" if OS == "Windows" else "/"
-            disk = psutil.disk_usage(path).percent
-        except Exception:
-            disk = 0.0
+        disk = 0.0
 
     try:
         net_io = psutil.net_io_counters()
-        net    = min(100, (net_io.bytes_sent + net_io.bytes_recv) / 1e8 * 10)
+        if net_io:
+            net = min(
+                100.0,
+                ((net_io.bytes_sent + net_io.bytes_recv) / 1e6)
+            )
+        else:
+            net = 0.0
     except Exception:
         net = 0.0
 
@@ -81,24 +83,115 @@ def collect_metrics():
         "simulated":       False,
     }
 
+def identify_application(name):
+    """Map a process executable to a stable application identity."""
+    if not name:
+        return "Unknown"
+
+    name = name.lower()
+
+    exact_map = {
+        "chrome": "Chrome",
+        "chromium": "Chromium",
+        "firefox": "Firefox",
+        "msedge": "Microsoft Edge",
+        "edge": "Microsoft Edge",
+        "brave": "Brave",
+        "opera": "Opera",
+        "code": "VS Code",
+        "code-insiders": "VS Code",
+        "python": "Python",
+        "python3": "Python",
+        "java": "Java",
+        "node": "Node.js",
+        "nodejs": "Node.js",
+        "docker": "Docker",
+        "dockerd": "Docker",
+        "redis-server": "Redis",
+        "nginx": "Nginx",
+    }
+
+    if name in exact_map:
+        return exact_map[name]
+
+    if "firefox" in name:
+        return "Firefox"
+    if "chrome" in name:
+        return "Chrome"
+    if "chromium" in name:
+        return "Chromium"
+    if "python" in name:
+        return "Python"
+    if "java" in name:
+        return "Java"
+    if "node" in name:
+        return "Node.js"
+    if "docker" in name:
+        return "Docker"
+
+    return name
+
+
+def categorize_process(name):
+    """Assign a broad process category."""
+    if not name:
+        return "system"
+
+    name = name.lower()
+
+    if any(x in name for x in (
+        "chrome",
+        "chromium",
+        "firefox",
+        "msedge",
+        "edge",
+        "brave",
+        "opera",
+    )):
+        return "browser"
+
+    if any(x in name for x in ("python", "java", "node")):
+        return "runtime"
+
+    if "docker" in name:
+        return "container"
+
+    return "system"
+
+
 def collect_processes():
     """Top processes by CPU — works cross-platform."""
     if not PS_OK:
         return []
+
     procs = []
-    for p in psutil.process_iter(["pid", "name", "cpu_percent", "memory_percent", "status"]):
+
+    for p in psutil.process_iter(
+        ["pid", "name", "cpu_percent", "memory_percent", "status"]
+    ):
         try:
             if p.info["status"] in ("zombie", "dead"):
                 continue
+
+            name = (p.info["name"] or "unknown")[:24]
+
             procs.append({
-                "pid":  p.info["pid"],
-                "name": (p.info["name"] or "unknown")[:24],
-                "cpu":  round(p.info["cpu_percent"] or 0.0, 2),
-                "mem":  round(p.info["memory_percent"] or 0.0, 2),
+                "pid": p.info["pid"],
+                "name": name,
+                "cpu": round(p.info["cpu_percent"] or 0.0, 2),
+                "mem": round(p.info["memory_percent"] or 0.0, 2),
+                "application": identify_application(name),
+                "category": categorize_process(name),
             })
+
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             pass
-    return sorted(procs, key=lambda x: x["cpu"], reverse=True)[:10]
+
+    return sorted(
+        procs,
+        key=lambda x: x["cpu"],
+        reverse=True
+    )[:10]
 
 def push_metrics(server, api_key, device_id, device_name, payload):
     """Send metrics to CVIS server. Uses only stdlib — no requests needed."""
@@ -151,46 +244,74 @@ def main():
 
     while True:
         try:
-            metrics  = collect_metrics()
+            metrics = collect_metrics()
             processes = collect_processes()
 
             import shutil
-    cpu_count   = psutil.cpu_count() if PS_OK else 1
-    ram_gb      = round(psutil.virtual_memory().total / 1e9, 1) if PS_OK else 0
-    disk_gb     = round(psutil.disk_usage("/").total / 1e9, 1) if PS_OK and OS != "Windows" else 0
-    device_type = ("windows-pc" if OS == "Windows" else
-                   "mac" if OS == "Darwin" else
-                   "k8s-node" if shutil.which("kubectl") else
-                   "docker-host" if shutil.which("docker") else
-                   "embedded-linux" if (psutil.cpu_count() or 1) <= 2 and ram_gb <= 4 else
-                   "linux-server")
-    payload = {
-                "device_id":   device_id,
+
+            cpu_count = psutil.cpu_count() if PS_OK else 1
+            ram_gb = (
+                round(psutil.virtual_memory().total / 1e9, 1)
+                if PS_OK else 0
+            )
+
+            if PS_OK:
+                try:
+                    path = "C:\\" if OS == "Windows" else "/"
+                    disk_gb = round(psutil.disk_usage(path).total / 1e9, 1)
+                except Exception:
+                    disk_gb = 0
+            else:
+                disk_gb = 0
+
+            device_type = (
+                "windows-pc" if OS == "Windows" else
+                "mac" if OS == "Darwin" else
+                "k8s-node" if shutil.which("kubectl") else
+                "docker-host" if shutil.which("docker") else
+                "embedded-linux"
+                if (psutil.cpu_count() or 1) <= 2 and ram_gb <= 4
+                else "linux-server"
+            )
+
+            payload = {
+                "device_id": device_id,
                 "device_name": device_name,
-                "os":          OS,
-                "os_version":  platform.release(),
-                "hostname":    socket.gethostname(),
-                "arch":        platform.machine(),
-                "cpu_count":   cpu_count,
-                "ram_gb":      ram_gb,
-                "disk_gb":     disk_gb,
+                "os": OS,
+                "os_version": platform.release(),
+                "hostname": socket.gethostname(),
+                "arch": platform.machine(),
+                "cpu_count": cpu_count,
+                "ram_gb": ram_gb,
+                "disk_gb": disk_gb,
                 "device_type": device_type,
-                "python":      platform.python_version(),
-                "timestamp":   time.time(),
-                "metrics":     metrics,
-                "processes":   processes,
+                "python": platform.python_version(),
+                "timestamp": time.time(),
+                "metrics": metrics,
+                "processes": processes,
             }
 
-            ok = push_metrics(server, args.key, device_id, device_name, payload)
+            ok = push_metrics(
+                server, args.key, device_id, device_name, payload
+            )
 
             if ok:
                 consecutive_failures = 0
-                status = f"cpu={metrics['cpu_percent']}% mem={metrics['memory']}% health={metrics['health_score']}%"
-                print(f"[CVIS] ✓ {time.strftime('%H:%M:%S')} {status}")
+                status = (
+                    f"cpu={metrics['cpu_percent']}% "
+                    f"mem={metrics['memory']}% "
+                    f"health={metrics['health_score']}%"
+                )
+                print(
+                    f"[CVIS] ✓ {time.strftime('%H:%M:%S')} {status}"
+                )
             else:
                 consecutive_failures += 1
                 if consecutive_failures >= 3:
-                    print(f"[CVIS] ✗ Server unreachable — will keep retrying every {args.interval}s")
+                    print(
+                        f"[CVIS] ✗ Server unreachable — "
+                        f"will keep retrying every {args.interval}s"
+                    )
 
         except KeyboardInterrupt:
             print("\n[CVIS] Agent stopped.")

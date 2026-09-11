@@ -26,17 +26,17 @@ class ChatRequest(BaseModel):
 def detect_intent(query: str):
     q = query.lower()
 
-    if any(x in q for x in ["fix", "resolve", "execute", "do it", "run"]):
-        return "execute"
-
-    if any(x in q for x in ["status", "health", "current state"]):
-        return "status"
-
     if q in ["yes", "do it", "execute now", "go ahead"]:
         return "confirm_yes"
 
     if q in ["no", "stop", "cancel"]:
         return "confirm_no"
+
+    if any(x in q for x in ["fix", "resolve", "execute", "do it", "run"]):
+        return "execute"
+
+    if any(x in q for x in ["status", "health", "current state"]):
+        return "status"
 
     return "explain"
 
@@ -55,7 +55,7 @@ def chat_with_system(req: ChatRequest):
 
     query = req.query.strip().lower()
 
-    state = run_intelligence_pipeline()
+    state = run_intelligence_pipeline(allow_execution=False)
 
     decision = state.get("decision_data", {})
     root = state.get("root_cause", {})

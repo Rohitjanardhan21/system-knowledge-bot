@@ -13,7 +13,7 @@ Phase-5 compatible interface.
 
 from pathlib import Path
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 HISTORY_DIR = Path("system_facts/history")
 
@@ -64,7 +64,7 @@ def load_yesterday_snapshot():
     if not HISTORY_DIR.exists():
         return None
 
-    yesterday = datetime.utcnow().date() - timedelta(days=1)
+    yesterday = datetime.now(timezone.utc).date() - timedelta(days=1)
 
     candidates = []
 

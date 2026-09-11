@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 from statistics import mean, stdev
-from datetime import datetime
+from datetime import datetime, timezone
 import math
 
 # ---------------------------------------------------------
@@ -75,7 +75,7 @@ class LearningEngine:
     def update(self, metrics):
 
         entry = {
-            "time": datetime.utcnow().isoformat(),
+            "time": datetime.now(timezone.utc).isoformat(),
             "cpu": self.safe_float(metrics.get("cpu")),
             "memory": self.safe_float(metrics.get("memory")),
             "disk": self.safe_float(metrics.get("disk")),

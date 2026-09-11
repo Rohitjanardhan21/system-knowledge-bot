@@ -38,6 +38,7 @@ services:
       - model_data:/app/model_versions
       - log_data:/app/logs
       - db_data:/app/data
+      - ./system_facts:/app/system_facts
     networks:
       - cvis-internal
     ports:
@@ -88,7 +89,7 @@ services:
       backend:
         condition: service_started
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost/nginx-health"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/nginx-health"]
       interval: 30s
       timeout: 5s
       retries: 5

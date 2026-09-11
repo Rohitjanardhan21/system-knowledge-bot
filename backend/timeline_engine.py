@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 
 TIMELINE_FILE = Path("system_facts/timeline.json")
 
@@ -12,7 +12,7 @@ def log_event(event):
     data = json.loads(TIMELINE_FILE.read_text())
 
     data.append({
-        "time": datetime.utcnow().isoformat(),
+        "time": datetime.now(timezone.utc).isoformat(),
         **event
     })
 

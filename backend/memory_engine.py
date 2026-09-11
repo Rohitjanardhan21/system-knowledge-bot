@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 
 MEMORY_FILE = Path("system_facts/memory.json")
 
@@ -18,7 +18,7 @@ class MemoryEngine:
     def store(self, entry):
         data = json.loads(MEMORY_FILE.read_text())
         data.append({
-            "time": datetime.utcnow().isoformat(),
+            "time": datetime.now(timezone.utc).isoformat(),
             **entry
         })
         MEMORY_FILE.write_text(json.dumps(data, indent=2))

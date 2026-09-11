@@ -57,7 +57,7 @@ _INCIDENT_THRESHOLDS = {
         ("cpu",     85.0, "CPU critically high — thermal throttling active"),
     ],
     "FREEZE": [
-        ("disk",    70.0, "Disk I/O elevated"),
+        ("disk",    70.0, "Disk space utilization elevated"),
         ("disk",    85.0, "Disk usage high — I/O saturation risk"),
         ("cpu",     80.0, "CPU high alongside disk pressure"),
         ("anomaly",  0.4, "ML anomaly score elevated"),

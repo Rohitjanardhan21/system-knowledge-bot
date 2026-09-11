@@ -1,3 +1,5 @@
+
+
 """
 CVIS v9 — db.py
 Lightweight SQLite persistence via aiosqlite.
@@ -40,14 +42,17 @@ except ImportError:
 # ── Schema ────────────────────────────────────────────────
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS alerts (
-    id          TEXT    PRIMARY KEY,
-    rule_id     TEXT    NOT NULL,
-    severity    TEXT    NOT NULL,
-    message     TEXT    NOT NULL,
-    metrics     TEXT,
-    fired_at    REAL    NOT NULL,
-    resolved_at REAL,
-    sent_to     TEXT
+    id                TEXT    PRIMARY KEY,
+    rule_id           TEXT    NOT NULL,
+    severity          TEXT    NOT NULL,
+    message           TEXT    NOT NULL,
+    metrics           TEXT,
+    fired_at          REAL    NOT NULL,
+    resolved_at       REAL,
+    sent_to           TEXT,
+    lifecycle_version INTEGER NOT NULL DEFAULT 1,
+    device_id         TEXT,
+    device_name       TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_alerts_fired_at ON alerts(fired_at DESC);
 CREATE INDEX IF NOT EXISTS idx_alerts_severity  ON alerts(severity);
@@ -100,6 +105,36 @@ async def get_db():
             _conn = await aiosqlite.connect(DB_PATH, check_same_thread=False)
             _conn.row_factory = aiosqlite.Row
             await _conn.executescript(_SCHEMA)
+                       # Backward-compatible schema migration.
+            # Existing alerts keep lifecycle_version=1.
+            async with _conn.execute("PRAGMA table_info(alerts)") as cur:
+                columns = {row["name"] for row in await cur.fetchall()}
+
+            if "lifecycle_version" not in columns:
+                await _conn.execute(
+                    """
+                    ALTER TABLE alerts
+                    ADD COLUMN lifecycle_version INTEGER NOT NULL DEFAULT 1
+                    """
+                )
+                await _conn.commit()
+                log.info("Added alerts.lifecycle_version column")
+
+            # Add device identity columns to existing databases.
+            if "device_id" not in columns:
+                await _conn.execute(
+                    "ALTER TABLE alerts ADD COLUMN device_id TEXT"
+                )
+                log.info("Added alerts.device_id column")
+
+            if "device_name" not in columns:
+                await _conn.execute(
+                    "ALTER TABLE alerts ADD COLUMN device_name TEXT"
+                )
+                log.info("Added alerts.device_name column")
+
+            await _conn.commit()
+
             await _conn.execute("PRAGMA journal_mode=WAL")
             await _conn.execute("PRAGMA synchronous=NORMAL")
             await _conn.commit()
@@ -122,13 +157,49 @@ async def close_db():
 # ─────────────────────────────────────────────────────────
 #  ALERTS
 # ─────────────────────────────────────────────────────────
+
+async def _migrate_alert_device_columns(db):
+    """Add remote-device identity columns to existing alert databases."""
+    try:
+        async with db.execute("PRAGMA table_info(alerts)") as cur:
+            columns = {row["name"] for row in await cur.fetchall()}
+
+        if "device_id" not in columns:
+            await db.execute("ALTER TABLE alerts ADD COLUMN device_id TEXT")
+
+        if "device_name" not in columns:
+            await db.execute("ALTER TABLE alerts ADD COLUMN device_name TEXT")
+
+        await db.commit()
+    except Exception as e:
+        log.error("Alert device-column migration failed: %s", e)
+        raise
+
 async def save_alert(alert) -> bool:
+    """Persist a newly created lifecycle-v2 alert."""
     db = await get_db()
     if not db:
         return False
+
     try:
         await db.execute(
-            "INSERT OR REPLACE INTO alerts VALUES (?,?,?,?,?,?,?,?)",
+            """
+            INSERT OR REPLACE INTO alerts
+            (
+                id,
+                rule_id,
+                severity,
+                message,
+                metrics,
+                fired_at,
+                resolved_at,
+                sent_to,
+                lifecycle_version,
+                device_id,
+                device_name
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
             (
                 alert.alert_id,
                 alert.rule_id,
@@ -138,18 +209,95 @@ async def save_alert(alert) -> bool:
                 alert.fired_at,
                 alert.resolved_at,
                 json.dumps(alert.sent_to),
-            )
+                2,
+                getattr(alert, "device_id", None),
+                getattr(alert, "device_name", None),
+            ),
         )
+
         await db.commit()
+
         await db.execute(
-            "DELETE FROM alerts WHERE id NOT IN "
-            "(SELECT id FROM alerts ORDER BY fired_at DESC LIMIT 1000)"
+            """
+            DELETE FROM alerts
+            WHERE id NOT IN (
+                SELECT id
+                FROM alerts
+                ORDER BY fired_at DESC
+                LIMIT 1000
+            )
+            """
+        )
+
+        await db.commit()
+        return True
+
+    except Exception as e:
+        log.error("save_alert: %s", e)
+        return False
+
+
+
+
+async def resolve_alert(alert_id: str, resolved_at: float) -> bool:
+    """Mark an active alert as resolved in SQLite."""
+    db = await get_db()
+    if not db:
+        return False
+    try:
+        await db.execute(
+            """
+            UPDATE alerts
+            SET resolved_at = ?
+            WHERE id = ?
+              AND resolved_at IS NULL
+            """,
+            (resolved_at, alert_id),
         )
         await db.commit()
         return True
     except Exception as e:
-        log.error("save_alert: %s", e)
+        log.error("resolve_alert: %s", e)
         return False
+
+
+async def load_active_alerts() -> list[dict]:
+    """
+    Load unresolved lifecycle-v2 alerts.
+
+    Lifecycle-v1 alerts are historical records from before
+    active-incident tracking was introduced.
+    """
+    db = await get_db()
+    if not db:
+        return []
+
+    try:
+        async with db.execute(
+            """
+            SELECT *
+            FROM alerts
+            WHERE resolved_at IS NULL
+              AND lifecycle_version = 2
+            ORDER BY fired_at DESC
+            """
+        ) as cur:
+            rows = await cur.fetchall()
+
+        out = []
+
+        for r in rows:
+            d = dict(r)
+            d["metrics"] = json.loads(d["metrics"] or "{}")
+            d["sent_to"] = json.loads(d["sent_to"] or "[]")
+            out.append(d)
+
+        return out
+
+    except Exception as e:
+        log.error("load_active_alerts: %s", e)
+        return []
+
 
 async def load_alerts(limit: int = 200, severity: str = None) -> list[dict]:
     db = await get_db()
@@ -318,8 +466,14 @@ async def db_info() -> dict:
         db = await get_db()
         if not db:
             return {"available": False, "reason": f"Could not open {DB_PATH}", "alerts": 0}
-        async with db.execute("SELECT COUNT(*) as n FROM alerts")           as c: alerts = (await c.fetchone())["n"]
-        async with db.execute("SELECT COUNT(*) as n FROM interventions")    as c: ivs   = (await c.fetchone())["n"]
+        async with db.execute("SELECT COUNT(*) as n FROM alerts") as c:
+            alerts = (await c.fetchone())["n"]
+        async with db.execute(
+            "SELECT COUNT(*) as n FROM alerts WHERE resolved_at IS NULL AND lifecycle_version = 2"
+        ) as c:
+            active_alerts = (await c.fetchone())["n"]
+        async with db.execute("SELECT COUNT(*) as n FROM interventions") as c:
+            ivs = (await c.fetchone())["n"]
         async with db.execute("SELECT COUNT(*) as n FROM events")           as c: evts  = (await c.fetchone())["n"]
         async with db.execute("SELECT COUNT(*) as n FROM metric_snapshots") as c: snaps = (await c.fetchone())["n"]
         size_bytes = os.path.getsize(DB_PATH) if os.path.exists(DB_PATH) else 0
@@ -328,6 +482,7 @@ async def db_info() -> dict:
             "path":          DB_PATH,
             "size_bytes":    size_bytes,
             "alerts":        alerts,
+            "active_alerts":  active_alerts,
             "interventions": ivs,
             "events":        evts,
             "snapshots":     snaps,

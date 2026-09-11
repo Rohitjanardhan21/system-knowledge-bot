@@ -8,7 +8,7 @@ ACTIONS = [
     "throttle_background_processes",
     "free_memory_cache",
     "reduce_disk_io",
-    "maintain_state"
+    "maintain_state",
 ]
 
 
@@ -19,7 +19,8 @@ class RLDecisionEngine:
 
     def load_q_table(self):
         if os.path.exists(Q_TABLE_PATH):
-            return json.load(open(Q_TABLE_PATH))
+            with open(Q_TABLE_PATH) as f:
+                return json.load(f)
         return {}
 
     def save_q_table(self):
@@ -27,7 +28,11 @@ class RLDecisionEngine:
             json.dump(self.q_table, f)
 
     def get_state_key(self, state):
-        return f"{int(state['cpu']//10)}-{int(state['memory']//10)}-{int(state['disk']//10)}"
+        return (
+            f"{int(state['cpu']//10)}-"
+            f"{int(state['memory']//10)}-"
+            f"{int(state['disk']//10)}"
+        )
 
     def choose_action(self, state, epsilon=0.2):
         key = self.get_state_key(state)
@@ -43,12 +48,16 @@ class RLDecisionEngine:
         if key not in self.q_table:
             self.q_table[key] = {a: 0 for a in ACTIONS}
 
-        self.q_table[key][action] += 0.1 * (reward - self.q_table[key][action])
+        self.q_table[key][action] += (
+            0.1 * (reward - self.q_table[key][action])
+        )
 
         self.save_q_table()
-   def compute_reward(before, after):
+
+
+def compute_reward(before, after):
     return (
-        (before["cpu"] - after["cpu"]) +
-        (before["memory"] - after["memory"]) +
-        (before["disk"] - after["disk"])
+        (before["cpu"] - after["cpu"])
+        + (before["memory"] - after["memory"])
+        + (before["disk"] - after["disk"])
     )

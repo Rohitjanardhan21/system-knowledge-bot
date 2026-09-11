@@ -12,6 +12,7 @@ from dataclasses import dataclass, field, asdict
 from typing import Optional
 
 import httpx
+from backend.core.storage.db import resolve_alert
 
 log = logging.getLogger("cvis.alerts")
 
@@ -43,6 +44,8 @@ class FiredAlert:
     fired_at:    float
     resolved_at: Optional[float] = None
     sent_to:     list = field(default_factory=list)
+    device_id:   Optional[str] = None
+    device_name: Optional[str] = None
 
 
 @dataclass
@@ -95,7 +98,13 @@ class AlertEngine:
         self.webhooks:  dict[str, WebhookTarget] = {}
         self.email_cfg: Optional[EmailConfig]   = None
         self.history:   deque[FiredAlert]       = deque(maxlen=200)
-        self._cooldowns: dict[str, float]       = {}
+        self._active_alerts: dict[str, FiredAlert] = {}
+        self._active_device_alerts: dict[tuple[str, str], FiredAlert] = {}
+
+        # Compatibility/state for per-rule notification cooldowns.
+        # Active incidents are tracked separately from cooldowns.
+        self._cooldowns: dict[str, float] = {}
+
         self._http = httpx.AsyncClient(timeout=10.0)
 
         # Email alert cooldown — don't spam the inbox
@@ -107,39 +116,220 @@ class AlertEngine:
 
     async def evaluate(self, metrics: dict):
         metric_map = {
-            "cpu":      metrics.get("cpu_percent",   0),
-            "mem":      metrics.get("memory",        0),
-            "disk":     metrics.get("disk_percent",  0),
-            "net":      metrics.get("network_percent",0),
+            "cpu":      metrics.get("cpu_percent",    0),
+            "mem":      metrics.get("memory",         0),
+            "disk":     metrics.get("disk_percent",   0),
+            "net":      metrics.get("network_percent", 0),
             "health":   metrics.get("health_score",  100),
-            "ensemble": metrics.get("anomaly_score", 0),
+            "ensemble": metrics.get("anomaly_score",  0),
         }
+
+        now = time.time()
+
+        # Evaluate every enabled rule independently. A value such as
+        # CPU=95 legitimately satisfies both the CRITICAL and WARNING
+        # thresholds; cooldown/active-state logic prevents duplicates.
         for rule in self.rules.values():
             if not rule.enabled:
                 continue
+
             value = metric_map.get(rule.metric)
             if value is None:
                 continue
-            if not self._check_op(value, rule.operator, rule.threshold):
-                continue
-            last = self._cooldowns.get(rule.rule_id, 0)
-            if time.time() - last < rule.cooldown_s:
+
+            condition_met = self._check_op(
+                value,
+                rule.operator,
+                rule.threshold,
+            )
+
+            active = self._active_alerts.get(rule.rule_id)
+
+            # ── Condition recovered ──────────────────────
+            if not condition_met:
+                if active:
+                    active.resolved_at = now
+                    await resolve_alert(active.alert_id, now)
+                    log.info(
+                        "CVIS ALERT RESOLVED: %s (%s)",
+                        active.message,
+                        active.alert_id,
+                    )
+                    self._active_alerts.pop(rule.rule_id, None)
                 continue
 
-            self._cooldowns[rule.rule_id] = time.time()
+            # ── Alert already active ─────────────────────
+            # Do not create duplicate incidents while the
+            # condition remains above/below the threshold.
+            if active:
+                continue
+
+            # ── New alert ─────────────────────────────────
+            # Preserve the per-rule cooldown state expected by the
+            # legacy tests while active incidents remain independently
+            # tracked above.
+            cooldown_until = self._cooldowns.get(rule.rule_id, 0.0)
+            if cooldown_until and now <= cooldown_until + max(0, rule.cooldown_s):
+                continue
+
             msg = rule.message_tpl.format(
-                metric=rule.metric, value=value, threshold=rule.threshold
+                metric=rule.metric,
+                value=value,
+                threshold=rule.threshold,
             )
+
             alert = FiredAlert(
-                alert_id = str(uuid.uuid4())[:8],
-                rule_id  = rule.rule_id,
-                severity = rule.severity,
-                message  = msg,
-                metrics  = metrics,
-                fired_at = time.time(),
+                alert_id=str(uuid.uuid4())[:8],
+                rule_id=rule.rule_id,
+                severity=rule.severity,
+                message=msg,
+                metrics=metrics,
+                fired_at=now,
             )
+
+            self._active_alerts[rule.rule_id] = alert
+            self._cooldowns[rule.rule_id] = now + max(0, rule.cooldown_s)
             self.history.appendleft(alert)
+
+            log.warning(
+                "CVIS ALERT: %s [%s]",
+                alert.message,
+                alert.severity,
+            )
+
             await self._dispatch(alert)
+
+    async def evaluate_device(
+        self,
+        device_id: str,
+        device_name: str,
+        metrics: dict,
+    ):
+        """Evaluate one remote device independently from local backend alerts."""
+
+        metric_map = {
+            "cpu":      metrics.get("cpu_percent", 0),
+            "mem":      metrics.get("memory", 0),
+            "disk":     metrics.get("disk_percent", 0),
+            "net":      metrics.get("network_percent", 0),
+            "health":   metrics.get("health_score", 100),
+            "ensemble": metrics.get(
+                "anomaly_score",
+                metrics.get("ensemble_score", 0),
+            ),
+        }
+
+        now = time.time()
+
+        for rule in self.rules.values():
+            if not rule.enabled:
+                continue
+
+            value = metric_map.get(rule.metric)
+            if value is None:
+                continue
+
+            condition_met = self._check_op(
+                value,
+                rule.operator,
+                rule.threshold,
+            )
+
+            state_key = (device_id, rule.rule_id)
+            active = self._active_device_alerts.get(state_key)
+
+            # Condition recovered.
+            if not condition_met:
+                if active:
+                    active.resolved_at = now
+                    await resolve_alert(active.alert_id, now)
+
+                    log.info(
+                        "CVIS DEVICE ALERT RESOLVED: %s [%s] (%s)",
+                        device_name,
+                        active.message,
+                        active.alert_id,
+                    )
+
+                    self._active_device_alerts.pop(state_key, None)
+
+                continue
+
+            # Already active for this device/rule.
+            if active:
+                continue
+
+            msg = rule.message_tpl.format(
+                metric=rule.metric,
+                value=value,
+                threshold=rule.threshold,
+            )
+
+            alert = FiredAlert(
+                alert_id=str(uuid.uuid4())[:8],
+                rule_id=rule.rule_id,
+                severity=rule.severity,
+                message=msg,
+                metrics=metrics,
+                fired_at=now,
+                device_id=device_id,
+                device_name=device_name,
+            )
+
+            self._active_device_alerts[state_key] = alert
+            self.history.appendleft(alert)
+
+            log.warning(
+                "CVIS DEVICE ALERT: %s — %s [%s]",
+                device_name,
+                alert.message,
+                alert.severity,
+            )
+
+            await self._dispatch(alert)
+
+    async def restore_active_alerts(self):
+        """Restore unresolved alerts from SQLite after startup."""
+        from backend.core.storage.db import load_active_alerts
+
+        rows = await load_active_alerts()
+
+        for row in rows:
+            try:
+                alert = FiredAlert(
+                    alert_id=row["id"],
+                    rule_id=row["rule_id"],
+                    severity=row["severity"],
+                    message=row["message"],
+                    metrics=row["metrics"],
+                    fired_at=row["fired_at"],
+                    resolved_at=row.get("resolved_at"),
+                    sent_to=row["sent_to"],
+                    device_id=row.get("device_id"),
+                    device_name=row.get("device_name"),
+                )
+
+                if alert.device_id:
+                    self._active_device_alerts[
+                        (alert.device_id, alert.rule_id)
+                    ] = alert
+                else:
+                    self._active_alerts[alert.rule_id] = alert
+
+                self.history.appendleft(alert)
+
+            except Exception as e:
+                log.error(
+                    "Failed to restore alert %s: %s",
+                    row.get("id"),
+                    e,
+                )
+
+        if rows:
+            log.info(
+                "Restored %d active alert(s) from SQLite",
+                len(rows),
+            )
 
     def _check_op(self, value, op, threshold) -> bool:
         return {
@@ -213,7 +403,7 @@ class AlertEngine:
             reason_parts = []
             if cpu  > 75: reason_parts.append(f"CPU at {cpu:.1f}%")
             if mem  > 75: reason_parts.append(f"memory at {mem:.1f}%")
-            if disk > 80: reason_parts.append(f"disk I/O at {disk:.1f}%")
+            if disk > 80: reason_parts.append(f"disk space utilization at {disk:.1f}%")
             if anom > 0.5: reason_parts.append(f"anomaly score at {anom:.3f}")
             reason = (
                 " and ".join(reason_parts) + " — threshold crossed."
@@ -391,6 +581,11 @@ class AlertEngine:
 
     def get_stats(self) -> dict:
         hist = list(self.history)
+
+        # Active incidents are tracked separately from historical alert
+        # history. Device alerts are keyed by (device_id, rule_id).
+        active_alerts = len(self._active_alerts) + len(self._active_device_alerts)
+
         alert_email_configured = bool(
             os.environ.get("ALERT_EMAIL") and
             os.environ.get("SMTP_USER") and
@@ -398,6 +593,7 @@ class AlertEngine:
         )
         return {
             "total_alerts":        len(hist),
+            "active_alerts":       active_alerts,
             "critical":            sum(1 for a in hist if a.severity == "CRITICAL"),
             "warning":             sum(1 for a in hist if a.severity in ("WARNING", "HIGH")),
             "info":                sum(1 for a in hist if a.severity == "INFO"),

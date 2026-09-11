@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 
 LOG_FILE = Path("system_facts/logs.json")
 LOG_FILE.parent.mkdir(exist_ok=True)
@@ -14,7 +14,7 @@ def log(message, level="info"):
         logs = json.loads(LOG_FILE.read_text())
 
     logs.append({
-        "time": datetime.utcnow().isoformat(),
+        "time": datetime.now(timezone.utc).isoformat(),
         "level": level,
         "message": message
     })

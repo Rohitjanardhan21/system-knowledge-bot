@@ -12,7 +12,7 @@ Core responsibilities:
 - Provide narrative-ready output
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from collections import deque
 
 # ─────────────────────────────────────────────
@@ -33,7 +33,7 @@ last_events = {}
 # ─────────────────────────────────────────────
 
 def now():
-    return datetime.utcnow().strftime("%H:%M:%S")
+    return datetime.now(timezone.utc).strftime("%H:%M:%S")
 
 
 def calculate_baseline():
@@ -66,7 +66,7 @@ def deduplicate(event_key, cooldown=5):
     """
     Prevent same event spamming within cooldown window
     """
-    current_time = datetime.utcnow().timestamp()
+    current_time = datetime.now(timezone.utc).timestamp()
 
     if event_key in last_events:
         if current_time - last_events[event_key] < cooldown:

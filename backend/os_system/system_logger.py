@@ -1,7 +1,7 @@
 import json
 import os
 import threading
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 LOG_DIR = Path("logs")
@@ -18,7 +18,7 @@ _lock = threading.Lock()
 # ---------------------------------------------------------
 def rotate_logs():
     if LOG_FILE.exists() and LOG_FILE.stat().st_size > MAX_SIZE_MB * 1024 * 1024:
-        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         LOG_FILE.rename(LOG_DIR / f"system_log_{timestamp}.jsonl")
 
 
@@ -39,7 +39,7 @@ def log_event(payload, level="INFO"):
 
     try:
         entry = {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "level": level,
             "data": payload
         }

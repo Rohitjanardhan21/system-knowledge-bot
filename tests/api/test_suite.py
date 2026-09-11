@@ -3,26 +3,28 @@ CVIS v9 — tests/test_suite.py
 Coverage: auth, redis_store (mocked), ml_engine, alert_engine, API endpoints
 """
 
-import asyncio, hashlib, time
-import numpy as np
-import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
-from fastapi.testclient import TestClient
-from backend.main import app
-# ── bootstrap env before importing app modules ───────────
 import os
+
+# ── bootstrap env BEFORE importing app modules ───────────
 os.environ.setdefault("CVIS_API_KEY",     "test-bootstrap-key-abc123")
 os.environ.setdefault("JWT_SECRET",       "test-jwt-secret-not-for-prod")
 os.environ.setdefault("CVIS_ADMIN_PASS",  "test-admin-pass")
 os.environ.setdefault("CVIS_ADMIN_USER",  "admin")
 os.environ.setdefault("REDIS_URL",        "redis://localhost:6379/0")
 
+import asyncio, hashlib, time
+import numpy as np
+import pytest
+from unittest.mock import AsyncMock, patch, MagicMock
+from fastapi.testclient import TestClient
+from backend.main import app
+
 # ─────────────────────────────────────────────────────────
 # Auth tests
 # ─────────────────────────────────────────────────────────
 class TestAuth:
     def test_api_key_accepted(self):
-        from auth import _api_key_store, _hash
+        from backend.core.auth.auth import _api_key_store, _hash
         assert _hash in _api_key_store
         assert _api_key_store[_hash]["scope"] == "admin"
 
@@ -33,7 +35,7 @@ class TestAuth:
         assert h1 == h2
 
     def test_jwt_issue_and_decode(self):
-        from auth import issue_token_pair, _verify_jwt, JWT_OK
+        from backend.core.auth.auth import issue_token_pair, _verify_jwt, JWT_OK
         if not JWT_OK:
             pytest.skip("PyJWT not installed")
         pair   = issue_token_pair("test-user", scope="read")
@@ -48,7 +50,7 @@ class TestAuth:
         assert payload["type"] == "access"
 
     def test_jwt_scope_ladder(self):
-        from auth import _scope_gte
+        from backend.core.auth.auth import _scope_gte
         assert     _scope_gte("admin", "read")
         assert     _scope_gte("admin", "write")
         assert     _scope_gte("admin", "admin")
@@ -58,8 +60,8 @@ class TestAuth:
 
     @pytest.mark.asyncio
     async def test_create_api_key(self):
-        from auth import create_api_key, _verify_api_key
-        with patch("auth.get_redis", AsyncMock(return_value=None)):
+        from backend.core.auth.auth import create_api_key, _verify_api_key
+        with patch("backend.core.auth.auth.get_redis", AsyncMock(return_value=None)):
             key     = await create_api_key("test-service", scope="write")
             entry   = await _verify_api_key(key)
             assert entry["scope"] == "write"
@@ -73,14 +75,14 @@ class TestRedisStore:
     @pytest.mark.asyncio
     async def test_alert_dedup_fires_once(self):
         """Two calls for same rule within cooldown: only first should fire."""
-        from redis_store import alert_check_and_set
+        from backend.core.storage.redis_store import alert_check_and_set
 
         nx_results = [True, None]   # first call: key set; second: key exists
 
         mock_redis = AsyncMock()
         mock_redis.set = AsyncMock(side_effect=nx_results)
 
-        with patch("redis_store.get_client", AsyncMock(return_value=mock_redis)):
+        with patch("backend.core.storage.redis_store.get_client", AsyncMock(return_value=mock_redis)):
             r1 = await alert_check_and_set("rule_cpu_crit", 60)
             r2 = await alert_check_and_set("rule_cpu_crit", 60)
 
@@ -89,7 +91,7 @@ class TestRedisStore:
 
     @pytest.mark.asyncio
     async def test_rate_limit_allows_within_limit(self):
-        from redis_store import rate_limit_check
+        from backend.core.storage.redis_store import rate_limit_check
         mock_redis = AsyncMock()
         mock_redis.pipeline.return_value.__aenter__ = AsyncMock(return_value=mock_redis)
         mock_redis.pipeline.return_value.__aexit__  = AsyncMock(return_value=False)
@@ -98,12 +100,12 @@ class TestRedisStore:
         mock_redis.incr     = AsyncMock(return_value=5)
         mock_redis.expire   = AsyncMock(return_value=True)
 
-        with patch("redis_store.get_client", AsyncMock(return_value=mock_redis)):
+        with patch("backend.core.storage.redis_store.get_client", AsyncMock(return_value=mock_redis)):
             # Use pipeline mock directly via get_client
             pass
 
         # Test fallback (Redis None) — always allows
-        with patch("redis_store.get_client", AsyncMock(return_value=None)):
+        with patch("backend.core.storage.redis_store.get_client", AsyncMock(return_value=None)):
             allowed, count = await rate_limit_check("127.0.0.1", limit=100)
             assert allowed is True
             assert count == 0
@@ -122,8 +124,8 @@ class TestRedisStore:
         mock_redis.setex = _setex
         mock_redis.get   = _get
 
-        with patch("redis_store.get_client", AsyncMock(return_value=mock_redis)):
-            from redis_store import cache_metrics, get_cached_metrics
+        with patch("backend.core.storage.redis_store.get_client", AsyncMock(return_value=mock_redis)):
+            from backend.core.storage.redis_store import cache_metrics, get_cached_metrics
             await cache_metrics(metrics, ttl=3)
             result = await get_cached_metrics()
 
@@ -132,8 +134,8 @@ class TestRedisStore:
     @pytest.mark.asyncio
     async def test_redis_unavailable_graceful(self):
         """All Redis ops should silently no-op when Redis is down."""
-        with patch("redis_store.get_client", AsyncMock(return_value=None)):
-            from redis_store import (alert_check_and_set, cache_metrics,
+        with patch("backend.core.storage.redis_store.get_client", AsyncMock(return_value=None)):
+            from backend.core.storage.redis_store import (alert_check_and_set, cache_metrics,
                                       get_cached_metrics, blocklist_token)
             assert await alert_check_and_set("r1", 60)  is True
             assert await get_cached_metrics()            is None
@@ -146,7 +148,7 @@ class TestRedisStore:
 # ─────────────────────────────────────────────────────────
 class TestMLEngine:
     def setup_method(self):
-        from ml_engine import MLEngine
+        from backend.core.ml.ml_engine import MLEngine
         self.engine = MLEngine()
 
     def test_ingest_and_score(self):
@@ -192,14 +194,19 @@ class TestMLEngine:
 # ─────────────────────────────────────────────────────────
 class TestAlertEngine:
     def setup_method(self):
-        from alert_engine import AlertEngine
-        self.ae = AlertEngine()
+        # Reload the alert-engine module so each test gets a clean
+        # DEFAULT_RULES / AlertEngine state and cannot inherit mutations
+        # from another test.
+        import importlib
+        import backend.core.alerts.alert_engine as alert_engine
+        alert_engine = importlib.reload(alert_engine)
+        self.ae = alert_engine.AlertEngine()
 
     def test_default_rules_loaded(self):
         assert len(self.ae.rules) >= 7
 
     def test_add_custom_rule(self):
-        from alert_engine import AlertRule
+        from backend.core.alerts.alert_engine import AlertRule
         rule = AlertRule("test_r1", "Test rule", "cpu", "gt", 95.0, "CRITICAL", 30)
         self.ae.add_rule(rule)
         assert "test_r1" in self.ae.rules
@@ -218,7 +225,7 @@ class TestAlertEngine:
     @pytest.mark.asyncio
     async def test_evaluate_no_fire_nominal(self):
         """Nominal metrics must not append anything to history."""
-        from alert_engine import AlertEngine
+        from backend.core.alerts.alert_engine import AlertEngine
         ae = AlertEngine()
         metrics = {"cpu_percent": 30, "memory": 40, "disk_percent": 20,
                    "health_score": 95, "anomaly_score": 0.05, "network_percent": 25}
@@ -231,7 +238,7 @@ class TestAlertEngine:
         """CPU 95% must fire both CRITICAL (>90) and WARNING (>75) rules.
         Checks ae.history which is written before dispatch — test is immune to
         AsyncMock / event-loop interaction issues with side_effect."""
-        from alert_engine import AlertEngine
+        from backend.core.alerts.alert_engine import AlertEngine
         ae = AlertEngine()
         ae._dispatch = AsyncMock()   # suppress real HTTP/SMTP side effects
         metrics = {"cpu_percent": 95, "memory": 40, "disk_percent": 20,
@@ -265,7 +272,7 @@ class TestAlertEngine:
 # ─────────────────────────────────────────────────────────
 @pytest.fixture(scope="module")
 def client():
-    from backend_v9 import app
+    from backend.main import app
     with TestClient(app, raise_server_exceptions=True) as c:
         yield c
 
@@ -351,9 +358,9 @@ class TestAPIEndpoints:
 
     def test_wrong_scope_returns_403(self, client):
         """A read-scope key should not be able to save a model version."""
-        from auth import create_api_key
+        from backend.core.auth.auth import create_api_key
         loop = asyncio.new_event_loop()
-        with patch("auth.get_redis", AsyncMock(return_value=None)):
+        with patch("backend.core.auth.auth.get_redis", AsyncMock(return_value=None)):
             read_key = loop.run_until_complete(create_api_key("read-only", "read"))
         loop.close()
 

@@ -152,19 +152,37 @@ def action_clear_pip_cache() -> dict:
     }
 
 def action_drop_caches() -> dict:
-    import gc, ctypes
+    import os
+    import subprocess
+
     try:
-        collected = gc.collect()
-        try:
-            libc = ctypes.CDLL("libc.so.6")
-            libc.malloc_trim(0)
-        except Exception:
-            pass
+        if os.name != "posix" or not os.path.exists("/proc/sys/vm/drop_caches"):
+            return {
+                "success": False,
+                "details": ["Linux page-cache control is unavailable on this system."],
+            }
+
+        if os.geteuid() != 0:
+            return {
+                "success": False,
+                "details": ["Dropping Linux page cache requires root privileges."],
+            }
+
+        # Ask the kernel to reclaim page cache, dentries and inodes.
+        subprocess.run(
+            ["sync"],
+            check=True,
+            timeout=10,
+        )
+
+        with open("/proc/sys/vm/drop_caches", "w") as f:
+            f.write("3\n")
+
         return {
             "success": True,
-            "details": [f"GC collected {collected} objects. Memory cache cleared."],
-            "freed_mb": 10.0,
+            "details": ["Linux page cache, dentries and inodes reclaimed."],
         }
+
     except Exception as e:
         return {"success": False, "details": [str(e)]}
 
@@ -201,9 +219,27 @@ EXECUTORS = {
     "kill_high_cpu":      action_kill_high_cpu,
 }
 
-def execute_action(action_id: str) -> dict:
+# Actions permitted to run from autonomous remediation.
+# Keep this list intentionally small and explicit.
+AUTONOMOUS_ALLOWED_ACTIONS = {
+    # No actions are currently approved for autonomous execution.
+    # drop_caches requires host-level privileges unavailable to the backend container.
+}
+
+
+def execute_action(action_id: str, source: str = "manual") -> dict:
     if action_id not in EXECUTORS:
         return {"success": False, "error": f"Unknown action: {action_id}"}
+
+    if source == "auto" and action_id not in AUTONOMOUS_ALLOWED_ACTIONS:
+        log.warning("Blocked autonomous action: %s", action_id)
+        return {
+            "success": False,
+            "blocked": True,
+            "reason": "action_not_allowed_for_autonomous_execution",
+            "action_id": action_id,
+        }
+
     start = time.time()
     try:
         result = EXECUTORS[action_id]()

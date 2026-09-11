@@ -219,7 +219,7 @@ _WHAT_TO_WATCH = {
         "Physical temperature if accessible — consider a cooling pad or environment check",
     ],
     "FREEZE": [
-        "Disk I/O wait times — high wait = I/O queue saturated",
+        "Disk space utilization wait times — high wait = I/O queue saturated",
         "Available disk space — ensure at least 15% free at all times",
         "CPU + Disk simultaneously high — this combination frequently precedes freezes",
     ],

@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 
 from preflight.evaluator import evaluate_preflight
 from audit.logger import log_event
@@ -28,7 +28,7 @@ def can_run(job_name: str):
 
     # 🔒 AUDIT — explicit command = explicit log
     log_event(AuditEvent(
-        timestamp=datetime.utcnow().isoformat(),
+        timestamp=datetime.now(timezone.utc).isoformat(),
         source="can-run",
         outcome="spoken",
         posture=result.posture,

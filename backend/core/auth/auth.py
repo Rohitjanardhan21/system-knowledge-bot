@@ -239,10 +239,12 @@ def require_scope(needed: str = "read"):
 
 
 # ── API key management ────────────────────────────────────
-async def create_api_key(name: str, scope: str = "read") -> str:
+async def create_api_key(name: str, scope: str = "read", device_id: str | None = None) -> str:
     key = secrets.token_urlsafe(32)
     h   = hashlib.sha256(key.encode()).hexdigest()
     entry = {"name": name, "scope": scope, "created_at": str(time.time())}
+    if device_id:
+        entry["device_id"] = device_id
     _api_key_store[h] = entry
     redis = await get_redis()
     if redis:

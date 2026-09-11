@@ -2,7 +2,7 @@
 # 🚗 VEHICLE CONTEXT ENGINE (PRODUCTION VERSION)
 # ---------------------------------------------------------
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 # ---------------------------------------------------------
@@ -88,7 +88,7 @@ def enrich_vehicle_context(data):
     vehicle_type = data.get("vehicle_type", "2wheeler")
 
     context = {
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
 
         # 🚗 VEHICLE INFO
         "vehicle_type": classify_vehicle(vehicle_type),

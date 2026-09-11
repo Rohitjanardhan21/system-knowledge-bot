@@ -1,25 +1,43 @@
 from agent.agent_core import handle_question
 
-# Fake minimal facts
+
 FACTS = {
     "metadata": {
-        "collected_at": "2026-01-20T10:00:00",
-        "ttl_seconds": 300
+        "collected_at": "2026-01-20T10:00:00+00:00",
+        "ttl_seconds": 300,
     },
     "posture": {"posture": "idle-capable"},
     "cpu": {},
     "memory": {},
-    "history": {}
+    "history": {},
 }
 
-def test(q):
-    r = handle_question(q, FACTS)
-    print(f"\nQ: {q}")
-    print(f"MODE: {r.mode}")
-    print(f"TEXT: {r.text}")
-    print(f"VISUAL: {r.visual}")
 
-test("is my system healthy")
-test("show me today")
-test("predict crash tomorrow")
-test("can i run another job")
+def assert_agent_response(response):
+    assert isinstance(response, dict)
+    assert "mode" in response
+    assert "text" in response
+    assert "visual" in response
+    assert "confidence" in response
+    assert "evidence" in response
+    assert "reason" in response
+
+
+def test_system_health_question():
+    response = handle_question("is my system healthy", FACTS)
+    assert_agent_response(response)
+
+
+def test_today_question():
+    response = handle_question("show me today", FACTS)
+    assert_agent_response(response)
+
+
+def test_prediction_question():
+    response = handle_question("predict crash tomorrow", FACTS)
+    assert_agent_response(response)
+
+
+def test_job_question():
+    response = handle_question("can i run another job", FACTS)
+    assert_agent_response(response)

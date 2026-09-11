@@ -4,7 +4,7 @@
 
 from collections import deque
 from statistics import mean, stdev
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 class PatternEngine:
@@ -19,7 +19,7 @@ class PatternEngine:
     def update(self, features):
 
         entry = {
-            "time": datetime.utcnow().isoformat(),
+            "time": datetime.now(timezone.utc).isoformat(),
             **features
         }
 
@@ -181,7 +181,7 @@ class PatternEngine:
 
         for p in patterns:
             self.pattern_memory.append({
-                "time": datetime.utcnow().isoformat(),
+                "time": datetime.now(timezone.utc).isoformat(),
                 "pattern": p["type"],
                 "severity": p["severity"]
             })

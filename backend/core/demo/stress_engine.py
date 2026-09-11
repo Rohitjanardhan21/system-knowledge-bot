@@ -4,6 +4,7 @@ Controlled stress scenarios for demo and ML training.
 Safe ceilings on all metrics — will not crash the machine.
 """
 import threading
+import multiprocessing
 import time
 import os
 import sys
@@ -36,23 +37,51 @@ def _get_current_cpu_pct() -> float:
 
 
 # ── CPU stress worker ────────────────────────────────────────────────────────
-def _cpu_stress_worker(stop_event: threading.Event, intensity: float = 0.75):
-    """
-    Burns CPU by doing math in a tight loop.
-    intensity = fraction of time spent burning (0.0-1.0)
-    Backs off automatically if CPU hits ceiling.
-    """
+def _cpu_burn_worker(stop_event, intensity: float = 0.75):
+    """CPU-bound worker executed in a separate process."""
     import math
+
     while not stop_event.is_set():
-        if _get_current_cpu_pct() >= CPU_CEILING:
-            time.sleep(0.5)
-            continue
-        # Burn for `intensity` fraction of each 100ms window
-        burn_end = time.time() + 0.1 * intensity
-        while time.time() < burn_end and not stop_event.is_set():
-            _ = math.sqrt(sum(i * i for i in range(500)))
-        # Rest for the remainder
+        burn_end = time.perf_counter() + 0.1 * intensity
+
+        while time.perf_counter() < burn_end:
+            for i in range(10000):
+                math.sqrt(i * i)
+
         time.sleep(0.1 * (1.0 - intensity))
+
+
+def _cpu_stress_worker(stop_event, intensity: float = 0.75):
+    """
+    Launch CPU workers in separate processes so CPU-bound stress
+    can use multiple cores without being limited by the GIL.
+    """
+    import psutil
+
+    cpu_count = max(1, psutil.cpu_count(logical=True) or 1)
+    worker_count = max(1, round(cpu_count * intensity))
+
+    processes = []
+
+    for _ in range(worker_count):
+        process = multiprocessing.Process(
+            target=_cpu_burn_worker,
+            args=(stop_event, intensity),
+            daemon=True,
+        )
+        process.start()
+        processes.append(process)
+
+    try:
+        while not stop_event.is_set():
+            time.sleep(0.5)
+    finally:
+        for process in processes:
+            if process.is_alive():
+                process.terminate()
+
+        for process in processes:
+            process.join(timeout=2)
 
 
 # ── Memory stress worker ─────────────────────────────────────────────────────
@@ -88,10 +117,10 @@ def _memory_stress_worker(stop_event: threading.Event, target_mb: int = 400):
         chunks.clear()
 
 
-# ── Disk I/O stress worker ───────────────────────────────────────────────────
+# ── Disk space utilization stress worker ───────────────────────────────────────────────────
 def _disk_stress_worker(stop_event: threading.Event):
     """
-    Writes and reads a temp file repeatedly to spike disk I/O.
+    Writes and reads a temp file repeatedly to spike disk space utilization.
     Cleans up on stop.
     """
     tmp_path = '/tmp/cvis_stress_io.tmp'
@@ -163,7 +192,7 @@ def start_scenario(scenario_id: str) -> dict:
 
     sc = SCENARIOS[scenario_id]
     duration = min(sc["duration_s"], MAX_DURATION_S)
-    stop_event = threading.Event()
+    stop_event = multiprocessing.Event()
     threads = []
 
     if "cpu" in sc.get("workers", []):

@@ -29,3 +29,5 @@ aiosqlite
 PyJWT
 
 requests
+
+openai

@@ -175,6 +175,24 @@ class ModelVersionRegistry:
             None
         )
 
+    def load_version(self, model_name: str, version_id: str) -> Optional[dict]:
+        """Load a persisted version state without changing active/best metadata."""
+        versions = self._registry.get(model_name, [])
+        target = next(
+            (v for v in versions if v["version_id"] == version_id),
+            None,
+        )
+        if not target:
+            return None
+
+        path = Path(target["path"])
+        if not path.exists():
+            log.error("Version file missing: %s", path)
+            return None
+
+        with open(path) as f:
+            return json.load(f)
+
     def get_best_version(self, model_name: str) -> Optional[dict]:
         return next(
             (v for v in self._registry.get(model_name, []) if v.get("is_best")),

@@ -3,7 +3,7 @@
 # ---------------------------------------------------------
 
 import numpy as np
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 # ---------------------------------------------------------
@@ -158,5 +158,5 @@ def analyze_vehicle_signals(current_features, history):
         "signals": signals,
         "confidence": round(min(confidence, 0.95), 2),
         "severity": overall_severity,
-        "timestamp": datetime.utcnow().isoformat()
+        "timestamp": datetime.now(timezone.utc).isoformat()
     }

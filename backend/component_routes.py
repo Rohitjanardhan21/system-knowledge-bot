@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 import psutil
-from datetime import datetime
+from datetime import datetime, timezone
 
 router = APIRouter(prefix="/system/component")
 
@@ -12,7 +12,7 @@ def component_details(name: str):
 
     out = {
         "component": name,
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "forecast_weight": 0.0,
     }
 

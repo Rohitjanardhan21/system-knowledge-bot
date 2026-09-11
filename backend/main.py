@@ -13,11 +13,12 @@ if BASE_DIR not in sys.path:
 
 import asyncio, json as _json, threading, time, os
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Optional
 from collections import deque
 
 import numpy as np
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import (
     FileResponse as _FR, HTMLResponse as _HR,
@@ -31,13 +32,14 @@ from backend.core.logging.logging_config import (
 )
 from backend.core.auth.auth import (
     require_scope, create_api_key, revoke_api_key,
-    issue_token_pair, refresh_access_token,
+    issue_token_pair, refresh_access_token, get_redis,
 )
 from backend.core.storage.redis_store import (
     alert_check_and_set, cache_metrics, get_cached_metrics,
     redis_info, publish_event, incr_counter,
 )
 from backend.core.ml.ml_engine           import get_engine
+from backend.core.ml.remote_inference     import RemoteInferenceManager
 from backend.core.storage.model_registry import get_registry
 from backend.core.alerts.alert_engine    import get_alert_engine, AlertRule
 from backend.core.storage.db import (
@@ -73,7 +75,130 @@ feature_buffer: deque = deque(maxlen=600)
 _last_metrics: dict   = {}
 _lock = threading.Lock()
 _event_loop: asyncio.AbstractEventLoop = None
+_collector_stop = threading.Event()
+_collector_thread = None
 _devices: dict = {}
+
+async def _restore_registered_devices():
+    """Restore registered device identities from Redis into the in-memory registry."""
+    redis = await get_redis()
+    if redis is None:
+        log.warning("Device registry unavailable during startup")
+        return
+
+    restored = 0
+    try:
+        async for key in redis.scan_iter(match="device:registry:*"):
+            data = await redis.hgetall(key)
+            if not data:
+                continue
+
+            device_id = data.get("device_id")
+            if not device_id:
+                continue
+
+            try:
+                capabilities = _json.loads(data.get("capabilities", "[]"))
+            except (TypeError, ValueError):
+                capabilities = []
+
+            _devices[device_id] = {
+                "device_id": device_id,
+                "device_name": data.get("device_name", "unknown"),
+                "os": data.get("os", "unknown"),
+                "os_version": data.get("os_version", ""),
+                "hostname": data.get("hostname", ""),
+                "capabilities": capabilities,
+                "registered_at": float(data.get("registered_at", 0)),
+                "status": "registered",
+                "last_seen": None,
+                "metrics": {},
+                "processes": [],
+            }
+            restored += 1
+
+        log.info("Restored %d registered device(s) from Redis", restored)
+    except Exception as exc:
+        log.exception("Failed to restore registered devices: %s", exc)
+
+
+# Remote telemetry freshness / replay protection.
+TELEMETRY_MAX_AGE_S = 120.0
+TELEMETRY_MAX_FUTURE_SKEW_S = 30.0
+_last_telemetry_timestamp: dict[str, float] = {}
+
+TELEMETRY_WATERMARK_TTL_S = int(TELEMETRY_MAX_AGE_S * 2 + TELEMETRY_MAX_FUTURE_SKEW_S)
+
+async def _accept_telemetry_timestamp(device_id: str, timestamp: float) -> bool:
+    """Atomically accept a strictly newer telemetry timestamp."""
+    redis = await get_redis()
+
+    if redis is not None:
+        key = f"telemetry:last_timestamp:{device_id}"
+        script = """
+        local current = redis.call('GET', KEYS[1])
+        if current and tonumber(ARGV[1]) <= tonumber(current) then
+            return 0
+        end
+        redis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[2])
+        return 1
+        """
+        accepted = await redis.eval(
+            script,
+            1,
+            key,
+            str(timestamp),
+            str(TELEMETRY_WATERMARK_TTL_S),
+        )
+        return bool(accepted)
+
+    # Local fallback when Redis is temporarily unavailable.
+    previous = _last_telemetry_timestamp.get(device_id)
+    if previous is not None and timestamp <= previous:
+        return False
+
+    _last_telemetry_timestamp[device_id] = timestamp
+    return True
+
+# Persist the latest remote-device telemetry in the node format consumed
+# by the intelligence pipeline.
+NODES_DIR = Path("system_facts/nodes")
+NODES_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _persist_device_node(payload):
+    node_data = {
+        "node": payload.device_id,
+        "node_name": payload.device_name or payload.hostname or payload.device_id,
+        "os": payload.os,
+        "os_version": payload.os_version,
+        "hostname": payload.hostname,
+        "timestamp": payload.timestamp,
+        "metrics": {
+            **payload.metrics,
+            "processes": payload.processes,
+        },
+    }
+
+    node_file = NODES_DIR / f"{payload.device_id}.json"
+    node_file.write_text(_json.dumps(node_data, indent=2))
+
+
+
+# Remote-device inference uses the shared model weights but keeps
+# sequence history and EMA state isolated per device.
+_remote_inference: Optional[RemoteInferenceManager] = None
+
+def get_remote_inference() -> RemoteInferenceManager:
+    global _remote_inference
+    if _remote_inference is None:
+        _remote_inference = RemoteInferenceManager(get_engine())
+    return _remote_inference
+
+# Rolling state for container CPU accounting — a delta is taken between
+# successive collector-loop samples instead of a fresh isolated snapshot
+# each call, so the measurement window tracks the real polling cadence.
+_cpu_usage_state: dict = {"usage_ns": None, "ts": None}
 
 
 def explain_and_act(metrics: dict) -> dict:
@@ -97,8 +222,8 @@ def explain_and_act(metrics: dict) -> dict:
         reasons.append(f"Memory pressure ({mem:.1f}%)")
         actions.append("Monitor memory trend — watch for monotonic growth")
     if disk > 85:
-        reasons.append(f"Disk I/O saturated ({disk:.1f}%)")
-        actions.append("Check disk usage and log rotation")
+        reasons.append(f"Disk space utilization high ({disk:.1f}%)")
+        actions.append("Check disk usage, large files, and log rotation")
     if anomaly > 0.7:
         reasons.append(f"ML ensemble anomaly ({anomaly:.3f})")
         actions.append("Investigate anomaly source — cross-reference with process list")
@@ -110,8 +235,8 @@ def explain_and_act(metrics: dict) -> dict:
         actions.append("System needs immediate attention")
 
     severity = (
-        "CRITICAL" if anomaly > 0.8 or cpu > 90 or mem > 90 else
-        "HIGH"     if anomaly > 0.6 or cpu > 80 or mem > 80 else
+        "CRITICAL" if anomaly > 0.8 or cpu > 90 or mem > 90 or disk > 95 else
+        "HIGH"     if anomaly > 0.6 or cpu > 80 or mem > 80 or disk > 85 else
         "MEDIUM"   if anomaly > 0.3 or cpu > 70 or mem > 70 else
         "LOW"
     )
@@ -120,6 +245,105 @@ def explain_and_act(metrics: dict) -> dict:
         "actions":  actions             if actions else ["No action needed"],
         "severity": severity,
     }
+
+
+def _read_v2_usage_ns(stat_path: Path) -> int:
+    """cgroup v2 cpu.stat reports usage_usec (microseconds) — convert to ns."""
+    line = next(x for x in stat_path.read_text().splitlines() if x.startswith("usage_usec "))
+    return int(line.split()[1]) * 1000
+
+
+def _read_v1_usage_ns(usage_path: Path) -> int:
+    """cgroup v1 cpuacct.usage already reports nanoseconds."""
+    return int(usage_path.read_text().strip())
+
+
+def _cgroup_cpu_quota():
+    """
+    Detect the container's CPU quota and return (quota_cpus, usage_reader),
+    where usage_reader() returns cumulative CPU time in nanoseconds.
+    Supports both cgroup v2 and cgroup v1 (classic + hybrid mounts).
+    Returns None when the container has no quota set (unlimited) or the
+    relevant cgroup files aren't present/readable — callers should fall
+    back to host-wide accounting in that case.
+    """
+    # cgroup v2
+    v2_max, v2_stat = Path("/sys/fs/cgroup/cpu.max"), Path("/sys/fs/cgroup/cpu.stat")
+    if v2_max.exists() and v2_stat.exists():
+        quota, period = v2_max.read_text().strip().split()
+        if quota == "max":
+            return None
+        return int(quota) / int(period), (lambda: _read_v2_usage_ns(v2_stat))
+
+    # cgroup v1 (classic "cpu" controller, or hybrid "cpu,cpuacct" mount)
+    for base in ("/sys/fs/cgroup/cpu,cpuacct", "/sys/fs/cgroup/cpu"):
+        quota_f  = Path(f"{base}/cpu.cfs_quota_us")
+        period_f = Path(f"{base}/cpu.cfs_period_us")
+        usage_f  = Path(f"{base}/cpuacct.usage")
+        if quota_f.exists() and period_f.exists() and usage_f.exists():
+            quota_us  = int(quota_f.read_text().strip())
+            period_us = int(period_f.read_text().strip())
+            if quota_us <= 0:
+                return None  # -1 == unlimited
+            return quota_us / period_us, (lambda: _read_v1_usage_ns(usage_f))
+
+    return None
+
+
+def _container_cpu_percent() -> float:
+    """
+    CPU % scoped to the container's cgroup CPU quota (e.g. a 4-CPU quota
+    fully saturated == 100%), matching what alert thresholds expect.
+
+    Usage is measured as a delta between this call and the *previous*
+    collector-loop call, not a fresh isolated snapshot each time. A
+    short synchronous sample (e.g. sleep 0.5s, diff, return) measures a
+    window that's disconnected from the real polling cadence and from
+    whatever interval Docker's own stats are averaged over — under a
+    bursty load, a half-second snapshot can land in a lull and read a
+    much lower rate than Docker reports for the same period, even
+    though both are reading the same cgroup counter. Diffing against
+    the last sample instead ties our window to the actual ~poll
+    interval, which tracks Docker's own refresh cadence far more
+    closely and removes the per-call blocking sleep entirely (after
+    the first sample).
+
+    Falls back to host-wide psutil accounting when no quota is set
+    (unlimited container) or cgroup files can't be read.
+    """
+    try:
+        quota = _cgroup_cpu_quota()
+        if quota is None:
+            return float(psutil.cpu_percent(interval=0.5)) if PS_OK else 0.0
+
+        cpus, read_usage_ns = quota
+        now_ns = read_usage_ns()
+        now_ts = time.monotonic()
+
+        with _lock:
+            prev_ns = _cpu_usage_state["usage_ns"]
+            prev_ts = _cpu_usage_state["ts"]
+            _cpu_usage_state["usage_ns"] = now_ns
+            _cpu_usage_state["ts"]       = now_ts
+
+        if prev_ns is None or prev_ts is None:
+            # First sample ever — no baseline to diff against yet. Take
+            # one short blocking measurement so startup doesn't report a
+            # stale 0% until the next collector tick.
+            time.sleep(0.5)
+            after_ns = read_usage_ns()
+            elapsed  = max(0.1, time.monotonic() - now_ts)
+            used_seconds = (after_ns - now_ns) / 1_000_000_000
+            with _lock:
+                _cpu_usage_state["usage_ns"] = after_ns
+                _cpu_usage_state["ts"]       = time.monotonic()
+        else:
+            elapsed = max(0.1, now_ts - prev_ts)
+            used_seconds = (now_ns - prev_ns) / 1_000_000_000
+
+        return max(0.0, min(100.0, (used_seconds / (elapsed * cpus)) * 100.0))
+    except Exception:
+        return float(psutil.cpu_percent(interval=0.5)) if PS_OK else 0.0
 
 
 def _build_feature_vector():
@@ -131,11 +355,10 @@ def _build_feature_vector():
         disk = 25 +  5 * abs(math.sin(t / 120 + 2))
         net  = 30 + 15 * abs(math.sin(t / 45  + 3))
     else:
-        cpu  = psutil.cpu_percent(interval=0.05)
+        cpu  = _container_cpu_percent()
         mem  = psutil.virtual_memory().percent
         try:
-            d    = psutil.disk_io_counters()
-            disk = min(100, (d.read_bytes + d.write_bytes) / 1e8 * 5)
+            disk = psutil.disk_usage("/").percent
         except Exception:
             disk = 0.0
         try:
@@ -172,9 +395,10 @@ def _collect():
     engine    = get_engine()
     registry  = get_registry()
     last_save = time.time()
+
     AUTOSAVE_INTERVAL = int(os.environ.get("AUTOSAVE_INTERVAL_S", "300"))
 
-    while True:
+    while not _collector_stop.is_set():
         try:
             feat, raw = _build_feature_vector()
             with _lock:
@@ -309,30 +533,69 @@ def _collect():
 
         except Exception as e:
             log.error("Collector error: %s", e, exc_info=True)
-        time.sleep(float(os.environ.get("POLL_INTERVAL_S", "1")))
+        _collector_stop.wait(float(os.environ.get("POLL_INTERVAL_S", "1")))
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _event_loop
+    global _event_loop, _collector_thread
     _event_loop = asyncio.get_running_loop()
+    await _restore_registered_devices()
 
     os.makedirs("logs",           exist_ok=True)
     os.makedirs("model_versions", exist_ok=True)
 
-    threading.Thread(target=_collect, daemon=True, name="cvis-collector").start()
+    # Restore the explicitly active ensemble checkpoint before live collection.
+    try:
+        registry = get_registry()
+        active = registry.get_active_version("ensemble")
+        if active:
+            state = registry.load_version("ensemble", active["version_id"])
+            if state:
+                get_engine().load_state_dict(state)
+                log.info(
+                    "Restored active ensemble: %s (steps_lstm=%s, steps_vae=%s)",
+                    active["version_id"],
+                    state.get("metrics", {}).get("steps_lstm", 0),
+                    state.get("metrics", {}).get("steps_vae", 0),
+                )
+            else:
+                log.warning(
+                    "Active ensemble checkpoint could not be loaded: %s",
+                    active["version_id"],
+                )
+        else:
+            log.info("No active ensemble checkpoint configured")
+    except Exception as e:
+        log.warning("Ensemble restore failed: %s", e, exc_info=True)
+
+    _collector_stop.clear()
+    _collector_thread = threading.Thread(target=_collect, daemon=True, name="cvis-collector")
+    _collector_thread.start()
 
     async def _alert_loop():
         ae = get_alert_engine()
+        await ae.restore_active_alerts()
+
+        # Preserve the real notification dispatcher before adding
+        # Redis-based notification throttling.
+        original_dispatch = ae._dispatch
 
         async def _redis_dispatch(alert):
+            # Persist every new incident regardless of notification
+            # cooldown. Cooldown controls notifications, not incidents.
+            await save_alert(alert)
+
             fired = await alert_check_and_set(
                 alert.rule_id,
-                ae.rules[alert.rule_id].cooldown_s if alert.rule_id in ae.rules else 60,
+                ae.rules[alert.rule_id].cooldown_s
+                if alert.rule_id in ae.rules
+                else 60,
+                device_id=getattr(alert, "device_id", None),
             )
+
             if fired:
-                await save_alert(alert)
-                await ae._dispatch(alert)
+                await original_dispatch(alert)
                 await publish_event(alert.severity, alert.message)
                 await incr_counter("total_alerts_fired")
 
@@ -342,11 +605,17 @@ async def lifespan(app: FastAPI):
             if _last_metrics:
                 await ae.evaluate(dict(_last_metrics))
                 await cache_metrics(dict(_last_metrics), ttl=3)
+
             await asyncio.sleep(5)
 
     asyncio.create_task(_alert_loop())
     log.info("Synapse started — SQLite at %s", os.environ.get("DB_PATH", "cvis.db"))
     yield
+    _collector_stop.set()
+    if _collector_thread is not None and _collector_thread.is_alive():
+        await asyncio.to_thread(_collector_thread.join, 5.0)
+        if _collector_thread.is_alive():
+            log.warning("Collector thread did not stop within shutdown timeout")
     await close_db()
     log.info("Synapse shutdown — DB closed")
 
@@ -429,6 +698,7 @@ class LoginRequest(BaseModel):
 class ApiKeyRequest(BaseModel):
     name:  str
     scope: str = "read"
+    device_id: str | None = None
 
 class RefreshRequest(BaseModel):
     refresh_token: str
@@ -453,9 +723,9 @@ async def refresh(req: RefreshRequest):
             "token_type": "bearer", "expires_in": pair.expires_in}
 
 @app.post("/auth/api-keys", tags=["Auth"])
-async def create_key(req: ApiKeyRequest):
-    key = await create_api_key(req.name, req.scope)
-    return {"key": key, "name": req.name, "scope": req.scope,
+async def create_key(req: ApiKeyRequest, principal: dict = Depends(require_scope("admin"))):
+    key = await create_api_key(req.name, req.scope, req.device_id)
+    return {"key": key, "name": req.name, "scope": req.scope, "device_id": req.device_id,
             "note": "Store this key securely — it will not be shown again"}
 
 @app.delete("/auth/api-keys/{key_hash}", tags=["Auth"])
@@ -465,7 +735,9 @@ async def delete_key(key_hash: str):
 
 
 @app.get("/os/status", tags=["OS"])
-async def os_status():
+async def os_status(
+    principal: dict = Depends(require_scope("read")),
+):
     cached = await get_cached_metrics()
     return cached or {**_last_metrics, "ps_available": PS_OK}
 
@@ -497,7 +769,10 @@ class FeatRequest(BaseModel):
     features: list[float] = Field(..., min_length=5, max_length=5)
 
 @app.post("/ml/scores", tags=["ML"])
-async def ml_scores(req: FeatRequest):
+async def ml_scores(
+    req: FeatRequest,
+    principal: dict = Depends(require_scope("write")),
+):
     feat = np.array(req.features, dtype=np.float32)
     m    = get_engine().score(feat)
     return {
@@ -511,7 +786,9 @@ async def ml_scores(req: FeatRequest):
 
 @app.get("/ml/status", tags=["ML"])
 async def ml_status():
-    m = get_engine().metrics
+    eng = get_engine()
+    m = eng.metrics
+
     return {
         "backend":        m.backend,
         "model_fitted":   m.model_fitted,
@@ -540,7 +817,10 @@ class SaveVersionRequest(BaseModel):
     tag:         str = ""
 
 @app.post("/models/save", tags=["Versioning"])
-async def save_version(req: SaveVersionRequest):
+async def save_version(
+    req: SaveVersionRequest,
+    principal: dict = Depends(require_scope("write")),
+):
     engine = get_engine()
     m      = engine.metrics
     entry  = get_registry().save_version(
@@ -692,9 +972,9 @@ async def prometheus_metrics():
 
     return "".join([
         "# CVIS v9 metrics\n",
-        g("cvis_cpu_percent",            m.get("cpu_percent",  0),  "Host CPU %"),
+        g("cvis_cpu_percent",            m.get("cpu_percent",  0),  "Container CPU utilization %"),
         g("cvis_memory_percent",         m.get("memory",       0),  "Host memory %"),
-        g("cvis_disk_percent",           m.get("disk_percent", 0),  "Disk IO %"),
+        g("cvis_disk_percent",           m.get("disk_percent", 0),  "Disk space utilization %"),
         g("cvis_health_score",           m.get("health_score", 100),"System health 0-100"),
         g("cvis_anomaly_score",          m.get("anomaly_score",0),  "Ensemble anomaly 0-1"),
         g("cvis_ml_if_score",            eng.if_score,               "Isolation Forest score"),
@@ -754,11 +1034,84 @@ async def get_events(limit: int = 60):
     return await load_events(limit=limit) or []
 
 
+@app.get("/debug/cpu", tags=["System"])
+async def debug_cpu(window_s: float = 2.0):
+    """
+    Synchronized CPU diagnostic. Takes ONE raw cgroup usage delta over
+    `window_s` seconds (independent of the collector's rolling state)
+    and reports it in both conventions at once:
+
+      - quota_normalized_percent        (CVIS convention: 100% = full quota)
+      - equivalent_docker_style_percent (docker stats convention: 100% = 1 core)
+
+    Run this at the same time as `docker stats <container> --no-stream`
+    (on the HOST, targeting the actual synapse-backend container — not
+    `top`/`htop` run inside the container, which is not cgroup-aware and
+    will show host-wide usage across every process on the box).
+    equivalent_docker_style_percent should closely match Docker's own
+    number if both are reading the same container's cgroup. If they
+    don't match, Docker is looking at a different scope than this
+    container's quota; if quota_normalized_percent doesn't match a
+    manual read of the cgroup files, that's a real bug in CVIS.
+    """
+    quota = _cgroup_cpu_quota()
+    if quota is None:
+        return {
+            "quota_detected": False,
+            "note": (
+                "No cgroup CPU quota found (unlimited container, or cgroup "
+                "files unreadable) — CVIS is falling back to host-wide "
+                "psutil accounting, not quota-normalized cgroup accounting."
+            ),
+            "psutil_host_cpu_percent": (
+                float(psutil.cpu_percent(interval=window_s)) if PS_OK else None
+            ),
+        }
+
+    cpus, read_usage_ns = quota
+    before = read_usage_ns()
+    t0 = time.monotonic()
+    await asyncio.sleep(window_s)
+    after = read_usage_ns()
+    elapsed = max(0.1, time.monotonic() - t0)
+
+    used_seconds = (after - before) / 1_000_000_000
+    quota_pct   = max(0.0, min(100.0, (used_seconds / (elapsed * cpus)) * 100.0))
+    docker_pct  = round(used_seconds / elapsed * 100, 2)
+
+    return {
+        "quota_detected":                True,
+        "quota_cpus":                    cpus,
+        "sample_window_s":               round(elapsed, 3),
+        "cpu_time_consumed_s":           round(used_seconds, 3),
+        "quota_normalized_percent":      round(quota_pct, 2),
+        "equivalent_docker_style_percent": docker_pct,
+        "note": (
+            "Compare equivalent_docker_style_percent (not "
+            "quota_normalized_percent) against `docker stats` output "
+            "captured at the same time — they use the same 100%=1-core "
+            "convention. quota_normalized_percent is what CVIS displays "
+            "and alerts on (100% = full quota)."
+        ),
+    }
+
+
 @app.get("/cognitive/health-score", tags=["Cognitive"])
 async def cognitive_health_score():
     if not COGNITIVE_OK:
         return {"score": None, "error": "Cognitive layer not available"}
     return get_dna_engine().get_health_score(dict(_last_metrics))
+
+@app.get("/cognitive/pipeline", tags=["Cognitive"])
+async def cognitive_pipeline():
+    try:
+        from backend.intelligence_pipeline import run_intelligence_pipeline
+        return run_intelligence_pipeline(allow_execution=False)
+    except Exception as e:
+        return {
+            "error": "Intelligence pipeline unavailable",
+            "detail": str(e),
+        }
 
 @app.get("/cognitive/forecast", tags=["Cognitive"])
 async def cognitive_forecast():
@@ -934,6 +1287,272 @@ async def cognitive_status():
     }
 
 
+class DeviceRegistrationPayload(BaseModel):
+    device_id: str
+    device_name: str
+    os: str
+    os_version: str = ""
+    hostname: str = ""
+    capabilities: list[str] = []
+
+
+@app.post("/devices/register", tags=["Devices"])
+async def register_device(
+    payload: DeviceRegistrationPayload,
+    principal: dict = Depends(require_scope("admin")),
+):
+    device_id = payload.device_id.strip()
+
+    if not device_id:
+        raise HTTPException(400, "device_id is required")
+
+    if len(device_id) > 128:
+        raise HTTPException(400, "device_id is too long")
+
+    if not payload.device_name.strip():
+        raise HTTPException(400, "device_name is required")
+
+    if not payload.os.strip():
+        raise HTTPException(400, "os is required")
+
+    redis = await get_redis()
+
+    if redis is None:
+        raise HTTPException(
+            503,
+            "Device registration persistence unavailable",
+        )
+
+    registry_key = f"device:registry:{device_id}"
+
+    try:
+        if await redis.exists(registry_key):
+            raise HTTPException(409, "Device is already registered")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        log.exception(
+            "Failed to check registration for device %s: %s",
+            device_id,
+            exc,
+        )
+        raise HTTPException(
+            503,
+            "Device registration persistence unavailable",
+        )
+
+    registration = {
+        "device_id": device_id,
+        "device_name": payload.device_name.strip(),
+        "os": payload.os.strip(),
+        "os_version": payload.os_version.strip(),
+        "hostname": payload.hostname.strip(),
+        "capabilities": list(dict.fromkeys(payload.capabilities)),
+        "registered_at": time.time(),
+        "status": "registered",
+    }
+
+    try:
+        await redis.hset(
+                registry_key,
+                mapping={
+                    "device_id": registration["device_id"],
+                    "device_name": registration["device_name"],
+                    "os": registration["os"],
+                    "os_version": registration["os_version"],
+                    "hostname": registration["hostname"],
+                    "capabilities": _json.dumps(registration["capabilities"]),
+                    "registered_at": str(registration["registered_at"]),
+                    "status": registration["status"],
+                },
+        )
+    except Exception as exc:
+        log.exception(
+            "Failed to persist registration for device %s: %s",
+            device_id,
+            exc,
+        )
+        raise HTTPException(
+            503,
+            "Device registration persistence unavailable",
+        )
+
+    # Device identity is supplied by the agent and becomes the binding
+    # identity for its telemetry credential.
+    from backend.core.auth.auth import create_api_key
+
+    try:
+        api_key = await create_api_key(
+            name=f"device:{device_id}",
+            scope="write",
+            device_id=device_id,
+        )
+    except Exception as exc:
+        # Do not leave a registry entry behind if credential issuance fails.
+        try:
+            await redis.delete(registry_key)
+        except Exception:
+            log.exception(
+                "Failed to roll back registration for device %s",
+                device_id,
+            )
+        raise HTTPException(
+            503,
+            "Device credential issuance failed",
+        ) from exc
+
+    _devices[device_id] = {
+        **registration,
+        "last_seen": None,
+        "metrics": {},
+        "processes": [],
+    }
+
+    return {
+        "registered": True,
+        "device_id": device_id,
+        "credential": api_key,
+        "credential_scope": "write",
+        "credential_device_id": device_id,
+    }
+
+
+class DeviceCommandCreatePayload(BaseModel):
+    command_type: str
+    payload: dict = {}
+    ttl_s: float = 300.0
+
+
+class DeviceCommandTransitionPayload(BaseModel):
+    status: str
+
+
+@app.post("/devices/{device_id}/commands", tags=["Devices"])
+async def create_device_command(
+    device_id: str,
+    payload: DeviceCommandCreatePayload,
+    principal: dict = Depends(require_scope("admin")),
+):
+    """Create and durably enqueue an allowlisted command for a device."""
+    if device_id not in _devices:
+        raise HTTPException(404, "Device is not registered")
+
+    redis = await get_redis()
+    if redis is None:
+        raise HTTPException(503, "Command persistence unavailable")
+
+    from backend.core.devices.command_service import create_command
+
+    requested_by = principal.get("sub") or principal.get("name") or "admin"
+
+    try:
+        return await create_command(
+            redis,
+            device_id=device_id,
+            command_type=payload.command_type,
+            requested_by=requested_by,
+            payload=payload.payload,
+            ttl_s=payload.ttl_s,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except Exception as exc:
+        log.exception(
+            "Failed to create command for device %s: %s",
+            device_id,
+            exc,
+        )
+        raise HTTPException(503, "Command creation failed") from exc
+
+
+@app.get("/devices/{device_id}/commands/{command_id}", tags=["Devices"])
+async def get_device_command(
+    device_id: str,
+    command_id: str,
+    principal: dict = Depends(require_scope("read")),
+):
+    """Return command state, enforcing device binding for device credentials."""
+    redis = await get_redis()
+    if redis is None:
+        raise HTTPException(503, "Command persistence unavailable")
+
+    from backend.core.devices.command_service import get_command
+
+    command = await get_command(redis, command_id)
+
+    if command is None:
+        raise HTTPException(404, "Command not found")
+
+    if command["device_id"] != device_id:
+        raise HTTPException(404, "Command not found")
+
+    credential_device_id = principal.get("device_id")
+    if credential_device_id and credential_device_id != device_id:
+        raise HTTPException(
+            403,
+            "Credential is not authorized for this device",
+        )
+
+    return command
+
+
+@app.post(
+    "/devices/{device_id}/commands/{command_id}/transition",
+    tags=["Devices"],
+)
+async def transition_device_command(
+    device_id: str,
+    command_id: str,
+    payload: DeviceCommandTransitionPayload,
+    principal: dict = Depends(require_scope("write")),
+):
+    """Advance a command through its guarded lifecycle."""
+    credential_device_id = principal.get("device_id")
+
+    if not credential_device_id:
+        raise HTTPException(
+            403,
+            "Device-bound credential required for command transition",
+        )
+
+    if credential_device_id != device_id:
+        raise HTTPException(
+            403,
+            "Credential is not authorized for this device",
+        )
+
+    redis = await get_redis()
+    if redis is None:
+        raise HTTPException(503, "Command persistence unavailable")
+
+    from backend.core.devices.command_service import (
+        get_command,
+        transition_command,
+    )
+
+    command = await get_command(redis, command_id)
+
+    if command is None or command["device_id"] != device_id:
+        raise HTTPException(404, "Command not found")
+
+    try:
+        transitioned = await transition_command(
+            redis,
+            command_id,
+            payload.status,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+    if not transitioned:
+        raise HTTPException(
+            409,
+            "Command transition is invalid for its current state",
+        )
+
+    return await get_command(redis, command_id)
+
+
 class DeviceMetricsPayload(BaseModel):
     device_id:   str
     device_name: str
@@ -944,10 +1563,213 @@ class DeviceMetricsPayload(BaseModel):
     metrics:     dict
     processes:   list = []
 
+class DeviceHeartbeatPayload(BaseModel):
+    device_id: str
+    timestamp: float
+
+
+HEARTBEAT_MAX_AGE_S = 120.0
+HEARTBEAT_MAX_FUTURE_SKEW_S = 30.0
+HEARTBEAT_WATERMARK_TTL_S = int(
+    HEARTBEAT_MAX_AGE_S * 2 + HEARTBEAT_MAX_FUTURE_SKEW_S
+)
+_last_heartbeat_timestamp: dict[str, float] = {}
+
+
+async def _accept_heartbeat_timestamp(device_id: str, timestamp: float) -> bool:
+    """Atomically accept a strictly newer heartbeat timestamp."""
+    redis = await get_redis()
+
+    if redis is not None:
+        key = f"heartbeat:last_timestamp:{device_id}"
+        script = """
+        local current = redis.call('GET', KEYS[1])
+        if current and tonumber(ARGV[1]) <= tonumber(current) then
+            return 0
+        end
+        redis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[2])
+        return 1
+        """
+        accepted = await redis.eval(
+            script,
+            1,
+            key,
+            str(timestamp),
+            str(HEARTBEAT_WATERMARK_TTL_S),
+        )
+        return bool(accepted)
+
+    # Local fallback when Redis is temporarily unavailable.
+    previous = _last_heartbeat_timestamp.get(device_id)
+    if previous is not None and timestamp <= previous:
+        return False
+
+    _last_heartbeat_timestamp[device_id] = timestamp
+    return True
+
+
+@app.post("/devices/{device_id}/heartbeat", tags=["Devices"])
+async def receive_device_heartbeat(
+    device_id: str,
+    payload: DeviceHeartbeatPayload,
+    principal: dict = Depends(require_scope("write")),
+):
+    credential_device_id = principal.get("device_id")
+
+    if not credential_device_id:
+        raise HTTPException(
+            403,
+            "Device-bound credential required for heartbeat",
+        )
+
+    if credential_device_id != device_id:
+        raise HTTPException(
+            403,
+            "Credential is not authorized for this device",
+        )
+
+    if payload.device_id != device_id:
+        raise HTTPException(
+            400,
+            "Payload device_id does not match URL device_id",
+        )
+
+    now = time.time()
+    age = now - payload.timestamp
+
+    if age > HEARTBEAT_MAX_AGE_S:
+        raise HTTPException(409, "Heartbeat timestamp is stale")
+
+    if age < -HEARTBEAT_MAX_FUTURE_SKEW_S:
+        raise HTTPException(
+            409,
+            "Heartbeat timestamp is too far in the future",
+        )
+
+    if not await _accept_heartbeat_timestamp(
+        device_id,
+        payload.timestamp,
+    ):
+        raise HTTPException(
+            409,
+            "Heartbeat timestamp is out of order or replayed",
+        )
+
+    device = _devices.get(device_id)
+
+    if device is None:
+        raise HTTPException(404, "Device is not registered")
+
+    device["last_seen"] = now
+    device["status"] = "online"
+
+    redis = await get_redis()
+
+    if redis is not None:
+        try:
+            await redis.hset(
+                f"device:registry:{device_id}",
+                mapping={
+                    "last_seen": str(now),
+                },
+            )
+        except Exception:
+            log.exception(
+                "Failed to persist heartbeat for device %s",
+                device_id,
+            )
+
+    return {
+        "status": "online",
+        "device_id": device_id,
+        "timestamp": payload.timestamp,
+        "last_seen": now,
+    }
+
+
 @app.post("/devices/{device_id}/metrics", tags=["Devices"])
-async def receive_device_metrics(device_id: str, payload: DeviceMetricsPayload):
-    _devices[device_id] = {**payload.dict(), "last_seen": time.time(), "status": "online"}
-    return {"accepted": True, "device_id": device_id}
+async def receive_device_metrics(
+    device_id: str,
+    payload: DeviceMetricsPayload,
+    principal: dict = Depends(require_scope("write")),
+):
+    credential_device_id = principal.get("device_id")
+    if not credential_device_id:
+        raise HTTPException(403, "Device-bound credential required for telemetry")
+    if credential_device_id != device_id:
+        raise HTTPException(403, "Credential is not authorized for this device")
+    if payload.device_id != device_id:
+        raise HTTPException(400, "Payload device_id does not match URL device_id")
+
+    now = time.time()
+    age = now - payload.timestamp
+
+    if age > TELEMETRY_MAX_AGE_S:
+        raise HTTPException(409, "Telemetry timestamp is stale")
+
+    if age < -TELEMETRY_MAX_FUTURE_SKEW_S:
+        raise HTTPException(409, "Telemetry timestamp is too far in the future")
+
+    if not await _accept_telemetry_timestamp(device_id, payload.timestamp):
+        raise HTTPException(409, "Telemetry timestamp is out of order or replayed")
+
+    # Store the complete remote-device telemetry payload.
+    device = {
+        **payload.dict(),
+        "last_seen": time.time(),
+        "status": "online",
+    }
+
+    # Run inference against the shared active model while keeping
+    # temporal/EMA state isolated to this device.
+    try:
+        ml = get_remote_inference().score(
+            device_id,
+            payload.metrics,
+        )
+        device["ml"] = ml
+
+        # Evaluate this remote device independently from local backend alerts.
+        alert_metrics = {
+            **payload.metrics,
+            "anomaly_score": ml.get("ensemble_score", 0.0),
+        }
+        await get_alert_engine().evaluate_device(
+            device_id=device_id,
+            device_name=payload.device_name,
+            metrics=alert_metrics,
+        )
+    except Exception as exc:
+        # Telemetry ingestion must remain available even if ML inference
+        # encounters a bad payload/model state.
+        log.exception(
+            "Remote ML inference failed for device %s: %s",
+            device_id,
+            exc,
+        )
+        device["ml"] = {
+            "available": False,
+            "error": str(exc),
+        }
+
+    _devices[device_id] = device
+
+    # Keep the persistent node snapshot synchronized with the live
+    # /devices telemetry so the intelligence pipeline sees remote devices.
+    try:
+        _persist_device_node(payload)
+    except Exception as exc:
+        log.exception(
+            "Failed to persist node snapshot for device %s: %s",
+            device_id,
+            exc,
+        )
+
+    return {
+        "accepted": True,
+        "device_id": device_id,
+        "ml": device["ml"],
+    }
 
 @app.get("/devices", tags=["Devices"])
 async def list_devices():
@@ -958,8 +1780,8 @@ async def list_devices():
             "device_name": d.get("device_name", "unknown"),
             "os":          d.get("os",           "unknown"),
             "hostname":    d.get("hostname",      ""),
-            "status":      "online" if now - d.get("last_seen", 0) < 30 else "offline",
-            "last_seen_s": round(now - d.get("last_seen", 0), 1),
+            "status":      "online" if now - (d.get("last_seen") or 0) < 30 else "offline",
+            "last_seen_s": (round(now - d["last_seen"], 1) if d.get("last_seen") is not None else None),
             "metrics":     d.get("metrics",   {}),
             "processes":   d.get("processes", []),
         }
@@ -991,7 +1813,7 @@ async def list_available_actions(failure_type: Optional[str] = None):
         return []
     return _get_actions(failure_type)
 
-@app.post("/actions/execute", tags=["Actions"])
+@app.post("/actions/execute", tags=["Actions"], dependencies=[Depends(require_scope("write"))])
 async def run_action(action_id: str):
     if not ACTIONS_OK:
         return {"success": False, "error": "Action executor not available"}
@@ -1053,123 +1875,7 @@ async def weekly_health_report():
     return {"report": report, "generated_at": time.time(), "format": "plain_text"}
 
 
-
 # ── Settings endpoints ────────────────────────────────────────────────────────
-# Paste this block into backend/main.py before the _FRONTEND_DIR block
-
-from backend.core.settings import settings_manager as _sm
-
-@app.get("/settings", tags=["Settings"])
-async def get_settings():
-    return _sm.get_all()
-
-@app.post("/settings", tags=["Settings"])
-async def save_settings(request: Request):
-    body = await request.json()
-    result = _sm.save(body)
-    # Apply thresholds to live alert engine immediately
-    try:
-        _sm.apply_alert_thresholds(get_alert_engine())
-    except Exception:
-        pass
-    return result
-
-@app.post("/settings/reset", tags=["Settings"])
-async def reset_settings():
-    return _sm.reset()
-
-@app.post("/settings/test-email", tags=["Settings"])
-async def settings_test_email():
-    try:
-        from backend.core.reports.weekly_report import send_alert_email
-        send_alert_email(
-            severity="INFO",
-            message="CVIS settings test — email delivery confirmed.",
-            reason="Manual test from Settings panel",
-            actions=["No action required"],
-            metrics={
-                "cpu_percent":  _last_metrics.get("cpu_percent",  0),
-                "memory":       _last_metrics.get("memory",       0),
-                "health_score": _last_metrics.get("health_score", 100),
-            },
-        )
-        return {"success": True, "message": "Test email sent — check your inbox."}
-    except Exception as e:
-        return {"success": False, "message": str(e)}
-
-@app.post("/settings/send-report", tags=["Settings"])
-async def settings_send_report():
-    try:
-        from backend.core.reports.weekly_report import send_weekly_report_email
-        to = _sm.get("alert_email") or os.environ.get("ALERT_EMAIL", "")
-        if not to:
-            return {"success": False, "message": "No alert email configured."}
-        send_weekly_report_email(to)
-        return {"success": True, "message": f"Weekly report sent to {to}"}
-    except Exception as e:
-        return {"success": False, "message": str(e)}
-
-
-
-# ── Settings endpoints ────────────────────────────────────────────────────────
-# Paste this block into backend/main.py before the _FRONTEND_DIR block
-
-from backend.core.settings import settings_manager as _sm
-
-@app.get("/settings", tags=["Settings"])
-async def get_settings():
-    return _sm.get_all()
-
-@app.post("/settings", tags=["Settings"])
-async def save_settings(request: Request):
-    body = await request.json()
-    result = _sm.save(body)
-    # Apply thresholds to live alert engine immediately
-    try:
-        _sm.apply_alert_thresholds(get_alert_engine())
-    except Exception:
-        pass
-    return result
-
-@app.post("/settings/reset", tags=["Settings"])
-async def reset_settings():
-    return _sm.reset()
-
-@app.post("/settings/test-email", tags=["Settings"])
-async def settings_test_email():
-    try:
-        from backend.core.reports.weekly_report import send_alert_email
-        send_alert_email(
-            severity="INFO",
-            message="CVIS settings test — email delivery confirmed.",
-            reason="Manual test from Settings panel",
-            actions=["No action required"],
-            metrics={
-                "cpu_percent":  _last_metrics.get("cpu_percent",  0),
-                "memory":       _last_metrics.get("memory",       0),
-                "health_score": _last_metrics.get("health_score", 100),
-            },
-        )
-        return {"success": True, "message": "Test email sent — check your inbox."}
-    except Exception as e:
-        return {"success": False, "message": str(e)}
-
-@app.post("/settings/send-report", tags=["Settings"])
-async def settings_send_report():
-    try:
-        from backend.core.reports.weekly_report import send_weekly_report_email
-        to = _sm.get("alert_email") or os.environ.get("ALERT_EMAIL", "")
-        if not to:
-            return {"success": False, "message": "No alert email configured."}
-        send_weekly_report_email(to)
-        return {"success": True, "message": f"Weekly report sent to {to}"}
-    except Exception as e:
-        return {"success": False, "message": str(e)}
-
-
-
-# ── Settings endpoints ────────────────────────────────────────────────────────
-# Paste this block into backend/main.py before the _FRONTEND_DIR block
 
 from backend.core.settings import settings_manager as _sm
 
@@ -1225,7 +1931,6 @@ async def settings_send_report():
 
 
 # ── Silent Degradation endpoint ───────────────────────────────────────────────
-# Add this block to backend/main.py near the other /cognitive/ endpoints
 
 @app.get("/cognitive/degradation", tags=["Cognitive"])
 async def cognitive_degradation():
@@ -1248,7 +1953,6 @@ async def cognitive_degradation():
 
 
 # ── Stress Test endpoints ─────────────────────────────────────────────────────
-# Inject into backend/main.py before the _FRONTEND_DIR block
 
 @app.get("/stress/scenarios", tags=["Demo"])
 async def list_stress_scenarios():

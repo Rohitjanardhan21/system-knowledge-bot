@@ -57,6 +57,7 @@ def map_action(cause_type):
         "cpu_overload": "reduce_compute_load",
         "moderate_cpu_load": "optimize_processes",
         "memory_pressure": "free_memory",
+        "disk_pressure": "clear_temp",
         "disk_io_bottleneck": "optimize_io",
         "thermal_overload": "increase_cooling",
         "mechanical_fault": "inspect_mechanics",
@@ -199,6 +200,12 @@ class CausalEngine:
 
         elif electrical > HIGH_ELECTRICAL:
             cause_type = "electrical_instability"
+
+        elif mem > HIGH_MEM:
+            cause_type = "memory_pressure"
+
+        elif disk > HIGH_DISK:
+            cause_type = "disk_pressure"
 
         elif cpu > HIGH_CPU:
             cause_type = "cpu_overload"

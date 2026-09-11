@@ -2,7 +2,7 @@
 # 🧠 TRUTH ENGINE (ROBUST VALIDATION LAYER)
 # ---------------------------------------------------------
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 class TruthEngine:
@@ -132,7 +132,7 @@ class TruthEngine:
             "valid": valid,
             "issues": issues,
             "confidence_adjustment": adjusted_conf,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
 
         # 🔥 APPLY ADJUSTMENT DIRECTLY

@@ -2,7 +2,7 @@
 # 🧠 SIGNAL SCHEMA (MULTI-MODAL NORMALIZATION LAYER)
 # ---------------------------------------------------------
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any
 
 
@@ -40,7 +40,7 @@ def normalize_timestamp(ts):
     Ensures ISO 8601 timestamp
     """
     if not ts:
-        return datetime.utcnow().isoformat()
+        return datetime.now(timezone.utc).isoformat()
 
     if isinstance(ts, (int, float)):
         return datetime.utcfromtimestamp(ts).isoformat()
@@ -48,7 +48,7 @@ def normalize_timestamp(ts):
     if isinstance(ts, str):
         return ts
 
-    return datetime.utcnow().isoformat()
+    return datetime.now(timezone.utc).isoformat()
 
 
 # ---------------------------------------------------------

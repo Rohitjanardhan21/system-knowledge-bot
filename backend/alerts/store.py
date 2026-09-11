@@ -1,7 +1,7 @@
 from pathlib import Path
 import json
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 ALERTS_PATH = Path("system_facts/alerts.json")
 ALERTS_PATH.parent.mkdir(exist_ok=True)
@@ -26,7 +26,7 @@ def create_alert(severity, source, message):
         "severity": severity,
         "source": source,
         "message": message,
-        "created_at": datetime.utcnow().isoformat(),
+        "created_at": datetime.now(timezone.utc).isoformat(),
         "acknowledged": False
     }
 

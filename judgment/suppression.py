@@ -1,11 +1,11 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from audit.logger import log_event
 from audit.models import AuditEvent
 
 CONFIDENCE_THRESHOLD = 0.65
 
 def should_speak(judgment, user_asked: bool, source="unknown") -> bool:
-    ts = datetime.utcnow().isoformat()
+    ts = datetime.now(timezone.utc).isoformat()
 
     if user_asked:
         log_event(AuditEvent(

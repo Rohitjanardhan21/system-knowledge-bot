@@ -2,7 +2,7 @@
 
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 
 HISTORY_PATH = "system_facts/action_history.json"
 os.makedirs("system_facts", exist_ok=True)
@@ -30,7 +30,7 @@ class ActionHistory:
     # -----------------------------------------
     def log_action(self, action, reward=None, meta=None):
         entry = {
-            "time": datetime.utcnow().isoformat(),
+            "time": datetime.now(timezone.utc).isoformat(),
             "action": action,
             "reward": reward,
             "meta": meta or {}

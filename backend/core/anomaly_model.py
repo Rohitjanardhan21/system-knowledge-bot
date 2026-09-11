@@ -1,6 +1,6 @@
 import numpy as np
 from collections import deque
-from datetime import datetime
+from datetime import datetime, timezone
 from sklearn.ensemble import IsolationForest
 from sklearn.preprocessing import StandardScaler
 import joblib
@@ -63,7 +63,7 @@ class AnomalyModel:
             return
 
         self.history.append(features)
-        self.timestamps.append(datetime.utcnow())
+        self.timestamps.append(datetime.now(timezone.utc))
 
         # store for ML training
         self.training_buffer.append(list(features.values()))

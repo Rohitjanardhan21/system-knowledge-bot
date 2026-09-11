@@ -623,7 +623,7 @@ class FailureDNAEngine:
         return {
             "OOM":     "Memory fills up before the system runs out",
             "CRASH":   "CPU and anomaly scores spike before a process terminates",
-            "FREEZE":  "Disk I/O saturates before the system becomes unresponsive",
+            "FREEZE":  "Disk space utilization saturates before the system becomes unresponsive",
             "THERMAL": "CPU usage stays high leading to thermal throttling",
         }.get(event_type, "Unusual metric pattern precedes this failure type")
 

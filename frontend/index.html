@@ -242,7 +242,7 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:1
   <div class="metrics-grid">
     <div class="mc"><div class="mc-lbl">CPU Usage</div><div class="mc-val" id="v-cpu">—</div><div class="mc-bar"><div class="mc-bar-fill" id="b-cpu"></div></div><div class="mc-sub" id="s-cpu">loading…</div><div class="mc-delta" id="d-cpu"></div></div>
     <div class="mc"><div class="mc-lbl">Memory</div><div class="mc-val" id="v-mem">—</div><div class="mc-bar"><div class="mc-bar-fill" id="b-mem"></div></div><div class="mc-sub" id="s-mem">loading…</div><div class="mc-delta" id="d-mem"></div></div>
-    <div class="mc"><div class="mc-lbl">Disk I/O</div><div class="mc-val" id="v-disk">—</div><div class="mc-bar"><div class="mc-bar-fill" id="b-disk"></div></div><div class="mc-sub" id="s-disk">loading…</div><div class="mc-delta" id="d-disk"></div></div>
+    <div class="mc"><div class="mc-lbl">Disk space utilization</div><div class="mc-val" id="v-disk">—</div><div class="mc-bar"><div class="mc-bar-fill" id="b-disk"></div></div><div class="mc-sub" id="s-disk">loading…</div><div class="mc-delta" id="d-disk"></div></div>
     <div class="mc"><div class="mc-lbl">Health Score</div><div class="mc-val" id="v-health">—</div><div class="mc-bar"><div class="mc-bar-fill" id="b-health"></div></div><div class="mc-sub" id="s-health">loading…</div><div class="mc-delta" id="d-health"></div></div>
   </div>
 
@@ -461,7 +461,7 @@ function actOnPrediction(){
     'CRASH': `Process crash predicted in ${eta} minutes. CPU=${snap.cpu_percent?.toFixed(1)}%. Top process: ${snap.processes?.by_cpu?.[0]?.name||'unknown'} at ${snap.processes?.by_cpu?.[0]?.cpu?.toFixed(1)||'?'}% CPU. What exact steps should I take right now?`,
     'THERMAL': `Thermal failure predicted in ${eta} minutes. CPU has been at ${snap.cpu_percent?.toFixed(1)}% for a sustained period. What should I do right now to prevent throttling or shutdown?`,
     'DISK_FULL': `Disk full failure predicted in ${eta} minutes. Disk at ${snap.disk_percent?.toFixed(1)}%. What exact commands should I run to free space right now?`,
-    'DISK_IO_SATURATION': `Disk I/O saturated at ${snap.disk_percent?.toFixed(1)}% predicted to cause failure in ${eta} minutes. What should I do right now?`,
+    'DISK_IO_SATURATION': `Disk space utilization saturated at ${snap.disk_percent?.toFixed(1)}% predicted to cause failure in ${eta} minutes. What should I do right now?`,
   };
   $('ch-in').value = questions[type] || `${type} failure predicted in ${eta} minutes. What exact steps should I take right now to prevent it?`;
   sendChat();
@@ -1219,7 +1219,7 @@ function showSettingsMsg(panel, text, ok, spinner) {
           <div class="sslider-val" id="slv-threshold_memory">80%</div>
         </div>
         <div class="sslider-row">
-          <div class="sslider-lbl">Disk I/O<small style="font-size:10px;color:var(--muted)">Alert when disk I/O exceeds this %</small></div>
+          <div class="sslider-lbl">Disk space utilization<small style="font-size:10px;color:var(--muted)">Alert when disk space utilization exceeds this %</small></div>
           <input class="sslider" id="sl-threshold_disk" type="range" min="50" max="99" step="1" oninput="updateSlider('threshold_disk',this.value,'%')">
           <div class="sslider-val" id="slv-threshold_disk">85%</div>
         </div>
@@ -2701,7 +2701,7 @@ function _buildWarningDetail(type, before) {
     case 'THERMAL':
       return `CPU sustained at ${before.cpu.toFixed(0)}% for several minutes — thermal pressure building.`;
     case 'DISK_FULL':
-      return `Disk I/O at ${before.disk.toFixed(0)}%. Heavy read/write operations detected.`;
+      return `Disk space utilization at ${before.disk.toFixed(0)}%. Heavy read/write operations detected.`;
     default:
       return `Anomalous behaviour detected across multiple metrics.`;
   }

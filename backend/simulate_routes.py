@@ -70,7 +70,7 @@ router = APIRouter()
 @router.post("/simulate")
 def simulate(payload: dict):
     # override metrics temporarily
-    result = run_intelligence_pipeline()
+    result = run_intelligence_pipeline(allow_execution=False)
 
     # override manually
     if "cpu" in payload:

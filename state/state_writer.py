@@ -7,7 +7,7 @@
 
 import json
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 STATE_DIR = PROJECT_ROOT / "system_state"
@@ -18,7 +18,7 @@ HISTORY_DIR.mkdir(exist_ok=True)
 
 
 def write_state(facts, judgments, posture):
-    timestamp = datetime.utcnow().isoformat(timespec="seconds")
+    timestamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
     record = {
         "timestamp": timestamp,

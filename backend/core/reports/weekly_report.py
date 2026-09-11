@@ -154,7 +154,7 @@ def generate_report(server: str = DEFAULT_SERVER, key: str = DEFAULT_KEY) -> str
             "  " + "-" * 40,
             f"  CPU:          {_metric_note(cpu,  70, 85)}",
             f"  Memory:       {_metric_note(mem,  75, 85)}",
-            f"  Disk I/O:     {_metric_note(disk, 70, 85)}",
+            f"  Disk space utilization:     {_metric_note(disk, 70, 85)}",
             f"  Anomaly:      {_metric_note(anom, 0.4, 0.7, '')}",
             "",
         ]
@@ -487,7 +487,7 @@ All data is from your local machine.
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
           <div><span style="color:#888;font-size:12px">CPU</span><br><span style="font-size:18px;font-weight:600;color:#111">{cpu:.1f}%</span></div>
           <div><span style="color:#888;font-size:12px">Memory</span><br><span style="font-size:18px;font-weight:600;color:#111">{mem:.1f}%</span></div>
-          <div><span style="color:#888;font-size:12px">Disk I/O</span><br><span style="font-size:18px;font-weight:600;color:#111">{disk:.1f}%</span></div>
+          <div><span style="color:#888;font-size:12px">Disk space utilization</span><br><span style="font-size:18px;font-weight:600;color:#111">{disk:.1f}%</span></div>
           <div><span style="color:#888;font-size:12px">Anomaly</span><br><span style="font-size:18px;font-weight:600;color:#111">{anomaly:.3f}</span></div>
         </div>
       </div>

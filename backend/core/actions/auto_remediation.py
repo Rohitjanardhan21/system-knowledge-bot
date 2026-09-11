@@ -2,6 +2,8 @@ import os, time, threading, logging
 from dataclasses import dataclass, asdict
 from collections import deque
 
+from backend.core.actions.action_executor import AUTONOMOUS_ALLOWED_ACTIONS
+
 log = logging.getLogger("cvis.autoremediate")
 
 def _get_mode():
@@ -126,7 +128,7 @@ class AutoRemediationEngine:
                 f"{pred_type} at {pred_conf:.0f}% confidence. Running: {label}.")
             try:
                 from backend.core.actions.action_executor import execute_action
-                result = execute_action(action_id)
+                result = execute_action(action_id, source="auto")
             except Exception as e:
                 result = {"success":False,"error":str(e)}
             if result.get("success"):
@@ -177,8 +179,11 @@ class AutoRemediationEngine:
             "cooldowns": {k:round((self.COOLDOWN_SECONDS-(time.time()-v))/60)
                          for k,v in self._cooldowns.items()
                          if time.time()-v < self.COOLDOWN_SECONDS},
-            "safe_actions": ["drop_caches","clear_logs","clear_temp"],
-            "never_auto": ["kill_high_cpu","clear_docker_cache"],
+            "safe_actions": sorted(AUTONOMOUS_ALLOWED_ACTIONS),
+            "never_auto": sorted(set(self.REMEDIATION_MAP.keys()) | {
+                "kill_high_cpu",
+                "clear_docker_cache",
+            }),
         }
 
 _ar_engine = None

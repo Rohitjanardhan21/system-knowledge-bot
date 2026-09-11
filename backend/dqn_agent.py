@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 import random
 import numpy as np
+import os
+
 
 from backend.memory_engine import get_system_profile
 from backend.self_optimizer import get_optimizer
@@ -83,6 +85,73 @@ class DQNAgent:
         self.epsilon_decay = 0.995
 
         self.step_count = 0
+        self.checkpoint_path = os.getenv("DQN_CHECKPOINT_PATH", "/app/data/dqn_checkpoint.pt")
+        self.checkpoint_interval = 10
+
+        self.load_checkpoint()
+
+    # -------------------------------------------------
+    # 💾 CHECKPOINT PERSISTENCE
+    # -------------------------------------------------
+    def save_checkpoint(self):
+        try:
+            checkpoint = {
+                "version": 1,
+                "state_dim": self.state_dim,
+                "action_dim": self.action_dim,
+                "actions": list(ACTIONS),
+                "model_state_dict": self.model.state_dict(),
+                "target_model_state_dict": self.target_model.state_dict(),
+                "optimizer_state_dict": self.optimizer.state_dict(),
+                "epsilon": self.epsilon,
+                "step_count": self.step_count,
+                "buffer": self.buffer,
+            }
+
+            checkpoint_dir = os.path.dirname(self.checkpoint_path)
+            if checkpoint_dir:
+                os.makedirs(checkpoint_dir, exist_ok=True)
+
+            temp_path = self.checkpoint_path + ".tmp"
+            torch.save(checkpoint, temp_path)
+            os.replace(temp_path, self.checkpoint_path)
+            return True
+        except Exception:
+            return False
+
+    def load_checkpoint(self):
+        try:
+            if not os.path.exists(self.checkpoint_path):
+                return False
+
+            checkpoint = torch.load(
+                self.checkpoint_path,
+                map_location=self.device,
+                weights_only=False,
+            )
+
+            if checkpoint.get("state_dim") != self.state_dim:
+                return False
+            if checkpoint.get("action_dim") != self.action_dim:
+                return False
+            if checkpoint.get("actions") != ACTIONS:
+                return False
+
+            self.model.load_state_dict(checkpoint["model_state_dict"])
+            self.target_model.load_state_dict(checkpoint["target_model_state_dict"])
+            self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+
+            self.epsilon = max(
+                self.epsilon_min,
+                float(checkpoint.get("epsilon", self.epsilon)),
+            )
+            self.step_count = int(checkpoint.get("step_count", 0))
+
+            buffer = checkpoint.get("buffer", [])
+            self.buffer = buffer[-self.buffer_limit:] if isinstance(buffer, list) else []
+            return True
+        except Exception:
+            return False
 
     # -------------------------------------------------
     # 🧠 STATE ENCODING (SAFE)
@@ -152,10 +221,10 @@ class DQNAgent:
 
         s, a, r, s2 = zip(*batch)
 
-        s = torch.tensor(s, dtype=torch.float32).to(self.device)
+        s = torch.tensor(__import__("numpy").array(s), dtype=torch.float32).to(self.device)
         a = torch.tensor(a).to(self.device)
         r = torch.tensor(r, dtype=torch.float32).to(self.device)
-        s2 = torch.tensor(s2, dtype=torch.float32).to(self.device)
+        s2 = torch.tensor(__import__("numpy").array(s2), dtype=torch.float32).to(self.device)
 
         q = self.model(s)
         q_val = q.gather(1, a.unsqueeze(1)).squeeze()
@@ -179,6 +248,11 @@ class DQNAgent:
         self.step_count += 1
         if self.step_count % 50 == 0:
             self.target_model.load_state_dict(self.model.state_dict())
+
+        if self.step_count % self.checkpoint_interval == 0:
+            self.save_checkpoint()
+
+        return round(loss.item(), 6)
 
     # -------------------------------------------------
     # 🔍 DEBUG
