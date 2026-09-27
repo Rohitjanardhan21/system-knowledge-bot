@@ -248,9 +248,17 @@ class MLEngine:
 
         # sklearn IF
         if SK_OK:
-            self.if_model  = _IF(n_estimators=100, contamination=0.08, random_state=42)
+            self.if_model  = _IF(
+                n_estimators=100,
+                contamination=0.08,
+                random_state=42
+            )
             self.if_scaler = RobustScaler()
             self._if_fitted = False
+
+            # Calibration boundaries learned from the normal training distribution.
+            self._if_q05 = None
+            self._if_q50 = None
         else:
             self._if_fitted = False
 
@@ -300,7 +308,7 @@ class MLEngine:
             loss.backward()
             nn.utils.clip_grad_norm_(self.lstm_net.parameters(), GRAD_CLIP)
             self.lstm_opt.step()
-            self.lstm_sched.step(loss)
+            self.lstm_sched.step(loss.detach().item())
             l = loss.item()
         else:
             seqs    = [p[0] for p in pairs]
@@ -332,7 +340,7 @@ class MLEngine:
             loss.backward()
             nn.utils.clip_grad_norm_(self.vae_net.parameters(), GRAD_CLIP)
             self.vae_opt.step()
-            self.vae_sched.step(loss)
+            self.vae_sched.step(loss.detach().item())
             self.metrics.vae_recon_loss = rl
             self.metrics.vae_kl_loss    = kl
             l = loss.item()
@@ -349,8 +357,19 @@ class MLEngine:
 
     def _fit_isolation_forest(self):
         data = np.stack(list(self.feature_buf))
+
         self.if_scaler.fit(data)
-        self.if_model.fit(self.if_scaler.transform(data))
+        scaled = self.if_scaler.transform(data)
+
+        self.if_model.fit(scaled)
+
+        # Calibrate IF scores against the learned normal distribution.
+        # score_samples(): higher = more normal, lower = more anomalous.
+        train_scores = self.if_model.score_samples(scaled)
+
+        self._if_q05 = float(np.quantile(train_scores, 0.05))
+        self._if_q50 = float(np.quantile(train_scores, 0.50))
+
         self._if_fitted = True
         self.metrics.model_fitted = True
         self.metrics.steps_if = len(self.feature_buf)
@@ -362,9 +381,26 @@ class MLEngine:
         if SK_OK and self._if_fitted:
             arr = self.if_scaler.transform(feat.reshape(1, -1))
             raw = float(self.if_model.score_samples(arr)[0])
-            if_raw = max(0.0, min(1.0, (-raw - 0.1) * 2.0))
+
+            if self._if_q05 is not None and self._if_q50 is not None:
+                # Higher IF score = more normal.
+                # Median-normal -> 0 anomaly.
+                # 5th percentile -> 1 anomaly.
+                span = max(1e-6, self._if_q50 - self._if_q05)
+                if_raw = (self._if_q50 - raw) / span
+                if_raw = max(0.0, min(1.0, if_raw))
+            else:
+                if_raw = 0.0
         else:
-            if_raw = max(0.0, min(1.0, feat[0] * 0.4 + feat[1] * 0.3 + feat[4] * 0.3))
+            if_raw = max(
+                0.0,
+                min(
+                    1.0,
+                    feat[0] * 0.4 +
+                    feat[1] * 0.3 +
+                    feat[4] * 0.3
+                )
+            )
 
         # VAE score
         if TORCH_OK and self.metrics.steps_vae > 30:
@@ -399,7 +435,43 @@ class MLEngine:
         self._vae_ema  = float(a * float(vae_raw)  + (1 - a) * self._vae_ema)
         self._lstm_ema = float(a * float(lstm_raw) + (1 - a) * self._lstm_ema)
 
-        ens = self._if_ema * 0.40 + self._vae_ema * 0.35 + self._lstm_ema * 0.25
+        # Ensemble fusion:
+        # Keep all three detectors, but prevent a strongly anomalous detector
+        # from being diluted excessively by low scores from slower learners.
+        #
+        # Base contribution:
+        #   IF   = 55%
+        #   VAE  = 25%
+        #   LSTM = 20%
+        #
+        # Agreement/strength boost:
+        #   A strong IF anomaly receives an additional bounded boost when
+        #   VAE/LSTM also show non-zero anomaly evidence.
+        base_ens = (
+            self._if_ema * 0.55
+            + self._vae_ema * 0.25
+            + self._lstm_ema * 0.20
+        )
+
+        support = (
+            0.5 * min(1.0, self._vae_ema / 0.20)
+            + 0.5 * min(1.0, self._lstm_ema / 0.20)
+        )
+
+        strength_boost = (
+            max(0.0, self._if_ema - 0.70)
+            * 0.45
+            * support
+        )
+
+        # Deterministic CPU stress signal.
+        # Prevents online ML adaptation from hiding sustained system stress.
+        cpu_pct = float(feat[0]) * 100.0
+        cpu_stress = max(0.0, min(1.0, (cpu_pct - 30.0) / 25.0))
+
+        # Preserve the existing ML ensemble + strength boost,
+        # while guaranteeing that sustained CPU pressure is visible.
+        ens = min(1.0, max(base_ens + strength_boost, cpu_stress))
 
         self.metrics.if_score       = round(float(self._if_ema),   4)
         self.metrics.lstm_score     = round(float(self._lstm_ema), 4)
@@ -414,6 +486,8 @@ class MLEngine:
                 "lstm": {k: v.cpu().numpy().tolist() for k, v in self.lstm_net.state_dict().items()},
                 "vae":  {k: v.cpu().numpy().tolist() for k, v in self.vae_net.state_dict().items()},
                 "metrics": asdict(self.metrics),
+                "if_q05": self._if_q05,
+                "if_q50": self._if_q50,
             }
         return {"lstm": self.lstm_net.state_dict(), "vae": self.vae_net.state_dict(), "metrics": asdict(self.metrics)}
 
@@ -429,6 +503,12 @@ class MLEngine:
             for k, v in state["metrics"].items():
                 if hasattr(self.metrics, k):
                     setattr(self.metrics, k, v)
+
+        if "if_q05" in state:
+            self._if_q05 = state["if_q05"]
+
+        if "if_q50" in state:
+            self._if_q50 = state["if_q50"]
 
 
 # singleton

@@ -85,9 +85,9 @@ class ModelVersionRegistry:
         if model_name not in self._registry:
             self._registry[model_name] = []
 
-        # Check if this is the best so far
+        # Lower anomaly score is better.
         scores = [v.get("ensemble_score", 0) for v in self._registry[model_name]]
-        entry.is_best = entry.ensemble_score >= max(scores, default=0)
+        entry.is_best = entry.ensemble_score <= min(scores, default=float("inf"))
         if entry.is_best:
             for v in self._registry[model_name]:
                 v["is_best"] = False

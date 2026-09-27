@@ -296,7 +296,7 @@ def compute_risk(cpu, memory):
 # 🔥 MAIN PIPELINE
 # -----------------------------------------
 
-def run_intelligence_pipeline(allow_execution=True):
+def run_intelligence_pipeline(allow_execution=True, live_metrics=None):
 
     raw_current = load_json(CURRENT_FILE)
     nodes = load_nodes()
@@ -310,14 +310,19 @@ def run_intelligence_pipeline(allow_execution=True):
             metrics[key] = raw_current[key]
 
     # Use live node telemetry as the authoritative system-level snapshot.
-    # This keeps anomaly/risk/decision calculations consistent with
-    # multi-device node telemetry and process attribution.
-    if nodes:
+    # If no fresh nodes are available, fall back to the local live collector
+    # rather than trusting stale system_facts/current.json telemetry.
+    if live_metrics:
+        metrics.update(live_metrics)
+    elif nodes:
         _, live_node_summary = aggregate_nodes(nodes)
         if live_node_summary:
             metrics["cpu"] = sum(n["cpu"] for n in live_node_summary) / len(live_node_summary)
             metrics["memory"] = sum(n["memory"] for n in live_node_summary) / len(live_node_summary)
             metrics["disk"] = sum(n["disk"] for n in live_node_summary) / len(live_node_summary)
+    else:
+        local_live_metrics = executor.get_metrics()
+        metrics.update(local_live_metrics)
 
     # -----------------------------------------
     # 🧠 LEARNING ENGINE
@@ -399,8 +404,12 @@ def run_intelligence_pipeline(allow_execution=True):
     # 📊 GLOBAL METRICS
     # -----------------------------------------
 
-    avg_cpu = sum(n["cpu"] for n in node_summary) / max(len(node_summary), 1)
-    avg_memory = sum(n["memory"] for n in node_summary) / max(len(node_summary), 1)
+    if node_summary:
+        avg_cpu = sum(n["cpu"] for n in node_summary) / len(node_summary)
+        avg_memory = sum(n["memory"] for n in node_summary) / len(node_summary)
+    else:
+        avg_cpu = metrics.get("cpu", 0)
+        avg_memory = metrics.get("memory", 0)
 
     # -----------------------------------------
     # 📦 FINAL RESPONSE (UI READY)

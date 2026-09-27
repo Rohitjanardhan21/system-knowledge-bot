@@ -1,5 +1,5 @@
 export default function DigitalTwinPanel({ data }: any) {
-  const { temporal, forecast, posture, cpu } = data;
+  const { temporal, forecast, cpu } = data;
 
   const cpuTrend = temporal?.cpu?.pattern;
   const risk = forecast?.risk_score || 0;

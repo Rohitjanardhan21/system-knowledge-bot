@@ -24,7 +24,6 @@ const [loadingId, setLoadingId] = useState<string | null>(null);
 const approveAction = async (id: string) => {
 setLoadingId(id);
 
-```
 try {
   const res = await fetch(`http://localhost:8000/actions/approve/${id}`, {
     method: "POST"
@@ -38,14 +37,12 @@ try {
 }
 
 setLoadingId(null);
-```
 
 };
 
 const rejectAction = async (id: string) => {
 setLoadingId(id);
 
-```
 try {
   const res = await fetch(`http://localhost:8000/actions/reject/${id}`, {
     method: "POST"
@@ -59,7 +56,6 @@ try {
 }
 
 setLoadingId(null);
-```
 
 };
 
@@ -86,7 +82,6 @@ if (!actions || actions.length === 0) return null;
 // --------------------------------------------------
 return ( <div className="fixed bottom-24 right-6 w-[350px] space-y-4 z-50">
 
-```
   {actions.map((a) => (
     <div
       key={a.id}
@@ -146,7 +141,6 @@ return ( <div className="fixed bottom-24 right-6 w-[350px] space-y-4 z-50">
   ))}
 
 </div>
-```
 
 );
 }

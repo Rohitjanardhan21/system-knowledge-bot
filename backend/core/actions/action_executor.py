@@ -59,10 +59,13 @@ ACTIONS = {
     },
     "kill_high_cpu": {
         "id":          "kill_high_cpu",
-        "label":       "Identify High CPU Process",
-        "description": "Report top CPU consumer (does not kill automatically)",
+        "label":       "Review High Resource Processes",
+        "description": (
+            "Identify CPU and memory consuming processes for "
+            "user review before termination"
+        ),
         "safe":        True,
-        "targets":     ["CPU_STRESS", "THERMAL", "CRASH"],
+        "targets":     ["CPU_STRESS", "THERMAL", "CRASH", "OOM", "MEMORY_EXHAUSTION"],
     },
 }
 
@@ -187,31 +190,442 @@ def action_drop_caches() -> dict:
         return {"success": False, "details": [str(e)]}
 
 def action_kill_high_cpu() -> dict:
+    """
+    Diagnose sustained CPU/memory pressure.
+
+    This function is strictly diagnostic. It NEVER terminates processes.
+
+    A process becomes a remediation candidate only when:
+      * CPU usage is meaningfully elevated,
+      * the process is not protected,
+      * sufficient identity information is available,
+      * and the observed state supports remediation.
+
+    Destructive execution must independently revalidate the process identity.
+    """
     try:
         import psutil
-        procs = []
-        for p in psutil.process_iter(["pid", "name", "cpu_percent", "memory_percent"]):
+        import time
+        import os
+
+        SAMPLE_SECONDS = 1.0
+        TOP_N = 5
+
+        # ---------------------------------------------------------
+        # HARD PROTECTION POLICY
+        # ---------------------------------------------------------
+        protected_names = {
+            "system",
+            "systemd",
+            "init",
+            "idle",
+            "system idle process",
+            "uvicorn",
+        }
+
+        current_pid = os.getpid()
+
+        # ---------------------------------------------------------
+        # DISCOVERY + CPU PRIME
+        # ---------------------------------------------------------
+        processes = []
+
+        for proc in psutil.process_iter(
+            [
+                "pid",
+                "ppid",
+                "name",
+                "memory_percent",
+                "create_time",
+                "username",
+                "cmdline",
+                "exe",
+            ]
+        ):
             try:
-                procs.append(p.info)
+                proc.cpu_percent(None)
+                processes.append(proc)
+
+            except (
+                psutil.NoSuchProcess,
+                psutil.AccessDenied,
+                psutil.ZombieProcess,
+            ):
+                continue
             except Exception:
-                pass
-        procs.sort(key=lambda x: x.get("cpu_percent", 0), reverse=True)
-        top = procs[:5]
+                continue
+
+        # ---------------------------------------------------------
+        # SUSTAINED CPU SAMPLE
+        # ---------------------------------------------------------
+        time.sleep(SAMPLE_SECONDS)
+
+        observed = []
+
+        for proc in processes:
+            try:
+                info = proc.info
+
+                pid = info.get("pid")
+                name = info.get("name") or "unknown"
+                normalized_name = name.lower()
+
+                cpu = float(proc.cpu_percent(None) or 0.0)
+                memory = float(info.get("memory_percent", 0.0) or 0.0)
+
+                # -------------------------------------------------
+                # THREAD-LEVEL CPU ATTRIBUTION
+                # -------------------------------------------------
+                top_threads = []
+                try:
+                    thread_rows = []
+                    for thread in proc.threads():
+                        cpu_time = float(thread.user_time + thread.system_time)
+                        thread_rows.append(
+                            {
+                                "tid": thread.id,
+                                "cpu_time_seconds": round(cpu_time, 2),
+                            }
+                        )
+
+                    thread_rows.sort(
+                        key=lambda item: item["cpu_time_seconds"],
+                        reverse=True,
+                    )
+                    top_threads = thread_rows[:5]
+
+                except (
+                    psutil.NoSuchProcess,
+                    psutil.AccessDenied,
+                    psutil.ZombieProcess,
+                ):
+                    top_threads = []
+                except Exception:
+                    top_threads = []
+
+                if cpu < 0:
+                    cpu = 0.0
+
+                if memory < 0:
+                    memory = 0.0
+
+                # -------------------------------------------------
+                # HARD SAFETY CLASSIFICATION
+                # -------------------------------------------------
+                protection_reasons = []
+
+                if pid == 1:
+                    protection_reasons.append("pid_1")
+
+                if pid == current_pid:
+                    protection_reasons.append("current_backend_process")
+
+                if normalized_name in protected_names:
+                    protection_reasons.append("protected_process_name")
+
+                username = info.get("username")
+
+                # Processes without complete identity information
+                # are never automatically considered safe to kill.
+                identity_complete = (
+                    pid is not None
+                    and info.get("create_time") is not None
+                    and bool(name)
+                )
+
+                if not identity_complete:
+                    protection_reasons.append("incomplete_process_identity")
+
+                # -------------------------------------------------
+                # RESOURCE CLASSIFICATION
+                # -------------------------------------------------
+                if cpu >= 80 or memory >= 20:
+                    risk_level = "high"
+                elif cpu >= 60 or memory >= 10:
+                    risk_level = "elevated"
+                elif cpu >= 30 or memory >= 5:
+                    risk_level = "moderate"
+                else:
+                    risk_level = "normal"
+
+                resource_pressure = (
+                    cpu >= 60
+                    or memory >= 10
+                )
+
+                # -------------------------------------------------
+                # CONFIDENCE
+                # -------------------------------------------------
+                confidence = 0
+                confidence_reasons = []
+
+                if cpu >= 80:
+                    confidence += 50
+                    confidence_reasons.append("high_cpu")
+                elif cpu >= 60:
+                    confidence += 35
+                    confidence_reasons.append("elevated_cpu")
+                elif cpu >= 30:
+                    confidence += 15
+                    confidence_reasons.append("moderate_cpu")
+
+                if memory >= 20:
+                    confidence += 25
+                    confidence_reasons.append("high_memory")
+                elif memory >= 10:
+                    confidence += 15
+                    confidence_reasons.append("elevated_memory")
+
+                if identity_complete:
+                    confidence += 15
+                    confidence_reasons.append("complete_identity")
+
+                if info.get("cmdline"):
+                    confidence += 10
+                    confidence_reasons.append("command_line_available")
+
+                confidence = min(confidence, 100)
+
+                # -------------------------------------------------
+                # FINAL CLASSIFICATION
+                # -------------------------------------------------
+                if protection_reasons:
+                    classification = "PROTECTED"
+
+                elif not resource_pressure:
+                    classification = "NOT_A_CANDIDATE"
+
+                elif confidence >= 70:
+                    classification = "SAFE_TO_REMEDIATE"
+
+                else:
+                    classification = "REVIEW_REQUIRED"
+
+                observed.append(
+                    {
+                        "pid": pid,
+                        "ppid": info.get("ppid"),
+                        "name": name,
+                        "cpu_percent": round(cpu, 2),
+                        "memory_percent": round(memory, 2),
+                        "top_threads": top_threads,
+                        "create_time": info.get("create_time"),
+                        "username": username,
+                        "cmdline": info.get("cmdline"),
+                        "exe": info.get("exe"),
+                        "risk_level": risk_level,
+                        "confidence": confidence,
+                        "classification": classification,
+                        "resource_pressure": resource_pressure,
+                        "identity_complete": identity_complete,
+                        "protection_reasons": protection_reasons,
+                        "confidence_reasons": confidence_reasons,
+                    }
+                )
+
+            except (
+                psutil.NoSuchProcess,
+                psutil.AccessDenied,
+                psutil.ZombieProcess,
+            ):
+                continue
+            except Exception:
+                continue
+
+        # ---------------------------------------------------------
+        # RANKING
+        # ---------------------------------------------------------
+        observed.sort(
+            key=lambda x: (
+                x["cpu_percent"],
+                x["memory_percent"],
+                x["confidence"],
+            ),
+            reverse=True,
+        )
+
+        top = observed[:TOP_N]
+
+        # Only SAFE_TO_REMEDIATE processes can become remediation
+        # candidates. Protected and review-required processes never
+        # cross this boundary automatically.
+        remediation_candidates = [
+            p for p in observed
+            if p["classification"] == "SAFE_TO_REMEDIATE"
+        ]
+
+        primary = (
+            remediation_candidates[0]
+            if remediation_candidates
+            else None
+        )
+
+        # ---------------------------------------------------------
+        # RISK EXPLANATION
+        # ---------------------------------------------------------
+        if primary:
+            risk = (
+                f"REMEDIATION CANDIDATE: {primary['name']} "
+                f"(PID {primary['pid']}) is using "
+                f"{primary['cpu_percent']:.1f}% CPU and "
+                f"{primary['memory_percent']:.1f}% memory. "
+                f"Confidence {primary['confidence']}%. "
+                "The process is eligible for review, but destructive "
+                "execution must independently revalidate its identity."
+            )
+
+        elif observed:
+            highest_pressure = observed[0]
+
+            protected_count = sum(
+                1 for p in observed
+                if p["classification"] == "PROTECTED"
+            )
+
+            review_count = sum(
+                1 for p in observed
+                if p["classification"] == "REVIEW_REQUIRED"
+            )
+
+            risk = (
+                "No automatically eligible remediation candidate found. "
+                f"Highest observed process: {highest_pressure['name']} "
+                f"(PID {highest_pressure['pid']}) at "
+                f"{highest_pressure['cpu_percent']:.1f}% CPU and "
+                f"{highest_pressure['memory_percent']:.1f}% memory. "
+                f"Protected={protected_count}, "
+                f"ReviewRequired={review_count}."
+            )
+
+        else:
+            risk = "No process information was available."
+
+        # ---------------------------------------------------------
+        # HUMAN-READABLE DETAILS
+        # ---------------------------------------------------------
         details = [
-            f"{p['name']} (PID {p['pid']}): CPU {p['cpu_percent']:.1f}% MEM {p['memory_percent']:.1f}%"
+            (
+                f"{p['name']} (PID {p['pid']}): "
+                f"CPU {p['cpu_percent']:.1f}% "
+                f"MEM {p['memory_percent']:.1f}% "
+                f"RISK {p['risk_level'].upper()} "
+                f"CLASS {p['classification']} "
+                f"CONF {p['confidence']}%"
+            )
             for p in top
         ]
+
+        # ---------------------------------------------------------
+        # RESULT
+        # ---------------------------------------------------------
         return {
             "success": True,
+            "sample_seconds": SAMPLE_SECONDS,
+            "process_count": len(observed),
             "details": details,
-            "note": "Use 'kill -9 <PID>' to terminate a process if needed",
+            "processes": top,
+            "risk": risk,
+            "primary_process": primary,
+            "remediation_candidate": primary is not None,
+            "remediation_candidates": remediation_candidates,
+            "policy": {
+                "automatic_termination": False,
+                "protected_pid_1": True,
+                "protected_backend_pid": True,
+                "identity_required": True,
+                "creation_time_required": True,
+                "review_required_for_uncertain_processes": True,
+            },
+            "note": (
+                "Diagnostic only — no process was terminated. "
+                "A remediation candidate is not permission to terminate. "
+                "The destructive executor must independently revalidate "
+                "PID, creation time, name, command line and safety policy "
+                "immediately before execution."
+            ),
         }
+
     except ImportError:
-        return {"success": False, "details": ["psutil not installed"]}
+        return {
+            "success": False,
+            "details": ["psutil not installed"],
+        }
+
+    except Exception as exc:
+        return {
+            "success": False,
+            "details": [f"diagnostic_failed: {exc}"],
+        }
+
+# ── Read-only diagnostic executors ─────────────────────────
+def action_diagnostic_health_check() -> dict:
+    """Return the current normalized health metrics."""
+    from backend.core.system_adapter import get_metrics
+
+    metrics = get_metrics()
+
+    return {
+        "success": True,
+        "health_score": metrics.get("health_score"),
+        "cpu_percent": metrics.get("cpu_percent"),
+        "memory": metrics.get("memory"),
+        "disk_percent": metrics.get("disk_percent"),
+        "network_percent": metrics.get("network_percent"),
+        "os": metrics.get("os"),
+        "in_container": metrics.get("in_container"),
+    }
+
+
+def action_diagnostic_system_snapshot() -> dict:
+    """Return current system metrics and the top processes."""
+    from backend.core.system_adapter import get_metrics, get_processes
+
+    metrics = get_metrics()
+    processes = get_processes()
+
+    processes.sort(
+        key=lambda p: (
+            float(p.get("cpu", 0) or 0),
+            float(p.get("mem", 0) or 0),
+        ),
+        reverse=True,
+    )
+
+    return {
+        "success": True,
+        "metrics": metrics,
+        "processes": processes[:20],
+        "process_count": len(processes),
+    }
+
+
+def action_diagnostic_process_list() -> dict:
+    """Return the top processes on the device."""
+    from backend.core.system_adapter import get_processes
+
+    processes = get_processes()
+
+    processes.sort(
+        key=lambda p: (
+            float(p.get("cpu", 0) or 0),
+            float(p.get("mem", 0) or 0),
+        ),
+        reverse=True,
+    )
+
+    return {
+        "success": True,
+        "processes": processes[:20],
+        "process_count": len(processes),
+    }
+
 
 # ── Dispatcher ────────────────────────────────────────────
 EXECUTORS = {
-    "clear_temp":         action_clear_temp,
+    "diagnostic.health_check":    action_diagnostic_health_check,
+    "diagnostic.system_snapshot": action_diagnostic_system_snapshot,
+    "diagnostic.process_list":    action_diagnostic_process_list,
+    "clear_temp":                 action_clear_temp,
     "clear_docker_cache": action_clear_docker_cache,
     "clear_logs":         action_clear_logs,
     "clear_pip_cache":    action_clear_pip_cache,

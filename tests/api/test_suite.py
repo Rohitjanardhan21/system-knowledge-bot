@@ -7,7 +7,7 @@ import os
 
 # ── bootstrap env BEFORE importing app modules ───────────
 os.environ.setdefault("CVIS_API_KEY",     "test-bootstrap-key-abc123")
-os.environ.setdefault("JWT_SECRET",       "test-jwt-secret-not-for-prod")
+os.environ.setdefault( "JWT_SECRET", "test-jwt-secret-not-for-prod-2026")
 os.environ.setdefault("CVIS_ADMIN_PASS",  "test-admin-pass")
 os.environ.setdefault("CVIS_ADMIN_USER",  "admin")
 os.environ.setdefault("REDIS_URL",        "redis://localhost:6379/0")
@@ -367,3 +367,130 @@ class TestAPIEndpoints:
         r = client.post("/models/save", json={},
                         headers={"X-API-Key": read_key})
         assert r.status_code == 403
+
+    def _ensure_command_test_device(self):
+        from backend.main import _devices
+        _devices.setdefault("cf07b0eaae41", {
+            "device_id": "cf07b0eaae41",
+            "name": "command-test-device",
+            "status": "online",
+        })
+
+    def test_device_command_full_lifecycle(self, client):
+        self._ensure_command_test_device()
+        """Create, claim, execute, and complete a device command."""
+        device_id = "cf07b0eaae41"
+
+        r = client.post(
+            f"/devices/{device_id}/commands",
+            json={
+                "command_type": "diagnostic.health_check",
+                "payload": {"source": "api-test"},
+            },
+            headers=AUTH_HEADERS,
+        )
+        assert r.status_code == 200
+        created = r.json()
+        command_id = created["command_id"]
+        assert created["device_id"] == device_id
+        assert created["status"] == "pending"
+
+        from backend.core.auth.auth import create_api_key
+        device_key = asyncio.run(
+            create_api_key(
+                "api-test-device",
+                scope="write",
+                device_id=device_id,
+            )
+        )
+        device_headers = {"X-API-Key": device_key}
+
+        r = client.get(
+            f"/devices/{device_id}/commands/pending",
+            headers=device_headers,
+        )
+        assert r.status_code == 200
+        commands = r.json()["commands"]
+        assert len(commands) == 1
+        assert commands[0]["command_id"] == command_id
+        assert commands[0]["status"] == "acknowledged"
+
+        r = client.post(
+            f"/devices/{device_id}/commands/{command_id}/transition",
+            json={"status": "executing"},
+            headers=device_headers,
+        )
+        assert r.status_code == 200
+        assert r.json()["status"] == "executing"
+
+        r = client.post(
+            f"/devices/{device_id}/commands/{command_id}/transition",
+            json={
+                "status": "completed",
+                "result": {
+                    "success": True,
+                    "test": "api-command-lifecycle",
+                },
+            },
+            headers=device_headers,
+        )
+        assert r.status_code == 200
+        assert r.json()["status"] == "completed"
+
+        r = client.get(
+            f"/devices/{device_id}/commands/{command_id}",
+            headers=AUTH_HEADERS,
+        )
+        assert r.status_code == 200
+        final = r.json()
+        assert final["status"] == "completed"
+        assert final["result"]["success"] is True
+
+
+    def test_device_command_invalid_transition(self, client):
+        self._ensure_command_test_device()
+        """A command cannot skip acknowledged and execute directly."""
+        device_id = "cf07b0eaae41"
+
+        r = client.post(
+            f"/devices/{device_id}/commands",
+            json={
+                "command_type": "diagnostic.health_check",
+                "payload": {},
+            },
+            headers=AUTH_HEADERS,
+        )
+        assert r.status_code == 200
+        command_id = r.json()["command_id"]
+
+        r = client.post(
+            f"/devices/{device_id}/commands/{command_id}/transition",
+            json={"status": "executing"},
+            headers=AUTH_HEADERS,
+        )
+
+        assert r.status_code == 403
+
+
+    def test_device_command_wrong_device_is_forbidden(self, client):
+        self._ensure_command_test_device()
+        """A device credential cannot operate on another device."""
+        device_id = "cf07b0eaae41"
+        wrong_device_id = "device-that-does-not-match"
+
+        r = client.post(
+            f"/devices/{device_id}/commands",
+            json={
+                "command_type": "diagnostic.health_check",
+                "payload": {},
+            },
+            headers=AUTH_HEADERS,
+        )
+        assert r.status_code == 200
+        command_id = r.json()["command_id"]
+
+        r = client.get(
+            f"/devices/{wrong_device_id}/commands/{command_id}",
+            headers=AUTH_HEADERS,
+        )
+        assert r.status_code == 404

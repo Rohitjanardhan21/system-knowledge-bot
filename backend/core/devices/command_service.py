@@ -29,9 +29,22 @@ COMMAND_TTL_S = 300.0
 
 ALLOWED_COMMANDS = frozenset(
     {
+        # Diagnostic / read-only commands
         "diagnostic.health_check",
         "diagnostic.system_snapshot",
         "diagnostic.process_list",
+
+        # Safe remediation commands
+        "clear_temp",
+        "clear_docker_cache",
+        "clear_logs",
+        "clear_pip_cache",
+
+        # Host-level remediation
+        "drop_caches",
+
+        # Process remediation
+        "kill_high_cpu",
     }
 )
 
@@ -124,6 +137,7 @@ async def create_command(
             "command_type": command_type,
             "requested_by": requested_by,
             "payload": json.dumps(command["payload"]),
+            "result": json.dumps(None),
             "status": "pending",
             "created_at": str(now),
             "expires_at": str(expires_at),
@@ -146,6 +160,61 @@ async def create_command(
     return command
 
 
+async def claim_next_command(
+    redis,
+    device_id: str,
+) -> dict[str, Any] | None:
+    """
+    Atomically claim the next pending command for a device.
+
+    The Redis Stream is the durable delivery queue. Command state is
+    stored separately in a Redis hash. A compare-and-set transition
+    from pending -> acknowledged prevents two agents/workers from
+    claiming the same command successfully.
+    """
+    _validate_device_id(device_id)
+
+    stream_key = _stream_key(device_id)
+
+    try:
+        entries = await redis.xrevrange(stream_key, count=50)
+    except Exception:
+        return None
+
+    now = time.time()
+
+    for _, fields in entries:
+        command_id = fields.get("command_id")
+        if not command_id:
+            continue
+
+        command = await get_command(redis, command_id)
+        if not command:
+            continue
+
+        if command["device_id"] != device_id:
+            continue
+
+        if command["status"] != "pending":
+            continue
+
+        expires_at = command.get("expires_at")
+        if expires_at is not None and float(expires_at) <= now:
+            await transition_command(redis, command_id, "expired")
+            continue
+
+        claimed = await transition_command(
+            redis,
+            command_id,
+            "acknowledged",
+        )
+
+        if claimed:
+            return await get_command(redis, command_id)
+
+    return None
+
+
 async def get_command(redis, command_id: str) -> dict[str, Any] | None:
     """Return the durable command state."""
     if not command_id:
@@ -161,12 +230,18 @@ async def get_command(redis, command_id: str) -> dict[str, Any] | None:
     except (TypeError, ValueError):
         payload = {}
 
+    try:
+        result = json.loads(data.get("result", "null"))
+    except (TypeError, ValueError):
+        result = None
+
     return {
         "command_id": data.get("command_id", command_id),
         "device_id": data.get("device_id"),
         "command_type": data.get("command_type"),
         "requested_by": data.get("requested_by"),
         "payload": payload,
+        "result": result,
         "status": data.get("status"),
         "created_at": float(data["created_at"])
         if data.get("created_at")
@@ -175,7 +250,6 @@ async def get_command(redis, command_id: str) -> dict[str, Any] | None:
         if data.get("expires_at")
         else None,
     }
-
 
 COMMAND_TRANSITIONS = {
     "pending": frozenset({"acknowledged", "expired"}),
@@ -191,6 +265,7 @@ async def transition_command(
     redis,
     command_id: str,
     new_status: str,
+    result: dict[str, Any] | None = None,
 ) -> bool:
     """
     Transition a command through its allowed lifecycle.
@@ -219,7 +294,12 @@ async def transition_command(
         return 0
     end
 
-    redis.call('HSET', KEYS[1], 'status', target)
+    if ARGV[3] ~= "" then
+        redis.call('HSET', KEYS[1], 'status', target, 'result', ARGV[3])
+    else
+        redis.call('HSET', KEYS[1], 'status', target)
+    end
+
     return 1
     """
 
@@ -235,6 +315,7 @@ async def transition_command(
             key,
             current_status,
             new_status,
+            json.dumps(result) if result is not None else "",
         )
 
         if result:

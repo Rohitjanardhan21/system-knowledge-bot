@@ -21,14 +21,12 @@ useEffect(() => {
 alerts.forEach((alert) => {
 if (alert.level === "CRITICAL") return; // don't auto-dismiss critical
 
-```
   const timeout = setTimeout(() => {
     removeAlert(alert.id);
   }, getDuration(alert.level));
 
   return () => clearTimeout(timeout);
 });
-```
 
 }, [alerts]);
 
@@ -73,7 +71,6 @@ default: return "✅";
 // --------------------------------------------------
 return ( <div className="fixed top-6 right-6 z-50 space-y-3 w-[320px]">
 
-```
   {alerts.map((alert) => (
     <div
       key={alert.id}
@@ -139,7 +136,6 @@ return ( <div className="fixed top-6 right-6 z-50 space-y-3 w-[320px]">
   `}</style>
 
 </div>
-```
 
 );
 }

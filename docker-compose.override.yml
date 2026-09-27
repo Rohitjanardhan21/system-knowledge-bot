@@ -9,17 +9,17 @@
 services:
 
   backend:
-    # Override CMD to single uvicorn worker with hot reload
-    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload --log-level info
+    # Override CMD to single uvicorn worker without hot reload
+    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --log-level info
     environment:
       - ENV=dev
       - LOG_LEVEL=info
       - GUNICORN_WORKERS=1
+      - OMP_NUM_THREADS=1
+      - MKL_NUM_THREADS=1
+      - OPENBLAS_NUM_THREADS=1
       # Weak dev secrets (acceptable because this never leaves localhost)
-      - JWT_SECRET=dev-secret-not-for-prod
-      - CVIS_API_KEY=dev-api-key
-      - CVIS_ADMIN_USER=admin
-      - CVIS_ADMIN_PASS=admin
+      - JWT_SECRET=${JWT_SECRET}
       - ALLOWED_ORIGIN=*
     ports:
       - "8000:8000"     # expose directly for Swagger UI, curl testing

@@ -37,7 +37,6 @@ const suggestions = [
 // --------------------------------------------------
 const sendMessage = async (customInput?: string) => {
 
-```
 const query = customInput || input;
 if (!query) return;
 
@@ -83,7 +82,6 @@ try {
 }
 
 setLoading(false);
-```
 
 };
 
@@ -94,7 +92,6 @@ if (!isOpen) return null;
 
 return ( <div className="fixed bottom-0 left-0 w-full h-[65%] bg-black border-t border-zinc-800 flex flex-col z-50">
 
-```
   {/* HEADER */}
   <div className="flex justify-between items-center p-4 border-b border-zinc-800">
     <div>
@@ -182,7 +179,6 @@ return ( <div className="fixed bottom-0 left-0 w-full h-[65%] bg-black border-t 
   </div>
 
 </div>
-```
 
 );
 }

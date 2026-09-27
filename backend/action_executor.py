@@ -27,6 +27,25 @@ VERIFICATION_TARGETS = {
     "drop_caches": "memory",
 }
 
+# Actions that require an explicitly identified process target.
+# Destructive process actions must continue through the existing
+# PID + creation-time identity validation.
+PROCESS_TARGET_ACTIONS = {
+    "kill_process",
+    "kill_high_cpu_process",
+    "throttle_process",
+}
+
+# System-level actions operate on system resources rather than
+# a specific process and therefore do not require target_name.
+SYSTEM_ACTIONS = {
+    "clear_temp",
+    "clear_docker_cache",
+    "clear_logs",
+    "clear_pip_cache",
+    "drop_caches",
+}
+
 SAFE_PROCESSES = [
     "system", "systemd", "init",
     "python", "bash", "services",
@@ -168,7 +187,9 @@ class ActionExecutor:
 
         target_name = primary.get("process") or decision.get("target_name")
 
-        if not target_name:
+        # Process actions require an explicitly identified target.
+        # System-level actions do not.
+        if action in PROCESS_TARGET_ACTIONS and not target_name:
             return {"status": "no_valid_target"}
 
         # ---------------- POLICY ----------------
@@ -196,11 +217,15 @@ class ActionExecutor:
             return {"status": "blocked", "reason": "critical workload"}
 
         # ---------------- BASELINE ----------------
-        if before["cpu"] < baseline + 20:
-            return {"status": "ignored_normal_usage"}
+        # CPU baseline/duration gates apply to process/CPU remediation.
+        # System-resource actions use their own policy and verification
+        # instead of requiring a CPU spike.
+        if action in PROCESS_TARGET_ACTIONS:
+            if before["cpu"] < baseline + 20:
+                return {"status": "ignored_normal_usage"}
 
-        if duration < 10:
-            return {"status": "ignored_short_spike"}
+            if duration < 10:
+                return {"status": "ignored_short_spike"}
 
         # ---------------- STATE ----------------
         state = self.agent.encode_state(before)
@@ -240,7 +265,17 @@ class ActionExecutor:
         next_state = self.agent.encode_state(after)
 
         if result.get("status") == "executed":
-            self.agent.remember(state, action, reward, next_state)
+            # `action` is the canonical executor action. When a DQN action
+            # was translated before execution, use the original DQN action
+            # for replay so DQNAgent.remember() receives its own vocabulary.
+            learning_action = decision.get("learning_action", action)
+
+            self.agent.remember(
+                state,
+                learning_action,
+                reward,
+                next_state,
+            )
             self.agent.train()
 
             store_experience(state.tolist(), action, reward, before, after, verification)
@@ -402,15 +437,53 @@ class ActionExecutor:
     def _execute_action(self, action, target_name, decision):
 
         if action == "kill_process":
-            return self.kill_process_by_name(target_name)
+            # Destructive process termination MUST carry an exact identity.
+            # PID alone is insufficient because operating systems reuse PIDs.
+            expected_pid = decision.get("target_pid")
+            expected_create_time = decision.get("target_create_time")
+
+            if expected_pid is None or expected_create_time is None:
+                return {
+                    "status": "blocked",
+                    "action": "kill_process",
+                    "target": target_name,
+                    "reason": "exact_process_identity_required",
+                    "message": (
+                        "Process termination requires PID and creation-time "
+                        "identity. No process was terminated."
+                    ),
+                }
+
+            return self.kill_process_by_name(
+                target_name,
+                expected_pid=expected_pid,
+                expected_create_time=expected_create_time,
+            )
 
         if action == "kill_high_cpu_process":
-            canonical = execute_action("kill_high_cpu", source="manual")
-            return {
-                "status": "executed" if canonical.get("success") else "failed",
-                "action": "kill_high_cpu",
-                "details": canonical,
-            }
+            # Destructive CPU remediation MUST use the exact process identity
+            # selected by the decision engine. Never let a lower-level helper
+            # independently choose "some" high-CPU process.
+            expected_pid = decision.get("target_pid")
+            expected_create_time = decision.get("target_create_time")
+
+            if expected_pid is None or expected_create_time is None:
+                return {
+                    "status": "blocked",
+                    "action": "kill_high_cpu_process",
+                    "target": target_name,
+                    "reason": "exact_process_identity_required",
+                    "message": (
+                        "High-CPU termination requires PID and creation-time "
+                        "identity. No process was terminated."
+                    ),
+                }
+
+            return self.kill_process_by_name(
+                target_name,
+                expected_pid=expected_pid,
+                expected_create_time=expected_create_time,
+            )
 
         if action == "throttle_process":
             return {"status": "executed", "action": "throttle"}
@@ -426,30 +499,248 @@ class ActionExecutor:
     # ---------------------------------------------------------
     # 🔥 SAFE PROCESS KILL
     # ---------------------------------------------------------
-    def kill_process_by_name(self, target_name):
+    def kill_process_by_name(self, target_name, expected_pid=None,
+                             expected_create_time=None):
+        """
+        Terminate a process only after validating its identity.
 
-        for proc in psutil.process_iter(['pid', 'name']):
+        PID alone is not sufficient because operating systems can reuse PIDs.
+        If expected_pid/create_time are supplied, both are validated before
+        termination.  The process is terminated gracefully and its exit is
+        verified.
+
+        This method NEVER selects a process merely because its name matches.
+        """
+
+        if not target_name:
+            return {
+                "status": "blocked",
+                "reason": "missing_target_name",
+            }
+
+        target_name = str(target_name)
+
+        candidates = []
+
+        for proc in psutil.process_iter(
+            ["pid", "name", "create_time", "username", "cmdline"]
+        ):
             try:
-                name = proc.info['name']
+                info = proc.info
+                name = info.get("name")
 
                 if name != target_name:
                     continue
 
-                if not self.is_killable(name):
-                    return {"status": "blocked", "reason": "protected process"}
+                candidates.append(proc)
 
-                proc.terminate()
-
-                return {
-                    "status": "executed",
-                    "action": "kill_process",
-                    "target": name
-                }
-
-            except:
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+            except Exception:
                 continue
 
-        return {"status": "not_found", "target": target_name}
+        if not candidates:
+            return {
+                "status": "not_found",
+                "target": target_name,
+                "reason": "no_matching_process",
+            }
+
+        # Never arbitrarily choose between multiple processes with the same
+        # name. The caller must identify the exact process.
+        if expected_pid is None and len(candidates) > 1:
+            return {
+                "status": "ambiguous_target",
+                "target": target_name,
+                "candidates": [
+                    {
+                        "pid": p.pid,
+                        "name": p.info.get("name"),
+                        "create_time": p.info.get("create_time"),
+                    }
+                    for p in candidates
+                ],
+                "reason": "multiple_processes_match_name",
+            }
+
+        proc = None
+
+        if expected_pid is not None:
+            try:
+                expected_pid = int(expected_pid)
+            except (TypeError, ValueError):
+                return {
+                    "status": "blocked",
+                    "reason": "invalid_expected_pid",
+                }
+
+            for candidate in candidates:
+                if candidate.pid == expected_pid:
+                    proc = candidate
+                    break
+
+            if proc is None:
+                return {
+                    "status": "identity_mismatch",
+                    "target": target_name,
+                    "expected_pid": expected_pid,
+                    "reason": "pid_does_not_match_target",
+                }
+
+        else:
+            # Destructive execution must never infer a target from process name.
+            # Even one matching process is insufficient because the identity
+            # presented to the executor may be stale.
+            return {
+                "status": "blocked",
+                "target": target_name,
+                "reason": "exact_process_identity_required",
+                "message": (
+                    "PID and process creation time are required for "
+                    "termination. No process was terminated."
+                ),
+            }
+
+        try:
+            # Re-read identity immediately before acting. This protects
+            # against a PID being reused between discovery and execution.
+            current = proc.as_dict(
+                attrs=["pid", "name", "create_time", "username", "cmdline"]
+            )
+
+            if (current.get("name") or "").lower() != target_name.lower():
+                return {
+                    "status": "identity_mismatch",
+                    "reason": "process_name_changed",
+                }
+
+            if expected_pid is not None and current.get("pid") != expected_pid:
+                return {
+                    "status": "identity_mismatch",
+                    "reason": "pid_changed",
+                }
+
+            current_create_time = current.get("create_time")
+
+            # Creation time is mandatory for destructive process identity.
+            # Without it, a reused PID cannot be distinguished from the
+            # original process.
+            if current_create_time is None:
+                return {
+                    "status": "blocked",
+                    "target": target_name,
+                    "pid": proc.pid,
+                    "reason": "process_create_time_unavailable",
+                    "message": (
+                        "The operating system did not provide process "
+                        "creation time. Termination was refused."
+                    ),
+                }
+
+            try:
+                if abs(
+                    float(current_create_time)
+                    - float(expected_create_time)
+                ) > 0.01:
+                    return {
+                        "status": "identity_mismatch",
+                        "target": target_name,
+                        "pid": proc.pid,
+                        "expected_create_time": expected_create_time,
+                        "actual_create_time": current_create_time,
+                        "reason": "process_create_time_changed",
+                        "message": (
+                            "The PID now belongs to a different process "
+                            "identity. Termination was refused."
+                        ),
+                    }
+            except (TypeError, ValueError):
+                return {
+                    "status": "blocked",
+                    "reason": "invalid_expected_create_time",
+                }
+
+            if not self.is_killable(current.get("name")):
+                return {
+                    "status": "blocked",
+                    "reason": "protected_process",
+                    "target": current.get("name"),
+                    "pid": current.get("pid"),
+                }
+
+            # Never terminate PID 1 or the current Python backend process.
+            if proc.pid in {1, psutil.Process().pid}:
+                return {
+                    "status": "blocked",
+                    "reason": "critical_backend_process",
+                    "pid": proc.pid,
+                    "target": current.get("name"),
+                }
+
+            before = {
+                "pid": current.get("pid"),
+                "name": current.get("name"),
+                "create_time": current.get("create_time"),
+                "username": current.get("username"),
+                "cmdline": current.get("cmdline"),
+            }
+
+            proc.terminate()
+
+            try:
+                proc.wait(timeout=5)
+                exited = True
+            except psutil.TimeoutExpired:
+                exited = False
+
+            if not exited:
+                return {
+                    "status": "terminate_timeout",
+                    "action": "kill_process",
+                    "target": current.get("name"),
+                    "pid": current.get("pid"),
+                    "create_time": current.get("create_time"),
+                    "message": (
+                        "Graceful termination timed out. "
+                        "No force-kill was performed."
+                    ),
+                    "process": before,
+                }
+
+            return {
+                "status": "executed",
+                "action": "kill_process",
+                "target": current.get("name"),
+                "pid": current.get("pid"),
+                "create_time": current.get("create_time"),
+                "process": before,
+                "termination": "graceful",
+                "verified_exit": True,
+            }
+
+        except psutil.NoSuchProcess:
+            return {
+                "status": "already_exited",
+                "target": target_name,
+                "pid": expected_pid,
+                "reason": "process_disappeared_before_termination",
+            }
+
+        except psutil.AccessDenied:
+            return {
+                "status": "access_denied",
+                "target": target_name,
+                "pid": expected_pid,
+                "reason": "insufficient_process_permissions",
+            }
+
+        except Exception as exc:
+            return {
+                "status": "failed",
+                "target": target_name,
+                "pid": expected_pid,
+                "reason": str(exc),
+            }
 
     # ---------------------------------------------------------
     # REWARD

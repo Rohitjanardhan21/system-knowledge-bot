@@ -1,1331 +1,1202 @@
 [
   {
-    "time": "2026-03-27T05:24:35.116179",
-    "event": "Executed: observe",
-    "reward": -0.2,
-    "risk": 0.47,
-    "mode": "lightweight"
-  },
-  {
-    "time": "2026-03-27T05:24:39.114182",
+    "time": "2026-09-25T14:55:14.059488+00:00",
     "event": "Final decision",
-    "action": "observe",
+    "action": "clear_temp",
     "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T05:24:41.232671",
-    "event": "Executed: observe",
-    "reward": -0.2,
-    "risk": 0.68,
-    "mode": "lightweight"
-  },
-  {
-    "time": "2026-03-27T05:24:43.312050",
-    "event": "Executed: observe",
-    "reward": -0.2,
-    "risk": 0.46,
-    "mode": "lightweight"
-  },
-  {
-    "time": "2026-03-27T05:24:47.328698",
+    "time": "2026-09-25T14:55:23.033641+00:00",
     "event": "Final decision",
-    "action": "kill_high_cpu_process",
+    "action": "drop_caches",
     "risk": "HIGH"
   },
   {
-    "time": "2026-03-27T05:24:50.065327",
-    "event": "Executed: kill_high_cpu_process",
-    "reward": -0.2,
-    "risk": 0.68,
-    "mode": "lightweight"
-  },
-  {
-    "time": "2026-03-27T05:24:52.729751",
-    "event": "Executed: kill_high_cpu_process",
-    "reward": -0.2,
-    "risk": 0.53,
-    "mode": "lightweight"
-  },
-  {
-    "time": "2026-03-27T05:24:58.182183",
+    "time": "2026-09-25T14:55:25.078858+00:00",
     "event": "Final decision",
-    "action": "observe",
+    "action": "clear_temp",
     "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T05:25:00.243562",
-    "event": "Executed: observe",
-    "reward": -0.2,
-    "risk": 0.38,
-    "mode": "lightweight"
-  },
-  {
-    "time": "2026-03-27T05:25:02.607028",
-    "event": "Executed: observe",
-    "reward": -0.2,
-    "risk": 0.47,
-    "mode": "lightweight"
-  },
-  {
-    "time": "2026-03-27T05:25:04.890961",
+    "time": "2026-09-25T14:55:27.237763+00:00",
     "event": "Final decision",
-    "action": "observe",
+    "action": "clear_temp",
     "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T05:25:06.937840",
-    "event": "Executed: observe",
-    "reward": -0.2,
-    "risk": 0.47,
-    "mode": "lightweight"
-  },
-  {
-    "time": "2026-03-27T05:25:09.007786",
-    "event": "Executed: observe",
-    "reward": -0.2,
-    "risk": 0.47,
-    "mode": "lightweight"
-  },
-  {
-    "time": "2026-03-27T05:25:11.337489",
+    "time": "2026-09-25T14:55:29.265251+00:00",
     "event": "Final decision",
-    "action": "observe",
+    "action": "clear_temp",
     "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T05:25:13.514126",
-    "event": "Executed: observe",
-    "reward": -0.2,
-    "risk": 0.56,
-    "mode": "lightweight"
-  },
-  {
-    "time": "2026-03-27T05:25:17.632070",
-    "event": "Executed: observe",
-    "reward": -0.2,
-    "risk": 0.46,
-    "mode": "lightweight"
-  },
-  {
-    "time": "2026-03-27T05:25:22.570441",
+    "time": "2026-09-25T14:55:38.902859+00:00",
     "event": "Final decision",
-    "action": "observe",
-    "risk": "MEDIUM"
-  },
-  {
-    "time": "2026-03-27T05:25:24.615151",
-    "event": "Executed: observe",
-    "reward": -0.2,
-    "risk": 0.73,
-    "mode": "lightweight"
-  },
-  {
-    "time": "2026-03-27T05:25:26.713395",
-    "event": "Executed: observe",
-    "reward": -0.2,
-    "risk": 0.54,
-    "mode": "lightweight"
-  },
-  {
-    "time": "2026-03-27T05:25:30.187016",
-    "event": "Final decision",
-    "action": "observe",
-    "risk": "MEDIUM"
-  },
-  {
-    "time": "2026-03-27T05:25:32.258486",
-    "event": "Executed: observe",
-    "reward": -0.2,
-    "risk": 0.5,
-    "mode": "lightweight"
-  },
-  {
-    "time": "2026-03-27T05:25:34.372007",
-    "event": "Executed: observe",
-    "reward": -0.2,
-    "risk": 0.49,
-    "mode": "lightweight"
-  },
-  {
-    "time": "2026-03-27T05:25:36.945130",
-    "event": "Final decision",
-    "action": "observe",
-    "risk": "MEDIUM"
-  },
-  {
-    "time": "2026-03-27T05:25:39.027715",
-    "event": "Executed: observe",
-    "reward": -0.2,
-    "risk": 0.58,
-    "mode": "lightweight"
-  },
-  {
-    "time": "2026-03-27T05:25:41.121096",
-    "event": "Executed: observe",
-    "reward": -0.2,
-    "risk": 0.51,
-    "mode": "lightweight"
-  },
-  {
-    "time": "2026-03-27T05:25:44.170233",
-    "event": "Final decision",
-    "action": "observe",
-    "risk": "MEDIUM"
-  },
-  {
-    "time": "2026-03-27T05:25:46.548758",
-    "event": "Executed: observe",
-    "reward": -0.2,
-    "risk": 0.74,
-    "mode": "lightweight"
-  },
-  {
-    "time": "2026-03-27T05:25:48.999239",
-    "event": "Executed: observe",
-    "reward": -0.2,
-    "risk": 0.76,
-    "mode": "lightweight"
-  },
-  {
-    "time": "2026-03-27T05:25:53.198971",
-    "event": "Final decision",
-    "action": "kill_high_cpu_process",
+    "action": "drop_caches",
     "risk": "HIGH"
   },
   {
-    "time": "2026-03-27T05:25:55.908527",
-    "event": "Executed: kill_high_cpu_process",
-    "reward": -0.2,
-    "risk": 0.48,
-    "mode": "lightweight"
-  },
-  {
-    "time": "2026-03-27T05:25:58.972209",
-    "event": "Executed: kill_high_cpu_process",
-    "reward": -0.2,
-    "risk": 0.69,
-    "mode": "lightweight"
-  },
-  {
-    "time": "2026-03-27T05:26:01.213838",
+    "time": "2026-09-25T14:55:40.966908+00:00",
     "event": "Final decision",
-    "action": "observe",
+    "action": "clear_temp",
     "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T05:26:03.274836",
-    "event": "Executed: observe",
-    "reward": -0.2,
-    "risk": 0.47,
-    "mode": "lightweight"
-  },
-  {
-    "time": "2026-03-27T05:26:05.863898",
-    "event": "Executed: observe",
-    "reward": -0.2,
-    "risk": 0.72,
-    "mode": "lightweight"
-  },
-  {
-    "time": "2026-03-27T05:26:09.975079",
+    "time": "2026-09-25T14:55:42.977295+00:00",
     "event": "Final decision",
-    "action": "kill_high_cpu_process",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
+  },
+  {
+    "time": "2026-09-25T14:55:45.016497+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
+  },
+  {
+    "time": "2026-09-25T14:55:52.158531+00:00",
+    "event": "Final decision",
+    "action": "drop_caches",
     "risk": "HIGH"
   },
   {
-    "time": "2026-03-27T05:26:12.978529",
-    "event": "Executed: kill_high_cpu_process",
-    "reward": -0.2,
-    "risk": 0.79,
-    "mode": "lightweight"
-  },
-  {
-    "time": "2026-03-27T05:26:15.719445",
-    "event": "Executed: kill_high_cpu_process",
-    "reward": -0.2,
-    "risk": 0.72,
-    "mode": "lightweight"
-  },
-  {
-    "time": "2026-03-27T05:26:21.133990",
+    "time": "2026-09-25T14:55:54.198594+00:00",
     "event": "Final decision",
-    "action": "kill_high_cpu_process",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
+  },
+  {
+    "time": "2026-09-25T14:55:56.236474+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
+  },
+  {
+    "time": "2026-09-25T14:55:58.242631+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
+  },
+  {
+    "time": "2026-09-25T14:56:05.105994+00:00",
+    "event": "Final decision",
+    "action": "drop_caches",
     "risk": "HIGH"
   },
   {
-    "time": "2026-03-27T05:26:24.068592",
-    "event": "Executed: kill_high_cpu_process",
-    "reward": -0.2,
-    "risk": 0.67,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:56:07.157001+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T06:21:51.983550",
-    "event": "Executed: free_memory_cache",
-    "reward": 3.2750000000000004,
-    "risk": 0.62,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:56:09.165360+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T06:22:33.639755",
-    "event": "Executed: free_memory_cache",
-    "reward": 2.09,
-    "risk": 0.68,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:56:11.214494+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T06:22:41.833021",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.12,
-    "risk": 0.7,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:56:19.945985+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T06:23:04.571353",
-    "event": "Executed: free_memory_cache",
-    "reward": 2.765,
-    "risk": 0.73,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:56:21.974022+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T06:23:28.020773",
-    "event": "Executed: free_memory_cache",
-    "reward": 2.3899999999999997,
-    "risk": 0.59,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:56:24.107015+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T06:23:41.623179",
-    "event": "Executed: free_memory_cache",
-    "reward": 2.455,
-    "risk": 0.86,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:56:26.014842+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T06:23:47.776380",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.225,
-    "risk": 0.49,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:56:31.980357+00:00",
+    "event": "Final decision",
+    "action": "drop_caches",
+    "risk": "HIGH"
   },
   {
-    "time": "2026-03-27T06:23:57.905748",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.315,
-    "risk": 0.78,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:56:33.951036+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T06:24:15.945322",
-    "event": "Executed: free_memory_cache",
-    "reward": 2.12,
-    "risk": 0.61,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:56:35.957515+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T06:24:32.698725",
-    "event": "Executed: free_memory_cache",
-    "reward": 0.6900000000000001,
-    "risk": 0.53,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:56:37.977579+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T06:24:54.055965",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.4949999999999999,
-    "risk": 0.97,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:56:44.652753+00:00",
+    "event": "Final decision",
+    "action": "drop_caches",
+    "risk": "HIGH"
   },
   {
-    "time": "2026-03-27T06:25:03.468578",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.3900000000000001,
-    "risk": 0.96,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:56:46.704285+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T06:25:22.573401",
-    "event": "Executed: free_memory_cache",
-    "reward": 3.1950000000000003,
-    "risk": 1.0,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:56:48.750480+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T06:25:34.377250",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.8900000000000001,
-    "risk": 0.87,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:56:56.675564+00:00",
+    "event": "Final decision",
+    "action": "drop_caches",
+    "risk": "HIGH"
   },
   {
-    "time": "2026-03-27T06:25:40.243415",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.645,
-    "risk": 0.74,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:56:58.674603+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T06:25:47.914861",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.4050000000000002,
-    "risk": 0.6,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:57:00.731567+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T06:26:01.834703",
-    "event": "Executed: do_nothing",
-    "reward": -0.2,
-    "risk": 0.5,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:57:02.742041+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T06:26:22.436714",
-    "event": "Executed: free_memory_cache",
-    "reward": -0.015,
-    "risk": 1.0,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:57:09.843078+00:00",
+    "event": "Final decision",
+    "action": "drop_caches",
+    "risk": "HIGH"
   },
   {
-    "time": "2026-03-27T06:26:28.284690",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.125,
-    "risk": 0.76,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:57:11.866703+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T06:26:36.783465",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.6800000000000002,
-    "risk": 0.81,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:57:13.881189+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T06:26:41.949306",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.79,
-    "risk": 0.79,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:57:15.968601+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T06:26:47.165283",
-    "event": "Executed: free_memory_cache",
-    "reward": 4.38,
-    "risk": 1.0,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:57:23.244940+00:00",
+    "event": "Final decision",
+    "action": "drop_caches",
+    "risk": "HIGH"
   },
   {
-    "time": "2026-03-27T06:26:53.193576",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.6500000000000001,
-    "risk": 0.76,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:57:25.244552+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T06:27:14.158739",
-    "event": "Executed: free_memory_cache",
-    "reward": 2.0250000000000004,
-    "risk": 1.0,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:57:27.291578+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T06:27:19.481941",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.585,
-    "risk": 0.78,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:57:29.332951+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T06:27:24.890125",
-    "event": "Executed: free_memory_cache",
-    "reward": 3.07,
-    "risk": 0.58,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:57:35.074843+00:00",
+    "event": "Final decision",
+    "action": "drop_caches",
+    "risk": "HIGH"
   },
   {
-    "time": "2026-03-27T06:27:39.328086",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.6900000000000002,
-    "risk": 0.79,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:57:37.094764+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T06:27:45.160643",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.315,
-    "risk": 0.49,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:57:39.167820+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T06:27:56.849035",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.815,
-    "risk": 0.45,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:57:47.575717+00:00",
+    "event": "Final decision",
+    "action": "drop_caches",
+    "risk": "HIGH"
   },
   {
-    "time": "2026-03-27T06:28:14.258599",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.11,
-    "risk": 0.44,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:57:49.643991+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T06:28:30.807222",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.75,
-    "risk": 0.44,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:57:51.653209+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T06:30:37.886987",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.29,
-    "risk": 0.72,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:57:53.770911+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T06:30:43.426887",
-    "event": "Executed: free_memory_cache",
-    "reward": 2.145,
-    "risk": 0.49,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:58:00.590504+00:00",
+    "event": "Final decision",
+    "action": "drop_caches",
+    "risk": "HIGH"
   },
   {
-    "time": "2026-03-27T06:32:14.333581",
-    "event": "Executed: free_memory_cache",
-    "reward": 4.04,
-    "risk": 1.0,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:58:02.593049+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T06:32:21.227277",
-    "event": "Executed: free_memory_cache",
-    "reward": 4.31,
-    "risk": 0.91,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:58:04.657128+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T06:32:39.386573",
-    "event": "Executed: free_memory_cache",
-    "reward": 2.68,
-    "risk": 0.76,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:58:06.663681+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T06:32:45.402893",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.6400000000000001,
-    "risk": 0.54,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:58:13.039434+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T06:32:58.692832",
-    "event": "Executed: free_memory_cache",
-    "reward": 2.295,
-    "risk": 0.79,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:58:15.088667+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T06:33:17.950761",
-    "event": "Executed: free_memory_cache",
-    "reward": 3.135,
-    "risk": 0.78,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:58:17.138248+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T06:33:36.829737",
-    "event": "Executed: free_memory_cache",
-    "reward": 2.375,
-    "risk": 0.51,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:58:25.337777+00:00",
+    "event": "Final decision",
+    "action": "drop_caches",
+    "risk": "HIGH"
   },
   {
-    "time": "2026-03-27T06:33:42.983909",
-    "event": "Executed: free_memory_cache",
-    "reward": 0.76,
-    "risk": 0.52,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:58:27.363368+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T06:33:52.390011",
-    "event": "Executed: free_memory_cache",
-    "reward": 2.49,
-    "risk": 0.74,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:58:29.413169+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T06:33:58.150367",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.125,
-    "risk": 0.46,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:58:31.419409+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T06:34:10.674856",
-    "event": "Executed: free_memory_cache",
-    "reward": 2.165,
-    "risk": 0.49,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:58:40.444732+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T06:34:16.475087",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.6400000000000001,
-    "risk": 0.52,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:58:42.514577+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T06:34:36.028025",
-    "event": "Executed: do_nothing",
-    "reward": -0.2,
-    "risk": 0.48,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:58:44.565421+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T06:34:44.361772",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.55,
-    "risk": 0.43,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:58:46.569347+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T06:37:03.804502",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.6500000000000001,
-    "risk": 0.44,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:58:54.156225+00:00",
+    "event": "Final decision",
+    "action": "drop_caches",
+    "risk": "HIGH"
   },
   {
-    "time": "2026-03-27T06:39:19.404387",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.625,
-    "risk": 0.44,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:58:56.117468+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T06:41:49.777383",
-    "event": "Executed: free_memory_cache",
-    "reward": 0.64,
-    "risk": 1.0,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:58:58.162428+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T06:42:03.479077",
-    "event": "Executed: free_memory_cache",
-    "reward": 0.125,
-    "risk": 1.0,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:59:06.519998+00:00",
+    "event": "Final decision",
+    "action": "drop_caches",
+    "risk": "HIGH"
   },
   {
-    "time": "2026-03-27T06:42:08.484294",
-    "event": "Executed: free_memory_cache",
-    "reward": 0.42999999999999994,
-    "risk": 0.35,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:59:08.512698+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T06:48:46.349123",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.7799999999999998,
-    "risk": 0.48,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:59:10.686357+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T06:49:58.201203",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.925,
-    "risk": 1.0,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:59:12.750862+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T06:50:04.654449",
-    "event": "Executed: free_memory_cache",
-    "reward": 0.8450000000000001,
-    "risk": 0.48,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:59:22.181956+00:00",
+    "event": "Final decision",
+    "action": "drop_caches",
+    "risk": "HIGH"
   },
   {
-    "time": "2026-03-27T06:50:26.329260",
-    "event": "Executed: free_memory_cache",
-    "reward": 0.99,
-    "risk": 0.56,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:59:24.230189+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T06:50:46.943821",
-    "event": "Executed: free_memory_cache",
-    "reward": 2.235,
-    "risk": 0.8,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:59:26.582330+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T06:50:53.137045",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.335,
-    "risk": 0.55,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:59:28.593474+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T06:51:15.250343",
-    "event": "Executed: free_memory_cache",
-    "reward": 2.27,
-    "risk": 0.83,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:59:35.987367+00:00",
+    "event": "Final decision",
+    "action": "drop_caches",
+    "risk": "HIGH"
   },
   {
-    "time": "2026-03-27T06:51:27.349027",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.295,
-    "risk": 0.45,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:59:38.042327+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T06:51:40.838299",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.46,
-    "risk": 0.76,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:59:40.092614+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T06:52:02.564562",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.42,
-    "risk": 0.94,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:59:42.112262+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T06:52:14.312004",
-    "event": "Executed: free_memory_cache",
-    "reward": 0.195,
-    "risk": 0.73,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:59:49.534771+00:00",
+    "event": "Final decision",
+    "action": "drop_caches",
+    "risk": "HIGH"
   },
   {
-    "time": "2026-03-27T06:52:20.409401",
-    "event": "Executed: free_memory_cache",
-    "reward": 0.8400000000000001,
-    "risk": 0.78,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:59:51.574218+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T06:52:43.035738",
-    "event": "Executed: free_memory_cache",
-    "reward": 3.01,
-    "risk": 0.98,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:59:53.610913+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T06:52:49.089972",
-    "event": "Executed: free_memory_cache",
-    "reward": 2.985,
-    "risk": 0.87,
-    "mode": "lightweight"
+    "time": "2026-09-25T14:59:55.653708+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T06:52:55.299803",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.1700000000000002,
-    "risk": 0.55,
-    "mode": "lightweight"
+    "time": "2026-09-25T15:00:02.749555+00:00",
+    "event": "Final decision",
+    "action": "drop_caches",
+    "risk": "HIGH"
   },
   {
-    "time": "2026-03-27T06:53:01.995476",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.035,
-    "risk": 0.47,
-    "mode": "lightweight"
+    "time": "2026-09-25T15:00:04.832400+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T06:53:10.425376",
-    "event": "Executed: free_memory_cache",
-    "reward": -0.045,
-    "risk": 0.7,
-    "mode": "lightweight"
+    "time": "2026-09-25T15:00:06.891911+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T06:53:17.197141",
-    "event": "Executed: free_memory_cache",
-    "reward": 0.14,
-    "risk": 0.77,
-    "mode": "lightweight"
+    "time": "2026-09-25T15:00:08.925295+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T07:18:50.123139",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.49,
-    "risk": 0.82,
-    "mode": "lightweight"
+    "time": "2026-09-25T15:00:15.022213+00:00",
+    "event": "Final decision",
+    "action": "drop_caches",
+    "risk": "HIGH"
   },
   {
-    "time": "2026-03-27T07:18:55.865957",
-    "event": "Executed: free_memory_cache",
-    "reward": 2.195,
-    "risk": 1.0,
-    "mode": "lightweight"
+    "time": "2026-09-25T15:00:17.013170+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T07:19:02.394228",
-    "event": "Executed: free_memory_cache",
-    "reward": 3.345,
-    "risk": 1.0,
-    "mode": "lightweight"
+    "time": "2026-09-25T15:00:19.048122+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T07:19:11.525712",
-    "event": "Executed: free_memory_cache",
-    "reward": 2.275,
-    "risk": 1.0,
-    "mode": "lightweight"
+    "time": "2026-09-25T15:00:26.733963+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T07:19:19.339170",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.945,
-    "risk": 0.99,
-    "mode": "lightweight"
+    "time": "2026-09-25T15:00:28.704705+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T07:19:24.807999",
-    "event": "Executed: free_memory_cache",
-    "reward": 2.995,
-    "risk": 1.0,
-    "mode": "lightweight"
+    "time": "2026-09-25T15:00:30.733587+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T07:19:31.279047",
-    "event": "Executed: free_memory_cache",
-    "reward": 3.25,
-    "risk": 0.9,
-    "mode": "lightweight"
+    "time": "2026-09-25T15:00:32.790882+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T07:19:36.470448",
-    "event": "Executed: free_memory_cache",
-    "reward": 2.725,
-    "risk": 0.85,
-    "mode": "lightweight"
+    "time": "2026-09-25T15:00:42.396431+00:00",
+    "event": "Final decision",
+    "action": "drop_caches",
+    "risk": "HIGH"
   },
   {
-    "time": "2026-03-27T07:19:43.413850",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.61,
-    "risk": 0.75,
-    "mode": "lightweight"
+    "time": "2026-09-25T15:00:44.408581+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T07:19:48.995557",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.7249999999999999,
-    "risk": 0.75,
-    "mode": "lightweight"
+    "time": "2026-09-25T15:00:46.411667+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T07:19:54.488167",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.6,
-    "risk": 0.78,
-    "mode": "lightweight"
+    "time": "2026-09-25T15:00:48.443515+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T07:19:59.693404",
-    "event": "Executed: free_memory_cache",
-    "reward": 2.68,
-    "risk": 0.87,
-    "mode": "lightweight"
+    "time": "2026-09-25T15:01:01.093330+00:00",
+    "event": "Final decision",
+    "action": "drop_caches",
+    "risk": "HIGH"
   },
   {
-    "time": "2026-03-27T07:20:05.418094",
-    "event": "Executed: free_memory_cache",
-    "reward": 2.4699999999999998,
-    "risk": 0.82,
-    "mode": "lightweight"
+    "time": "2026-09-25T15:01:03.067317+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T07:20:10.882004",
-    "event": "Executed: free_memory_cache",
-    "reward": 2.265,
-    "risk": 0.55,
-    "mode": "lightweight"
+    "time": "2026-09-25T15:01:05.177854+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T07:20:41.421711",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.695,
-    "risk": 0.98,
-    "mode": "lightweight"
+    "time": "2026-09-25T15:01:07.198745+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T07:20:47.869157",
-    "event": "Executed: free_memory_cache",
-    "reward": 2.085,
-    "risk": 0.9,
-    "mode": "lightweight"
+    "time": "2026-09-25T15:01:35.130542+00:00",
+    "event": "Final decision",
+    "action": "drop_caches",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T07:20:53.238943",
-    "event": "Executed: free_memory_cache",
-    "reward": 2.4,
-    "risk": 0.9,
-    "mode": "lightweight"
+    "time": "2026-09-25T15:01:37.134516+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T07:20:59.810239",
-    "event": "Executed: free_memory_cache",
-    "reward": 0.81,
-    "risk": 0.74,
-    "mode": "lightweight"
+    "time": "2026-09-25T15:01:39.488172+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T07:21:06.496264",
-    "event": "Executed: free_memory_cache",
-    "reward": 3.04,
-    "risk": 0.93,
-    "mode": "lightweight"
+    "time": "2026-09-25T15:01:42.136731+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T07:21:11.586401",
-    "event": "Executed: free_memory_cache",
-    "reward": 2.75,
-    "risk": 0.88,
-    "mode": "lightweight"
+    "time": "2026-09-25T15:01:44.149015+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T07:21:18.244898",
-    "event": "Executed: free_memory_cache",
-    "reward": 0.505,
-    "risk": 0.78,
-    "mode": "lightweight"
+    "time": "2026-09-25T15:02:02.578454+00:00",
+    "event": "Final decision",
+    "action": "drop_caches",
+    "risk": "HIGH"
   },
   {
-    "time": "2026-03-27T07:21:24.108502",
-    "event": "Executed: free_memory_cache",
-    "reward": 3.185,
-    "risk": 0.94,
-    "mode": "lightweight"
+    "time": "2026-09-25T15:02:04.591128+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T07:21:30.877304",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.51,
-    "risk": 0.79,
-    "mode": "lightweight"
+    "time": "2026-09-25T15:02:06.660392+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T07:21:36.763717",
-    "event": "Executed: free_memory_cache",
-    "reward": 4.51,
-    "risk": 0.99,
-    "mode": "lightweight"
+    "time": "2026-09-25T15:02:08.698225+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T07:21:41.795720",
-    "event": "Executed: free_memory_cache",
-    "reward": 2.0749999999999997,
-    "risk": 0.51,
-    "mode": "lightweight"
+    "time": "2026-09-25T15:02:17.484213+00:00",
+    "event": "Final decision",
+    "action": "drop_caches",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T07:22:05.173688",
-    "event": "Executed: free_memory_cache",
-    "reward": 2.2800000000000002,
-    "risk": 0.87,
-    "mode": "lightweight"
+    "time": "2026-09-25T15:02:19.535451+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T07:22:10.200253",
-    "event": "Executed: free_memory_cache",
-    "reward": 3.13,
-    "risk": 0.95,
-    "mode": "lightweight"
+    "time": "2026-09-25T15:02:21.597221+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T07:22:16.361485",
-    "event": "Executed: free_memory_cache",
-    "reward": 4.305,
-    "risk": 1.0,
-    "mode": "lightweight"
+    "time": "2026-09-25T15:02:23.630199+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T07:22:27.411011",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.955,
-    "risk": 1.0,
-    "mode": "lightweight"
+    "time": "2026-09-25T15:02:31.006043+00:00",
+    "event": "Final decision",
+    "action": "drop_caches",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T07:22:35.367841",
-    "event": "Executed: free_memory_cache",
-    "reward": 0.9650000000000001,
-    "risk": 1.0,
-    "mode": "lightweight"
+    "time": "2026-09-25T15:02:33.029760+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T07:22:41.341735",
-    "event": "Executed: free_memory_cache",
-    "reward": 3.85,
-    "risk": 1.0,
-    "mode": "lightweight"
+    "time": "2026-09-25T15:02:35.094973+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T07:22:47.515127",
-    "event": "Executed: free_memory_cache",
-    "reward": 2.3000000000000003,
-    "risk": 0.91,
-    "mode": "lightweight"
+    "time": "2026-09-25T15:02:44.803836+00:00",
+    "event": "Final decision",
+    "action": "drop_caches",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T07:23:26.700403",
-    "event": "Executed: free_memory_cache",
-    "reward": 0.26,
-    "risk": 1.0,
-    "mode": "lightweight"
+    "time": "2026-09-25T15:02:46.840883+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T08:45:36.436463",
-    "event": "Executed: do_nothing",
-    "reward": -0.2,
-    "risk": 0.49
+    "time": "2026-09-25T15:02:48.862924+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T08:55:50.528559",
-    "event": "Executed: do_nothing",
-    "reward": -0.2,
-    "risk": 0.51
+    "time": "2026-09-25T15:02:50.842533+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T08:57:09.946237",
-    "event": "Executed: do_nothing",
-    "reward": -0.2,
-    "risk": 0.44
+    "time": "2026-09-25T15:02:59.259657+00:00",
+    "event": "Final decision",
+    "action": "drop_caches",
+    "risk": "HIGH"
   },
   {
-    "time": "2026-03-27T08:57:24.791987",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.06,
-    "risk": 0.5
+    "time": "2026-09-25T15:03:01.261020+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T08:57:57.185829",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.635,
-    "risk": 0.49
+    "time": "2026-09-25T15:03:03.315628+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T08:59:20.950156",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.835,
-    "risk": 0.51
+    "time": "2026-09-25T15:03:05.350111+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T09:00:28.371388",
-    "event": "Executed: free_memory_cache",
-    "reward": 0.74,
-    "risk": 0.44
+    "time": "2026-09-25T15:03:12.925932+00:00",
+    "event": "Final decision",
+    "action": "drop_caches",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T09:00:44.474919",
-    "event": "Executed: free_memory_cache",
-    "reward": 2.325,
-    "risk": 0.56
+    "time": "2026-09-25T15:03:14.967212+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T09:00:52.585380",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.62,
-    "risk": 0.55
+    "time": "2026-09-25T15:03:17.064347+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T09:00:57.827524",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.065,
-    "risk": 0.49
+    "time": "2026-09-25T15:03:19.084448+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T09:02:07.647457",
-    "event": "Executed: free_memory_cache",
-    "reward": 2.765,
-    "risk": 0.58
+    "time": "2026-09-25T15:03:27.849886+00:00",
+    "event": "Final decision",
+    "action": "drop_caches",
+    "risk": "HIGH"
   },
   {
-    "time": "2026-03-27T09:04:17.378154",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.0,
-    "risk": 0.51
+    "time": "2026-09-25T15:03:29.870736+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T09:04:43.675713",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.79,
-    "risk": 0.52
+    "time": "2026-09-25T15:03:31.883645+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T09:05:08.499143",
-    "event": "Executed: free_memory_cache",
-    "reward": 0.64,
-    "risk": 0.51
+    "time": "2026-09-25T15:03:42.679938+00:00",
+    "event": "Final decision",
+    "action": "drop_caches",
+    "risk": "HIGH"
   },
   {
-    "time": "2026-03-27T09:05:18.103709",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.375,
-    "risk": 0.49
+    "time": "2026-09-25T15:03:44.698645+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T09:05:37.462864",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.695,
-    "risk": 0.45
+    "time": "2026-09-25T15:03:46.736134+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T09:06:31.488593",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.505,
-    "risk": 0.5
+    "time": "2026-09-25T15:03:56.760138+00:00",
+    "event": "Final decision",
+    "action": "drop_caches",
+    "risk": "HIGH"
   },
   {
-    "time": "2026-03-27T09:06:59.289841",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.885,
-    "risk": 0.52
+    "time": "2026-09-25T15:03:58.772509+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T09:07:31.565020",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.4749999999999999,
-    "risk": 0.47
+    "time": "2026-09-25T15:04:00.827052+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T09:09:43.483096",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.5,
-    "risk": 0.49
+    "time": "2026-09-25T15:04:10.391094+00:00",
+    "event": "Final decision",
+    "action": "drop_caches",
+    "risk": "HIGH"
   },
   {
-    "time": "2026-03-27T09:20:40.775202",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.6300000000000001,
-    "risk": 0.71
+    "time": "2026-09-25T15:04:12.406529+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T09:21:09.346579",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.615,
-    "risk": 0.51
+    "time": "2026-09-25T15:04:14.435437+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T09:21:15.357979",
-    "event": "Executed: free_memory_cache",
-    "reward": 2.08,
-    "risk": 0.5
+    "time": "2026-09-25T15:04:16.446207+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T09:21:21.371194",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.41,
-    "risk": 0.52
+    "time": "2026-09-25T15:04:24.506357+00:00",
+    "event": "Final decision",
+    "action": "drop_caches",
+    "risk": "HIGH"
   },
   {
-    "time": "2026-03-27T09:21:27.362707",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.3,
-    "risk": 0.46
+    "time": "2026-09-25T15:04:26.597902+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T09:21:49.666001",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.2149999999999999,
-    "risk": 0.45
+    "time": "2026-09-25T15:04:28.605397+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T09:21:59.124189",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.655,
-    "risk": 0.45
+    "time": "2026-09-25T15:04:38.551185+00:00",
+    "event": "Final decision",
+    "action": "drop_caches",
+    "risk": "HIGH"
   },
   {
-    "time": "2026-03-27T09:23:04.491704",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.34,
-    "risk": 0.49
+    "time": "2026-09-25T15:04:40.612091+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T09:23:23.376310",
-    "event": "Executed: free_memory_cache",
-    "reward": -0.355,
-    "risk": 0.46
+    "time": "2026-09-25T15:04:42.946933+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T09:24:13.323448",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.055,
-    "risk": 0.49
+    "time": "2026-09-25T15:04:45.048659+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T09:24:20.727927",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.355,
-    "risk": 0.51
+    "time": "2026-09-25T15:04:53.454415+00:00",
+    "event": "Final decision",
+    "action": "drop_caches",
+    "risk": "HIGH"
   },
   {
-    "time": "2026-03-27T09:24:29.417638",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.61,
-    "risk": 0.45
+    "time": "2026-09-25T15:04:55.510353+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T09:25:23.657829",
-    "event": "Executed: free_memory_cache",
-    "reward": 0.55,
-    "risk": 0.45
+    "time": "2026-09-25T15:04:57.532660+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T09:25:40.477187",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.095,
-    "risk": 0.45
+    "time": "2026-09-25T15:04:59.649237+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T09:26:05.027442",
-    "event": "Executed: free_memory_cache",
-    "reward": 0.37,
-    "risk": 0.45
+    "time": "2026-09-25T15:05:11.744833+00:00",
+    "event": "Final decision",
+    "action": "drop_caches",
+    "risk": "HIGH"
   },
   {
-    "time": "2026-03-27T09:26:15.980309",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.615,
-    "risk": 0.54
+    "time": "2026-09-25T15:05:13.776270+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T09:26:33.413608",
-    "event": "Executed: free_memory_cache",
-    "reward": 0.96,
-    "risk": 0.45
+    "time": "2026-09-25T15:05:15.786172+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T09:26:46.174830",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.45,
-    "risk": 0.48
+    "time": "2026-09-25T15:05:17.832640+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T09:27:22.293061",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.375,
-    "risk": 0.48
+    "time": "2026-09-25T15:05:28.552715+00:00",
+    "event": "Final decision",
+    "action": "drop_caches",
+    "risk": "HIGH"
   },
   {
-    "time": "2026-03-27T09:27:58.991676",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.3250000000000002,
-    "risk": 0.49
+    "time": "2026-09-25T15:05:30.557262+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T09:28:18.046998",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.715,
-    "risk": 0.47
+    "time": "2026-09-25T15:05:33.019695+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T09:29:10.371834",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.19,
-    "risk": 0.45
+    "time": "2026-09-25T15:05:35.063338+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T09:30:30.893384",
-    "event": "Executed: free_memory_cache",
-    "reward": 2.2600000000000002,
-    "risk": 0.54
+    "time": "2026-09-25T15:05:47.701886+00:00",
+    "event": "Final decision",
+    "action": "drop_caches",
+    "risk": "HIGH"
   },
   {
-    "time": "2026-03-27T09:30:41.043664",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.6300000000000001,
-    "risk": 0.44
+    "time": "2026-09-25T15:05:49.950716+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T09:31:20.569825",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.295,
-    "risk": 0.44
+    "time": "2026-09-25T15:05:52.104062+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T09:32:04.882245",
-    "event": "Executed: free_memory_cache",
-    "reward": 2.5,
-    "risk": 0.61
+    "time": "2026-09-25T15:05:54.135754+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T09:32:52.722549",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.705,
-    "risk": 0.45
+    "time": "2026-09-25T15:06:07.019977+00:00",
+    "event": "Final decision",
+    "action": "drop_caches",
+    "risk": "HIGH"
   },
   {
-    "time": "2026-03-27T09:33:08.434894",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.605,
-    "risk": 0.44
+    "time": "2026-09-25T15:06:09.009996+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T09:33:52.153361",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.9900000000000002,
-    "risk": 0.5
+    "time": "2026-09-25T15:06:11.533546+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T09:35:03.980564",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.73,
-    "risk": 0.52
+    "time": "2026-09-25T15:06:13.549267+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T09:36:36.020174",
-    "event": "Executed: free_memory_cache",
-    "reward": 2.3499999999999996,
-    "risk": 0.53
+    "time": "2026-09-25T15:06:24.040146+00:00",
+    "event": "Final decision",
+    "action": "drop_caches",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T09:36:53.688369",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.625,
-    "risk": 0.52
+    "time": "2026-09-25T15:06:26.078889+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T09:37:02.973549",
-    "event": "Executed: free_memory_cache",
-    "reward": 0.97,
-    "risk": 0.44
+    "time": "2026-09-25T15:06:28.339984+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T09:37:12.529884",
-    "event": "Executed: free_memory_cache",
-    "reward": 2.0349999999999997,
-    "risk": 0.48
+    "time": "2026-09-25T15:06:30.330181+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T09:37:41.084615",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.6400000000000001,
-    "risk": 0.46
+    "time": "2026-09-25T15:06:39.360170+00:00",
+    "event": "Final decision",
+    "action": "drop_caches",
+    "risk": "HIGH"
   },
   {
-    "time": "2026-03-27T09:38:16.996761",
-    "event": "Executed: free_memory_cache",
-    "reward": 0.655,
-    "risk": 0.44
+    "time": "2026-09-25T15:06:41.341723+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T09:38:38.622876",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.9500000000000002,
-    "risk": 0.48
+    "time": "2026-09-25T15:06:43.352355+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   },
   {
-    "time": "2026-03-27T09:38:54.868938",
-    "event": "Executed: free_memory_cache",
-    "reward": 1.23,
-    "risk": 0.44
+    "time": "2026-09-25T15:06:52.029354+00:00",
+    "event": "Final decision",
+    "action": "drop_caches",
+    "risk": "HIGH"
+  },
+  {
+    "time": "2026-09-25T15:06:54.070202+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
+  },
+  {
+    "time": "2026-09-25T15:06:56.077879+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
+  },
+  {
+    "time": "2026-09-25T15:06:58.091077+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
+  },
+  {
+    "time": "2026-09-25T15:07:05.558549+00:00",
+    "event": "Final decision",
+    "action": "drop_caches",
+    "risk": "HIGH"
+  },
+  {
+    "time": "2026-09-25T15:07:07.607195+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
+  },
+  {
+    "time": "2026-09-25T15:07:09.670531+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
+  },
+  {
+    "time": "2026-09-25T15:07:19.459784+00:00",
+    "event": "Final decision",
+    "action": "drop_caches",
+    "risk": "HIGH"
+  },
+  {
+    "time": "2026-09-25T15:07:21.458041+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
+  },
+  {
+    "time": "2026-09-25T15:07:23.456956+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
+  },
+  {
+    "time": "2026-09-25T15:07:32.990628+00:00",
+    "event": "Final decision",
+    "action": "drop_caches",
+    "risk": "HIGH"
+  },
+  {
+    "time": "2026-09-25T15:07:34.998157+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
+  },
+  {
+    "time": "2026-09-25T15:07:37.084316+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
+  },
+  {
+    "time": "2026-09-25T15:07:39.155680+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
+  },
+  {
+    "time": "2026-09-25T15:07:45.990204+00:00",
+    "event": "Final decision",
+    "action": "drop_caches",
+    "risk": "HIGH"
+  },
+  {
+    "time": "2026-09-25T15:07:47.978638+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
+  },
+  {
+    "time": "2026-09-25T15:07:49.990014+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
+  },
+  {
+    "time": "2026-09-25T15:07:52.020821+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
+  },
+  {
+    "time": "2026-09-25T15:07:59.929748+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
+  },
+  {
+    "time": "2026-09-25T15:08:01.849928+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
+  },
+  {
+    "time": "2026-09-25T15:08:13.888189+00:00",
+    "event": "Final decision",
+    "action": "drop_caches",
+    "risk": "HIGH"
+  },
+  {
+    "time": "2026-09-25T15:08:14.816942+00:00",
+    "event": "Final decision",
+    "action": "drop_caches",
+    "risk": "HIGH"
+  },
+  {
+    "time": "2026-09-25T15:08:16.838152+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
+  },
+  {
+    "time": "2026-09-25T15:08:18.835696+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
+  },
+  {
+    "time": "2026-09-25T15:08:20.897808+00:00",
+    "event": "Final decision",
+    "action": "clear_temp",
+    "risk": "MEDIUM"
   }
 ]

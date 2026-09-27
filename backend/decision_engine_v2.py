@@ -98,13 +98,16 @@ class DecisionEngineV2:
 
         # Convert learned anomaly magnitude into the scalar signal expected
         # by the causal engine. Keep the raw anomaly list intact downstream.
-        anomaly_score = 0.0
-        if learned_anomalies:
+        anomaly_score = float(
+            metrics.get("ensemble_score", metrics.get("anomaly_score", 0.0)) or 0.0
+        )
+        if anomaly_score <= 0.0 and learned_anomalies:
             anomaly_score = max(
                 float(a.get("deviation", 0) or 0) / 100.0
                 for a in learned_anomalies
                 if isinstance(a, dict)
             )
+        anomaly_score = max(0.0, min(1.0, anomaly_score))
 
         causal = self.causal_engine.detect(
             {
@@ -268,12 +271,18 @@ class DecisionEngineV2:
         # final executable action.
         executable_action_ids = set(ACTIONS.keys())
 
+        # Preserve the internal action for DQN learning before translating
+        # it into the canonical executor vocabulary.
+        learning_action = final_action
+
         # Translate internal RL/policy actions into canonical executor actions
         # when a safe, explicit translation exists.
         translated_action = self.RL_TO_EXECUTOR_ACTION.get(final_action)
         if translated_action:
             final_action = translated_action
             reason = f"{reason} → RL executor translation"
+        else:
+            learning_action = None
 
         if final_action not in executable_action_ids:
             if mapped_causal_action:
@@ -325,6 +334,12 @@ class DecisionEngineV2:
                 "application_attribution": application_attribution
             }
         )
+
+        # Carry the original DQN action across the execution boundary.
+        # This is used only for replay/learning; `action` remains the
+        # canonical executor action.
+        if learning_action is not None:
+            decision["learning_action"] = learning_action
 
         self._log("Final decision", decision)
 

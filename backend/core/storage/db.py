@@ -87,6 +87,78 @@ CREATE TABLE IF NOT EXISTS metric_snapshots (
     ts          REAL    NOT NULL DEFAULT (unixepoch('now', 'subsec'))
 );
 CREATE INDEX IF NOT EXISTS idx_snapshots_ts ON metric_snapshots(ts DESC);
+CREATE TABLE IF NOT EXISTS incidents (
+    incident_id      TEXT PRIMARY KEY,
+    device_id        TEXT,
+    failure_type     TEXT NOT NULL,
+    severity         TEXT,
+    status           TEXT NOT NULL DEFAULT 'open',
+
+    started_at       REAL,
+    detected_at      REAL,
+    predicted_at     REAL,
+    occurred_at      REAL,
+    resolved_at      REAL,
+
+    root_cause       TEXT,
+    evidence         TEXT,
+    metadata         TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_incidents_device_ts
+ON incidents(device_id, occurred_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_incidents_type_ts
+ON incidents(failure_type, occurred_at DESC);
+
+
+CREATE TABLE IF NOT EXISTS predictions (
+    prediction_id       TEXT PRIMARY KEY,
+    device_id           TEXT,
+
+    failure_type        TEXT NOT NULL,
+    created_at          REAL NOT NULL,
+    expected_at         REAL,
+
+    confidence          REAL,
+    risk_score          REAL,
+    lead_time_seconds   REAL,
+
+    status              TEXT NOT NULL DEFAULT 'active',
+
+    evidence            TEXT,
+    model_version       TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_predictions_device_ts
+ON predictions(device_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_predictions_status
+ON predictions(status);
+
+
+CREATE TABLE IF NOT EXISTS prediction_outcomes (
+    prediction_id       TEXT PRIMARY KEY,
+    incident_id         TEXT,
+
+    outcome             TEXT NOT NULL,
+    lead_time_seconds   REAL,
+
+    false_positive      INTEGER NOT NULL DEFAULT 0,
+    false_negative      INTEGER NOT NULL DEFAULT 0,
+    prevented           INTEGER NOT NULL DEFAULT 0,
+
+    validated_at        REAL,
+
+    FOREIGN KEY(prediction_id)
+        REFERENCES predictions(prediction_id),
+
+    FOREIGN KEY(incident_id)
+        REFERENCES incidents(incident_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_prediction_outcomes_incident
+ON prediction_outcomes(incident_id);
 """
 
 # ─────────────────────────────────────────────────────────
@@ -454,6 +526,133 @@ async def load_snapshots(hours: float = 1.0) -> list[dict]:
         ) as cur:
             return [dict(r) for r in await cur.fetchall()]
     except Exception:
+        return []
+
+# ─────────────────────────────────────────────────────────
+#  INCIDENT / PREDICTION GROUND TRUTH
+# ─────────────────────────────────────────────────────────
+
+async def save_incident(incident: dict) -> bool:
+    db = await get_db()
+    if not db:
+        return False
+    try:
+        await db.execute("""
+            INSERT OR REPLACE INTO incidents (
+                incident_id, device_id, failure_type, severity, status,
+                started_at, detected_at, predicted_at, occurred_at,
+                resolved_at, root_cause, evidence, metadata
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            incident.get("incident_id"),
+            incident.get("device_id"),
+            incident.get("failure_type"),
+            incident.get("severity"),
+            incident.get("status", "open"),
+            incident.get("started_at"),
+            incident.get("detected_at"),
+            incident.get("predicted_at"),
+            incident.get("occurred_at"),
+            incident.get("resolved_at"),
+            json.dumps(incident.get("root_cause")) if isinstance(incident.get("root_cause"), (dict, list)) else incident.get("root_cause"),
+            json.dumps(incident.get("evidence")) if isinstance(incident.get("evidence"), (dict, list)) else incident.get("evidence"),
+            json.dumps(incident.get("metadata")) if isinstance(incident.get("metadata"), (dict, list)) else incident.get("metadata"),
+        ))
+        await db.commit()
+        return True
+    except Exception as e:
+        log.error("save_incident: %s", e)
+        return False
+
+
+async def save_prediction(prediction: dict) -> bool:
+    db = await get_db()
+    if not db:
+        return False
+    try:
+        await db.execute("""
+            INSERT OR REPLACE INTO predictions (
+                prediction_id, device_id, failure_type, created_at,
+                expected_at, confidence, risk_score, lead_time_seconds,
+                status, evidence, model_version, acknowledged
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            prediction.get("prediction_id"),
+            prediction.get("device_id"),
+            prediction.get("failure_type"),
+            prediction.get("created_at", time.time()),
+            prediction.get("expected_at"),
+            prediction.get("confidence"),
+            prediction.get("risk_score"),
+            prediction.get("lead_time_seconds"),
+            prediction.get("status", "active"),
+            json.dumps(prediction.get("evidence")) if isinstance(prediction.get("evidence"), (dict, list)) else prediction.get("evidence"),
+            prediction.get("model_version"),
+            int(bool(prediction.get("acknowledged", False))),
+        ))
+        await db.commit()
+        return True
+    except Exception as e:
+        log.error("save_prediction: %s", e)
+        return False
+
+
+async def save_prediction_outcome(outcome: dict) -> bool:
+    db = await get_db()
+    if not db:
+        return False
+    try:
+        await db.execute("""
+            INSERT OR REPLACE INTO prediction_outcomes (
+                prediction_id, incident_id, outcome, lead_time_seconds,
+                false_positive, false_negative, prevented, validated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            outcome.get("prediction_id"),
+            outcome.get("incident_id"),
+            outcome.get("outcome"),
+            outcome.get("lead_time_seconds"),
+            int(bool(outcome.get("false_positive", False))),
+            int(bool(outcome.get("false_negative", False))),
+            int(bool(outcome.get("prevented", False))),
+            outcome.get("validated_at", time.time()),
+        ))
+        await db.commit()
+        return True
+    except Exception as e:
+        log.error("save_prediction_outcome: %s", e)
+        return False
+
+
+async def load_active_predictions() -> list[dict]:
+    db = await get_db()
+    if not db:
+        return []
+    try:
+        async with db.execute("""
+            SELECT * FROM predictions
+            WHERE status = 'active'
+            ORDER BY created_at DESC
+        """) as cur:
+            return [dict(r) for r in await cur.fetchall()]
+    except Exception as e:
+        log.error("load_active_predictions: %s", e)
+        return []
+
+
+async def load_incidents(limit: int = 100) -> list[dict]:
+    db = await get_db()
+    if not db:
+        return []
+    try:
+        async with db.execute("""
+            SELECT * FROM incidents
+            ORDER BY occurred_at DESC
+            LIMIT ?
+        """, (limit,)) as cur:
+            return [dict(r) for r in await cur.fetchall()]
+    except Exception as e:
+        log.error("load_incidents: %s", e)
         return []
 
 # ─────────────────────────────────────────────────────────

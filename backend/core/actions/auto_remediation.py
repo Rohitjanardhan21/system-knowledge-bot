@@ -84,8 +84,34 @@ class AutoRemediationEngine:
 
             actions = self.REMEDIATION_MAP.get(pred_type,[])
             if not actions:
-                self._notify(f"CVIS — {pred_type} Predicted",
-                    pred.get("message","") + " No automatic fix — check dashboard.")
+                message = pred.get("message", "")
+                if pred_type == "CPU_STRESS":
+                    processes = self._last_metrics.get("processes", {})
+                    by_cpu = processes.get("by_cpu", []) if isinstance(processes, dict) else []
+                    top = by_cpu[:5]
+                    if top:
+                        process_lines = []
+                        for p in top:
+                            name = p.get("name", "unknown")
+                            pid = p.get("pid", "?")
+                            cpu = p.get("cpu_percent", p.get("cpu", 0))
+                            mem = p.get("memory_percent", p.get("mem", 0))
+                            process_lines.append(
+                                f"{name} (PID {pid}): CPU {cpu:.1f}% MEM {mem:.1f}%"
+                            )
+                        message += (
+                            "\n\nHigh-CPU processes:\n• "
+                            + "\n• ".join(process_lines)
+                        )
+                    message += (
+                        "\n\nRisk: sustained CPU pressure may degrade system "
+                        "responsiveness and contribute to instability if left unattended."
+                        "\nRecommended action: review the high-CPU processes before "
+                        "taking remediation. No process was terminated automatically."
+                    )
+                else:
+                    message += " No automatic fix — check dashboard."
+                self._notify(f"CVIS — {pred_type} Predicted", message)
                 continue
 
             for ac in actions:

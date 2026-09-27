@@ -67,3 +67,10 @@ trivy.sarif
 *.bak*
 *.working
 *.backup
+
+# ── Local runtime state ─────────────────────────────────
+.device_key_response
+data/
+frontend/assets/
+system_facts/nodes/*.json
+bot_audit/decisions.log

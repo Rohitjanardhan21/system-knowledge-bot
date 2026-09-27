@@ -63,7 +63,7 @@ def _read_secret(env_key: str) -> str:
 
 JWT_SECRET      = _read_secret("JWT_SECRET") or secrets.token_hex(32)
 JWT_ALGORITHM   = "HS256"
-ACCESS_TTL_S    = int(os.environ.get("JWT_ACCESS_TTL_S",  "900"))    # 15 min
+ACCESS_TTL_S    = int(os.environ.get("JWT_ACCESS_TTL_S",  "3600"))    # 15 min
 REFRESH_TTL_S   = int(os.environ.get("JWT_REFRESH_TTL_S", "604800")) # 7 days
 
 # Bootstrap admin API key

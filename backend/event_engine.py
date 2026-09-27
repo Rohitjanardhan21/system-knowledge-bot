@@ -28,6 +28,11 @@ cpu_history = deque(maxlen=MAX_HISTORY)
 # Track last emitted events to avoid duplicates
 last_events = {}
 
+# Stateful lifecycle tracking.
+# Recovery is emitted only after the system has previously
+# entered a degraded/unstable state.
+system_state = "normal"
+
 # ─────────────────────────────────────────────
 # UTILITY FUNCTIONS
 # ─────────────────────────────────────────────
@@ -166,16 +171,42 @@ def generate_events(metrics, intelligence=None):
             })
 
     # ─────────────────────────────────────────
-    # 5. RECOVERY EVENT
+    # 5. STATEFUL RECOVERY EVENT
     # ─────────────────────────────────────────
-    if cpu < 50 and not deduplicate("recovery", cooldown=10):
+    #
+    # Recovery is a lifecycle transition, not a periodic
+    # "CPU is currently low" event.
+    #
+    # NORMAL -> NORMAL       : no event
+    # DEGRADED -> NORMAL     : one recovery event
+    # CRITICAL -> NORMAL     : one recovery event
+    #
+    global system_state
+
+    pressure = (
+        cpu >= 75
+        or memory >= 80
+        or anomaly >= 0.70
+    )
+
+    current_state = "degraded" if pressure else "normal"
+
+    if current_state == "degraded" and system_state == "normal":
+        system_state = "degraded"
+
+    elif current_state == "normal" and system_state == "degraded":
         events.append({
             "type": "recovery",
-            "title": "System stabilized",
-            "message": "System load returned to normal levels",
+            "title": "System recovered",
+            "message": "System returned to normal operating conditions",
             "severity": "low",
-            "timestamp": now()
+            "timestamp": now(),
+            "meta": {
+                "previous_state": "degraded",
+                "current_state": "normal"
+            }
         })
+        system_state = "normal"
 
     # ─────────────────────────────────────────
     # 6. DECISION EVENT (IF AVAILABLE)

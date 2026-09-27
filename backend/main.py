@@ -42,9 +42,10 @@ from backend.core.ml.ml_engine           import get_engine
 from backend.core.ml.remote_inference     import RemoteInferenceManager
 from backend.core.storage.model_registry import get_registry
 from backend.core.alerts.alert_engine    import get_alert_engine, AlertRule
+from backend.chat_routes import router as chat_router
 from backend.core.storage.db import (
-    save_alert, load_alerts, load_events, maybe_save_snapshot,
-    load_snapshots, db_info, close_db,
+    save_alert, save_event, load_alerts, load_events, maybe_save_snapshot,
+    load_snapshots, db_info, close_db, save_prediction_outcome,
 )
 
 import logging
@@ -98,7 +99,9 @@ async def _restore_registered_devices():
                 continue
 
             try:
-                capabilities = _json.loads(data.get("capabilities", "[]"))
+                capabilities = _json.loads(
+                    data.get("capabilities", "[]")
+                )
             except (TypeError, ValueError):
                 capabilities = []
 
@@ -199,6 +202,75 @@ def get_remote_inference() -> RemoteInferenceManager:
 # successive collector-loop samples instead of a fresh isolated snapshot
 # each call, so the measurement window tracks the real polling cadence.
 _cpu_usage_state: dict = {"usage_ns": None, "ts": None}
+
+# Rolling observed stability state. This is derived from real collector
+# telemetry; it is not a Digital Twin or counterfactual simulation score.
+_stability_history = deque(maxlen=60)
+
+
+def _calculate_observed_stability(metrics: dict) -> dict:
+    """Calculate a transparent stability index from recent real telemetry.
+
+    The index combines current resource pressure, anomaly pressure, and
+    short-term volatility. It is intentionally bounded to [0, 1].
+    """
+    cpu = max(0.0, min(100.0, float(metrics.get("cpu_percent", 0.0))))
+    memory = max(0.0, min(100.0, float(metrics.get("memory", 0.0))))
+    disk = max(0.0, min(100.0, float(metrics.get("disk_percent", 0.0))))
+    anomaly = max(0.0, min(1.0, float(metrics.get("anomaly_score", 0.0))))
+
+    sample = {
+        "cpu": cpu,
+        "memory": memory,
+        "disk": disk,
+        "anomaly": anomaly,
+    }
+    _stability_history.append(sample)
+
+    # Resource pressure: only sustained pressure above normal operating
+    # ranges contributes strongly to instability.
+    cpu_pressure = max(0.0, (cpu - 70.0) / 30.0)
+    memory_pressure = max(0.0, (memory - 70.0) / 30.0)
+    disk_pressure = max(0.0, (disk - 85.0) / 15.0)
+
+    resource_pressure = min(
+        1.0,
+        0.40 * cpu_pressure +
+        0.35 * memory_pressure +
+        0.25 * disk_pressure,
+    )
+
+    # Recent movement/volatility from actual collector samples.
+    volatility = 0.0
+    if len(_stability_history) >= 2:
+        previous = list(_stability_history)[-2]
+        volatility = min(
+            1.0,
+            (
+                abs(cpu - previous["cpu"]) / 30.0 * 0.4 +
+                abs(memory - previous["memory"]) / 30.0 * 0.3 +
+                abs(disk - previous["disk"]) / 15.0 * 0.2 +
+                abs(anomaly - previous["anomaly"]) * 0.1
+            ),
+        )
+
+    anomaly_pressure = anomaly
+
+    instability = min(
+        1.0,
+        0.55 * resource_pressure +
+        0.30 * anomaly_pressure +
+        0.15 * volatility,
+    )
+
+    stability = round(max(0.0, min(1.0, 1.0 - instability)), 3)
+
+    return {
+        "stability": stability,
+        "stability_pressure": round(instability, 3),
+        "stability_volatility": round(volatility, 3),
+        "stability_samples": len(_stability_history),
+    }
 
 
 def explain_and_act(metrics: dict) -> dict:
@@ -381,7 +453,27 @@ def _build_feature_vector():
 
 
 async def _push_and_persist(metrics: dict, scores):
+    # Persist the normal telemetry snapshot first.
     await maybe_save_snapshot(metrics)
+
+    # Generate and persist structured system events independently.
+    # Event failures must never interrupt telemetry persistence.
+    try:
+        from backend.event_engine import generate_events
+
+        events = generate_events(metrics)
+
+        for event in events:
+            severity = str(event.get("severity", "low")).lower()
+            message = str(event.get("message") or event.get("title") or "System event")
+
+            await save_event(
+                severity=severity,
+                message=message,
+            )
+
+    except Exception as exc:
+        log.exception("Event pipeline failed: %s", exc)
 
 
 def _collect():
@@ -431,6 +523,13 @@ def _collect():
             update["severity"] = _exp["severity"]
             update["reason"]   = _exp["reason"]
             update["actions"]  = _exp["actions"]
+
+            # Derive observed stability from the same real collector sample.
+            # This is an observed telemetry index, not a Digital Twin score.
+            update.update(_calculate_observed_stability({
+                **_last_metrics,
+                **update,
+            }))
 
             with _lock:
                 _last_metrics.update(update)
@@ -485,8 +584,9 @@ def _collect():
                             for p in preds
                         ]
                         ar.evaluate(pred_dicts, dna_sum)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        import logging
+                        logging.getLogger(__name__).exception("Auto-remediation evaluation failed: %s", e)
 
                     prediction = dna.predict(m)
                     if prediction and not prediction.acknowledged:
@@ -514,8 +614,11 @@ def _collect():
                             }
                             if prediction else None
                         )
-                except Exception:
-                    pass
+                except Exception as e:
+                    import logging
+                    logging.getLogger("cvis").exception(
+                        "Cognitive processing failed: %s", e
+                    )
 
             if time.time() - last_save > AUTOSAVE_INTERVAL and scores.steps_lstm > 50:
                 registry.save_version(
@@ -568,6 +671,111 @@ async def lifespan(app: FastAPI):
             log.info("No active ensemble checkpoint configured")
     except Exception as e:
         log.warning("Ensemble restore failed: %s", e, exc_info=True)
+
+    # Restore active cognitive predictions from SQLite into Failure-DNA.
+    # Failure-DNA has its own JSON persistence, but predictions created through
+    # the prediction storage layer must also survive a backend restart.
+    try:
+        from backend.core.storage.db import load_active_predictions
+        from backend.core.cognitive.failure_dna import ActivePrediction
+        import json
+
+        dna = get_dna_engine()
+        persisted_predictions = await load_active_predictions()
+        restored_count = 0
+
+        for row in persisted_predictions:
+            pred_id = row.get("prediction_id")
+
+            if not pred_id:
+                continue
+            try:
+                evidence = row.get("evidence") or {}
+                if isinstance(evidence, str):
+                    try:
+                        evidence = json.loads(evidence)
+                    except Exception:
+                        evidence = {}
+
+                failure_type = str(
+                    row.get("failure_type") or "UNKNOWN"
+                ).upper()
+
+                pattern_id = evidence.get(
+                    "pattern_id",
+                    f"dna_{failure_type}"
+                )
+
+                now = time.time()
+                expected_at = row.get("expected_at")
+                lead_time = float(
+                    row.get("lead_time_seconds") or 0
+                )
+
+                if expected_at is None:
+                    expected_at = now + lead_time
+
+                minutes_remaining = max(
+                    0.0,
+                    (float(expected_at) - now) / 60.0
+                )
+
+                confidence = float(
+                    row.get("confidence") or 0.0
+                )
+
+                severity = dna._severity_from_eta(
+                    minutes_remaining,
+                    confidence
+                )
+
+                prediction = ActivePrediction(
+                    prediction_id=pred_id,
+                    failure_type=failure_type,
+                    detected_at=float(
+                        row.get("created_at") or now
+                    ),
+                    predicted_eta=float(expected_at),
+                    confidence=confidence,
+                    minutes_remaining=minutes_remaining,
+                    plain_message=evidence.get(
+                        "message",
+                        f"{failure_type} failure predicted in about "
+                        f"{int(minutes_remaining)} minutes"
+                    ),
+                    plain_action=dna._plain_action(
+                        type(
+                            "_Pattern",
+                            (),
+                            {"failure_type": failure_type}
+                        )()
+                    ),
+                    severity=severity,
+                    pattern_id=pattern_id,
+                    acknowledged=bool(row.get("acknowledged", 0)),
+                )
+
+                dna._active_predictions[pred_id] = prediction
+                restored_count += 1
+
+            except Exception as pred_error:
+                log.warning(
+                    "Failed to restore cognitive prediction %s: %s",
+                    pred_id,
+                    pred_error
+                )
+
+        log.info(
+            "Restored %d active cognitive prediction(s) from SQLite",
+            restored_count
+        )
+
+    except Exception as e:
+        log.warning(
+            "Cognitive prediction restore failed: %s",
+            e,
+            exc_info=True
+        )
 
     _collector_stop.clear()
     _collector_thread = threading.Thread(target=_collect, daemon=True, name="cvis-collector")
@@ -627,6 +835,11 @@ app = FastAPI(
     lifespan=lifespan,
     docs_url="/docs" if os.environ.get("ENV") != "prod" else None,
     redoc_url=None,
+)
+
+app.include_router(
+    chat_router,
+    dependencies=[Depends(require_scope("read"))],
 )
 
 _ALLOWED_ORIGIN = os.environ.get("ALLOWED_ORIGIN", "*")
@@ -1106,7 +1319,10 @@ async def cognitive_health_score():
 async def cognitive_pipeline():
     try:
         from backend.intelligence_pipeline import run_intelligence_pipeline
-        return run_intelligence_pipeline(allow_execution=False)
+        return run_intelligence_pipeline(
+            allow_execution=False,
+            live_metrics=dict(_last_metrics),
+        )
     except Exception as e:
         return {
             "error": "Intelligence pipeline unavailable",
@@ -1141,23 +1357,295 @@ async def cognitive_predictions():
             "action":           p.plain_action,
             "severity":         p.severity,
             "acknowledged":     p.acknowledged,
-            "trustworthy":      p.seen_count >= 15 if hasattr(p, "seen_count") else True,
+            "trustworthy": dna.is_prediction_trustworthy(p.pattern_id),
             "explanation":      dna.explain_prediction(p, metrics),
         }
         for p in preds
     ]
 
+@app.get("/cognitive/debug/matcher", tags=["Cognitive"])
+async def cognitive_debug_matcher():
+    if not COGNITIVE_OK:
+        return {"error": "Cognitive layer not available"}
+
+    dna = get_dna_engine()
+    buffer = list(dna._metric_buffer)
+
+    result = {
+        "buffer_length": len(buffer),
+        "baseline_keys": list(dna._baseline_stats.keys()),
+        "patterns": {},
+    }
+
+    for pid, pattern in dna._patterns.items():
+        try:
+            confidence, eta = dna._match_pattern(pattern, buffer)
+            debug = {
+                "pattern_id": pid,
+                "seen_count": pattern.seen_count,
+                "detection_accuracy": pattern.detection_accuracy,
+                "pattern_confidence": pattern.confidence,
+                "match_confidence": round(float(confidence), 4),
+                "match_percent": round(float(confidence) * 100, 2),
+                "eta_minutes": round(float(eta), 2),
+                "passes_sample_gate": pattern.seen_count >= dna.MIN_SAMPLES,
+                "passes_confidence_gate": confidence >= dna.MIN_CONFIDENCE,
+            }
+
+            # Detailed matcher diagnostics.
+            try:
+                recent = buffer[-min(30, len(buffer)):]
+                current_z = [
+                    dna._to_z_scores(snapshot).tolist()
+                    for snapshot in recent
+                ]
+
+                signatures = [
+                    list(sig)
+                    for sig in pattern.signature_steps
+                ]
+
+                step_debug = []
+                start_pos = 0
+
+                for step_index, sig in enumerate(signatures):
+                    if start_pos >= len(current_z):
+                        break
+
+                    candidates = current_z[start_pos:]
+
+                    distances = [
+                        float(
+                            np.linalg.norm(
+                                np.asarray(z, dtype=np.float32)
+                                - np.asarray(sig, dtype=np.float32)
+                            )
+                        )
+                        for z in candidates
+                    ]
+
+                    if not distances:
+                        break
+
+                    local_idx = int(np.argmin(distances))
+                    distance = distances[local_idx]
+                    similarity = 1.0 / (1.0 + distance)
+                    actual_pos = start_pos + local_idx
+
+                    step_debug.append({
+                        "step": step_index + 1,
+                        "signature": sig,
+                        "matched_buffer_position": actual_pos,
+                        "distance": round(distance, 4),
+                        "similarity": round(similarity, 4),
+                    })
+
+                    start_pos = actual_pos + 1
+
+                debug["latest_z_scores"] = (
+                    current_z[-1] if current_z else []
+                )
+                debug["matched_steps"] = step_debug
+                debug["steps_matched"] = len(step_debug)
+                debug["steps_total"] = len(signatures)
+
+            except Exception as debug_error:
+                debug["diagnostic_error"] = repr(debug_error)
+
+            result["patterns"][pattern.failure_type] = debug
+        except Exception as e:
+            result["patterns"][pattern.failure_type] = {
+                "error": repr(e)
+            }
+
+    return result
+
+
 @app.post("/cognitive/predictions/{pred_id}/acknowledge", tags=["Cognitive"])
 async def acknowledge_prediction(pred_id: str):
-    if COGNITIVE_OK:
-        get_dna_engine().acknowledge_prediction(pred_id, user_acted=True)
-    return {"acknowledged": pred_id}
+    if not COGNITIVE_OK:
+        raise HTTPException(
+            status_code=503,
+            detail="Cognitive layer unavailable",
+        )
+
+    from backend.core.storage.db import get_db
+
+    dna = get_dna_engine()
+    pred = dna._active_predictions.get(pred_id)
+
+    if pred is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Prediction not found",
+        )
+
+    dna.acknowledge_prediction(pred_id, user_acted=True)
+
+    db = await get_db()
+
+    if not db:
+        raise HTTPException(
+            status_code=503,
+            detail="Database unavailable",
+        )
+
+    try:
+        await db.execute(
+            "UPDATE predictions SET acknowledged = 1 WHERE prediction_id = ?",
+            (pred_id,),
+        )
+        await db.commit()
+    except Exception as e:
+        log.error(
+            "Failed to persist acknowledgement for %s: %s",
+            pred_id,
+            e,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to persist acknowledgement",
+        )
+
+    return {
+        "acknowledged": pred_id,
+        "persisted": True,
+    }
 
 @app.post("/cognitive/predictions/{pred_id}/resolve", tags=["Cognitive"])
-async def resolve_prediction(pred_id: str, was_correct: bool = True):
-    if COGNITIVE_OK:
-        get_dna_engine().resolve_prediction(pred_id, was_correct)
-    return {"resolved": pred_id, "was_correct": was_correct}
+async def resolve_prediction(pred_id: str, was_correct: bool):
+    if not COGNITIVE_OK:
+        raise HTTPException(status_code=503, detail="Cognitive layer unavailable")
+
+    from backend.core.storage.db import (
+        get_db,
+        load_active_predictions,
+        save_prediction,
+        save_prediction_outcome,
+    )
+
+    dna = get_dna_engine()
+    pred = dna._active_predictions.get(pred_id)
+
+    # First enforce durable immutability. This protects predictions that
+    # survived a backend restart and are no longer in Failure-DNA memory.
+    db = await get_db()
+    if db:
+        try:
+            async with db.execute(
+                """
+                SELECT outcome, false_positive, false_negative, prevented
+                FROM prediction_outcomes
+                WHERE prediction_id = ?
+                """,
+                (pred_id,),
+            ) as cur:
+                existing = await cur.fetchone()
+
+            if existing:
+                return {
+                    "resolved": pred_id,
+                    "was_correct": existing["outcome"] == "correct",
+                    "found": True,
+                    "already_resolved": True,
+                    "persisted_only": pred is None,
+                }
+        except Exception as e:
+            log.error("resolve_prediction outcome lookup failed: %s", e)
+
+    # Predictions may survive a backend restart in SQLite without being
+    # present in the in-memory Failure-DNA registry.
+    if pred is None:
+        persisted = await load_active_predictions()
+        row = next(
+            (r for r in persisted if r.get("prediction_id") == pred_id),
+            None,
+        )
+
+        if row is None:
+            return {
+                "resolved": pred_id,
+                "was_correct": was_correct,
+                "found": False,
+            }
+
+        await save_prediction({
+            "prediction_id": row.get("prediction_id"),
+            "device_id": row.get("device_id"),
+            "failure_type": row.get("failure_type"),
+            "created_at": row.get("created_at"),
+            "expected_at": row.get("expected_at"),
+            "confidence": row.get("confidence"),
+            "risk_score": row.get("risk_score"),
+            "lead_time_seconds": row.get("lead_time_seconds"),
+            "status": "resolved",
+            "evidence": row.get("evidence"),
+            "model_version": row.get("model_version"),
+        })
+
+        await save_prediction_outcome({
+            "prediction_id": pred_id,
+            "outcome": "correct" if was_correct else "incorrect",
+            "lead_time_seconds": row.get("lead_time_seconds"),
+            "false_positive": not was_correct,
+            "false_negative": False,
+            "prevented": False,
+        })
+
+        return {
+            "resolved": pred_id,
+            "was_correct": was_correct,
+            "found": True,
+            "persisted_only": True,
+        }
+
+    # In-memory prediction has already been resolved.
+    if getattr(pred, "resolved", False):
+        return {
+            "resolved": pred_id,
+            "was_correct": bool(pred.was_correct),
+            "found": True,
+            "already_resolved": True,
+        }
+
+    dna.resolve_prediction(pred_id, was_correct)
+
+    await save_prediction({
+        "prediction_id": pred_id,
+        "device_id": getattr(pred, "device_id", None),
+        "failure_type": (
+            getattr(pred, "failure_type", None)
+            or getattr(pred, "pattern_id", None)
+            or "unknown"
+        ),
+        "created_at": getattr(pred, "created_at", None) or __import__("time").time(),
+        "expected_at": None,
+        "confidence": getattr(pred, "confidence", None),
+        "risk_score": getattr(pred, "confidence", None),
+        "lead_time_seconds": getattr(pred, "minutes_remaining", 0) * 60,
+        "status": "resolved",
+        "evidence": {
+            "pattern_id": getattr(pred, "pattern_id", None),
+            "message": getattr(pred, "plain_message", None),
+        },
+        "model_version": "failure_dna",
+    })
+
+    await save_prediction_outcome({
+        "prediction_id": pred_id,
+        "outcome": "correct" if was_correct else "incorrect",
+        "lead_time_seconds": getattr(pred, "minutes_remaining", 0) * 60,
+        "false_positive": not was_correct,
+        "false_negative": False,
+        "prevented": False,
+    })
+
+    return {
+        "resolved": pred_id,
+        "was_correct": was_correct,
+        "found": True,
+    }
+
 
 @app.get("/cognitive/dna", tags=["Cognitive"])
 async def cognitive_dna():
@@ -1425,6 +1913,7 @@ class DeviceCommandCreatePayload(BaseModel):
 
 class DeviceCommandTransitionPayload(BaseModel):
     status: str
+    result: dict | None = None
 
 
 @app.post("/devices/{device_id}/commands", tags=["Devices"])
@@ -1463,6 +1952,52 @@ async def create_device_command(
             exc,
         )
         raise HTTPException(503, "Command creation failed") from exc
+
+
+
+@app.get("/devices/{device_id}/commands/pending", tags=["Devices"])
+async def poll_device_commands(
+    device_id: str,
+    principal: dict = Depends(require_scope("write")),
+):
+    """Atomically claim and return the next pending command for the authenticated device."""
+    credential_device_id = principal.get("device_id")
+
+    if not credential_device_id:
+        raise HTTPException(
+            403,
+            "Device-bound credential required for command polling",
+        )
+
+    if credential_device_id != device_id:
+        raise HTTPException(
+            403,
+            "Credential is not authorized for this device",
+        )
+
+    redis = await get_redis()
+    if redis is None:
+        raise HTTPException(503, "Command persistence unavailable")
+
+    from backend.core.devices.command_service import claim_next_command
+
+    try:
+        command = await claim_next_command(
+            redis,
+            device_id,
+        )
+    except Exception as exc:
+        log.exception(
+            "Failed to claim command for device %s: %s",
+            device_id,
+            exc,
+        )
+        raise HTTPException(503, "Command polling failed") from exc
+
+    if command is None:
+        return {"commands": []}
+
+    return {"commands": [command]}
 
 
 @app.get("/devices/{device_id}/commands/{command_id}", tags=["Devices"])
@@ -1535,11 +2070,20 @@ async def transition_device_command(
     if command is None or command["device_id"] != device_id:
         raise HTTPException(404, "Command not found")
 
+    log.info(
+        "COMMAND TRANSITION: device=%s command=%s status=%s result=%r",
+        device_id,
+        command_id,
+        payload.status,
+        payload.result,
+    )
+
     try:
         transitioned = await transition_command(
             redis,
             command_id,
             payload.status,
+            payload.result,
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc

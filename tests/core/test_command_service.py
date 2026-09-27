@@ -47,6 +47,17 @@ class FakeRedis:
         self.streams.setdefault(key, []).append(dict(fields))
         return f"{len(self.streams[key])}-0"
 
+    async def xrevrange(self, key, count=None):
+        entries = list(reversed(self.streams.get(key, [])))
+
+        if count is not None:
+            entries = entries[:count]
+
+        return [
+            (f"{index}-0", fields)
+            for index, fields in enumerate(entries, start=1)
+        ]
+
     def pipeline(self):
         return FakePipeline(self)
 
@@ -130,6 +141,138 @@ def test_create_command_persists_state_and_enqueues():
     assert stored["device_id"] == "device-001"
     assert stored["status"] == "pending"
     assert json.loads(stored["payload"]) == {}
+
+
+def test_claim_next_command_claims_pending_command():
+    redis = FakeRedis()
+
+    created = run(
+        cs.create_command(
+            redis,
+            device_id="device-claim-001",
+            command_type="diagnostic.health_check",
+            requested_by="controller",
+        )
+    )
+
+    claimed = run(
+        cs.claim_next_command(
+            redis,
+            "device-claim-001",
+        )
+    )
+
+    assert claimed is not None
+    assert claimed["command_id"] == created["command_id"]
+    assert claimed["device_id"] == "device-claim-001"
+    assert claimed["status"] == "acknowledged"
+
+    loaded = run(
+        cs.get_command(
+            redis,
+            created["command_id"],
+        )
+    )
+
+    assert loaded["status"] == "acknowledged"
+
+
+def test_claim_next_command_does_not_return_already_claimed_command():
+    redis = FakeRedis()
+
+    created = run(
+        cs.create_command(
+            redis,
+            device_id="device-claim-002",
+            command_type="diagnostic.health_check",
+            requested_by="controller",
+        )
+    )
+
+    first = run(
+        cs.claim_next_command(
+            redis,
+            "device-claim-002",
+        )
+    )
+
+    second = run(
+        cs.claim_next_command(
+            redis,
+            "device-claim-002",
+        )
+    )
+
+    assert first["command_id"] == created["command_id"]
+    assert first["status"] == "acknowledged"
+    assert second is None
+
+
+def test_claim_next_command_expires_expired_command():
+    redis = FakeRedis()
+
+    created = run(
+        cs.create_command(
+            redis,
+            device_id="device-claim-003",
+            command_type="diagnostic.health_check",
+            requested_by="controller",
+            ttl_s=60,
+        )
+    )
+
+    state_key = f"{cs.COMMAND_STATE_PREFIX}{created['command_id']}"
+    redis.hashes[state_key]["expires_at"] = "0"
+
+    claimed = run(
+        cs.claim_next_command(
+            redis,
+            "device-claim-003",
+        )
+    )
+
+    assert claimed is None
+
+    loaded = run(
+        cs.get_command(
+            redis,
+            created["command_id"],
+        )
+    )
+
+    assert loaded["status"] == "expired"
+
+
+def test_claim_next_command_does_not_cross_device_boundary():
+    redis = FakeRedis()
+
+    created = run(
+        cs.create_command(
+            redis,
+            device_id="device-owner-001",
+            command_type="diagnostic.health_check",
+            requested_by="controller",
+        )
+    )
+
+    claimed = run(
+        cs.claim_next_command(
+            redis,
+            "device-other-001",
+        )
+    )
+
+    assert claimed is None
+
+    loaded = run(
+        cs.get_command(
+            redis,
+            created["command_id"],
+        )
+    )
+
+    assert loaded["device_id"] == "device-owner-001"
+    assert loaded["status"] == "pending"
 
 
 def test_create_command_preserves_payload():

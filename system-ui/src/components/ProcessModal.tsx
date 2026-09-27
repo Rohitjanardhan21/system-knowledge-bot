@@ -2,12 +2,11 @@ import { useEffect, useState } from "react";
 
 export default function ProcessModal({ process, onClose }: any) {
 
-const [history, setHistory] = useState<any[]>([]);
+const [, setHistory] = useState<any[]>([]);
 
 useEffect(() => {
 if (!process) return;
 
-```
 // simple simulated trend (can connect backend later)
 setHistory(prev => [
   ...prev.slice(-20),
@@ -17,7 +16,6 @@ setHistory(prev => [
     time: new Date().toLocaleTimeString()
   }
 ]);
-```
 
 }, [process]);
 
@@ -25,7 +23,6 @@ if (!process) return null;
 
 return ( <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
 
-```
   <div className="bg-zinc-900 rounded-2xl p-6 w-[500px] space-y-4">
 
     {/* HEADER */}
@@ -54,7 +51,6 @@ return ( <div className="fixed inset-0 bg-black/70 flex items-center justify-cen
   </div>
 
 </div>
-```
 
 );
 }

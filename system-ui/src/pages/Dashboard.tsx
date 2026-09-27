@@ -1,4 +1,6 @@
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef, useCallback, type ReactNode } from "react";
+import { api } from "../services/api";
+import { fetchCognitivePredictions, acknowledgeCognitivePrediction, resolveCognitivePrediction } from "../services/api";
 import {
   AreaChart, Area, CartesianGrid, ResponsiveContainer, RadarChart,
   PolarGrid, PolarAngleAxis, Radar, XAxis, YAxis, Tooltip
@@ -44,14 +46,44 @@ const STYLES = `
 `;
 
 /* ── CIRCUIT BOARD CANVAS BACKGROUND ─────────────────────── */
-const CircuitBg = ({ isCritical, isWarning }) => {
-  const canvasRef = useRef(null);
-  const animRef = useRef(null);
+interface CircuitBgProps {
+  isCritical: boolean;
+  isWarning: boolean;
+}
+
+interface CircuitTrace {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+}
+
+interface CircuitChip {
+  cx: number;
+  cy: number;
+  w: number;
+  h: number;
+  pins: number;
+}
+
+interface CircuitPulse {
+  trace: CircuitTrace;
+  progress: number;
+  speed: number;
+  size: number;
+  color: string;
+}
+
+const CircuitBg = ({ isCritical, isWarning }: CircuitBgProps) => {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const animRef = useRef<number | null>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+
     const ctx = canvas.getContext("2d");
+    if (!ctx) return;
 
     const resize = () => {
       canvas.width = window.innerWidth;
@@ -65,7 +97,7 @@ const CircuitBg = ({ isCritical, isWarning }) => {
     const rows = Math.ceil(window.innerHeight / G) + 2;
 
     const generateTraces = () => {
-      const traces = [];
+      const traces: CircuitTrace[] = [];
       for (let r = 1; r < rows; r++) {
         if (Math.random() > 0.45) {
           const y = r * G;
@@ -86,7 +118,7 @@ const CircuitBg = ({ isCritical, isWarning }) => {
     };
 
     const generateChips = () => {
-      const chips = [];
+      const chips: CircuitChip[] = [];
       for (let i = 0; i < 8; i++) {
         const cx = Math.floor(Math.random() * (cols - 3) + 1) * G;
         const cy = Math.floor(Math.random() * (rows - 3) + 1) * G;
@@ -101,7 +133,7 @@ const CircuitBg = ({ isCritical, isWarning }) => {
     const traces = generateTraces();
     const chips = generateChips();
 
-    const pulses = [];
+    const pulses: CircuitPulse[] = [];
     const pulseSources = traces.filter((_, i) => i % 3 === 0).slice(0, 20);
     pulseSources.forEach(t => {
       pulses.push({
@@ -243,7 +275,9 @@ const CircuitBg = ({ isCritical, isWarning }) => {
 
     draw();
     return () => {
-      cancelAnimationFrame(animRef.current);
+      if (animRef.current !== null) {
+        cancelAnimationFrame(animRef.current);
+      }
       window.removeEventListener("resize", resize);
     };
   }, [isCritical, isWarning]);
@@ -257,19 +291,30 @@ const CircuitBg = ({ isCritical, isWarning }) => {
 };
 
 /* ── TICKER BAR ───────────────────────────────────────────── */
-const TickerBar = ({ history, color }) => {
+interface TickerBarProps {
+  history: HistoryPoint[];
+  color?: string;
+}
+
+const TickerBar = ({ history }: TickerBarProps) => {
   const last = history[history.length - 1] || {};
-  const items = [
-    `CPU ${(last.cpu || 0).toFixed(1)}%`,
-    `MEM ${(last.memory || 0).toFixed(1)}%`,
-    `DISK I/O ${(last.disk || 28).toFixed(1)}%`,
-    `NET ${(last.network || 32).toFixed(1)}%`,
-    `ANOMALY ${(last.anomaly || 0).toFixed(2)}`,
-    `HEALTH ${(last.health || 100).toFixed(1)}%`,
-    `UPTIME 99.7%`,
-    `THREADS 142`,
-    `LATENCY 4ms`,
-  ];
+  const items = history.length > 0
+    ? [
+        `CPU ${last.cpu.toFixed(1)}%`,
+        `MEM ${last.memory.toFixed(1)}%`,
+        `DISK I/O ${last.disk.toFixed(1)}%`,
+        `NET ${last.network.toFixed(1)}%`,
+        `ANOMALY ${last.anomaly.toFixed(2)}`,
+        `HEALTH ${last.health.toFixed(1)}%`,
+      ]
+    : [
+        "CPU —",
+        "MEM —",
+        "DISK I/O —",
+        "NET —",
+        "ANOMALY —",
+        "HEALTH —",
+      ];
   const text = items.join("   ·   ");
   return (
     <div style={{
@@ -297,7 +342,14 @@ const TickerBar = ({ history, color }) => {
 };
 
 /* ── MINI SPARKLINE ───────────────────────────────────────── */
-const Sparkline = ({ data, color, width = 80, height = 28 }) => {
+interface SparklineProps {
+  data: number[];
+  color: string;
+  width?: number;
+  height?: number;
+}
+
+const Sparkline = ({ data, color, width = 80, height = 28 }: SparklineProps) => {
   if (!data || data.length < 2) return null;
   const max = Math.max(...data, 1);
   const min = Math.min(...data);
@@ -309,13 +361,24 @@ const Sparkline = ({ data, color, width = 80, height = 28 }) => {
   return (
     <svg width={width} height={height} style={{ display: "block" }}>
       <polyline points={pts} fill="none" stroke={color} strokeWidth="1.5" strokeLinejoin="round" />
-      <circle cx={pts.split(" ").pop().split(",")[0]} cy={pts.split(" ").pop().split(",")[1]} r="2.5" fill={color} />
+      {(() => {
+        const lastPoint = pts.split(" ").pop() ?? "0,0";
+        const [lastX, lastY] = lastPoint.split(",");
+        return <circle cx={lastX} cy={lastY} r="2.5" fill={color} />;
+      })()}
     </svg>
   );
 };
 
 /* ── SYSTEM CORE ORB ──────────────────────────────────────── */
-const SystemCore = ({ risk, level, color, health }) => {
+interface SystemCoreProps {
+  risk: number;
+  level: string;
+  color: string;
+  health: number;
+}
+
+const SystemCore = ({ risk, level, color, health }: SystemCoreProps) => {
   const isCritical = level === "CRITICAL";
   const isWarning = level === "WARNING";
 
@@ -390,7 +453,12 @@ const SystemCore = ({ risk, level, color, health }) => {
 };
 
 /* ── STATUS BADGE ─────────────────────────────────────────── */
-const StatusBadge = ({ level, color }) => (
+interface StatusBadgeProps {
+  level: string;
+  color: string;
+}
+
+const StatusBadge = ({ level, color }: StatusBadgeProps) => (
   <div style={{
     display: "inline-flex", alignItems: "center", gap: "8px",
     padding: "8px 18px", borderRadius: "4px",
@@ -405,7 +473,29 @@ const StatusBadge = ({ level, color }) => (
 );
 
 /* ── METRIC CARD — enhanced with sparkline ────────────────── */
-const MetricCard = ({ label, value, subtitle, trend, icon, tooltip, alert, sparkData, sparkColor }) => {
+interface MetricCardProps {
+  label: string;
+  value: string;
+  subtitle: string;
+  trend?: number;
+  icon: string;
+  tooltip: string;
+  alert?: boolean;
+  sparkData?: number[];
+  sparkColor?: string;
+}
+
+const MetricCard = ({
+  label,
+  value,
+  subtitle,
+  trend,
+  icon,
+  tooltip,
+  alert = false,
+  sparkData = [],
+  sparkColor = T.accent,
+}: MetricCardProps) => {
   const [hovered, setHovered] = useState(false);
   const [tip, setTip] = useState(false);
 
@@ -466,7 +556,21 @@ const MetricCard = ({ label, value, subtitle, trend, icon, tooltip, alert, spark
 };
 
 /* ── SECTION CARD ─────────────────────────────────────────── */
-const Section = ({ title, subtitle, children, alert, accentColor }) => (
+interface SectionProps {
+  title: string;
+  subtitle: string;
+  children: ReactNode;
+  alert?: boolean;
+  accentColor?: string;
+}
+
+const Section = ({
+  title,
+  subtitle,
+  children,
+  alert = false,
+  accentColor = T.accent,
+}: SectionProps) => (
   <div style={{
     backdropFilter: "blur(20px)",
     background: T.surface,
@@ -488,7 +592,18 @@ const Section = ({ title, subtitle, children, alert, accentColor }) => (
 );
 
 /* ── CUSTOM TOOLTIP ───────────────────────────────────────── */
-const ChartTooltip = ({ active, payload, label }) => {
+interface ChartTooltipProps {
+  active?: boolean;
+  payload?: Array<{
+    name?: string;
+    value?: number | string;
+    stroke?: string;
+    dataKey?: string;
+  }>;
+  label?: string | number;
+}
+
+const ChartTooltip = ({ active, payload, label }: ChartTooltipProps) => {
   if (!active || !payload?.length) return null;
   return (
     <div style={{
@@ -497,11 +612,18 @@ const ChartTooltip = ({ active, payload, label }) => {
       fontFamily: "'Share Tech Mono', monospace", color: T.text,
     }}>
       <div style={{ color: T.textDim, marginBottom: "4px" }}>
-        {new Date(label).toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+        {label != null
+          ? new Date(label).toLocaleTimeString("en-US", {
+              hour12: false,
+              hour: "2-digit",
+              minute: "2-digit",
+              second: "2-digit",
+            })
+          : "--:--:--"}
       </div>
       {payload.map((p, i) => (
         <div key={i} style={{ color: p.stroke, marginBottom: "2px" }}>
-          {p.dataKey.toUpperCase()}: {typeof p.value === "number" ? p.value.toFixed(1) : p.value}%
+          {(p.dataKey ?? p.name ?? "value").toUpperCase()}: {typeof p.value === "number" ? p.value.toFixed(1) : p.value}%
         </div>
       ))}
     </div>
@@ -509,56 +631,79 @@ const ChartTooltip = ({ active, payload, label }) => {
 };
 
 /* ── AI COGNITIVE CORE CHAT ───────────────────────────────── */
-const AIChat = ({ data, level, risk, decision }) => {
+const AIChat = () => {
   const [messages, setMessages] = useState([
     { role: "assistant", content: "COGNITIVE CORE ONLINE — Systems nominal. I monitor all subsystems in real-time. Query: status | anomaly | predict | recommend | why" }
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const chatRef = useRef(null);
+  const chatRef = useRef<HTMLDivElement | null>(null);
 
   const sendMessage = useCallback(async () => {
     if (!input.trim() || loading) return;
-    const userMsg = input.trim().toLowerCase();
-    const origInput = input;
+
+    const origInput = input.trim();
     setInput("");
     setMessages(prev => [...prev, { role: "user", content: origInput }]);
     setLoading(true);
 
-    let internalResponse = null;
-    if (userMsg.match(/status|health|ok|fine/)) {
-      internalResponse = `SYSTEM STATUS: ${level} — Health: ${(data.health_score || 100).toFixed(1)}% — ${level === "CRITICAL" ? "⚠ IMMEDIATE ATTENTION REQUIRED" : level === "WARNING" ? "MONITORING ELEVATED ACTIVITY" : "ALL SUBSYSTEMS NOMINAL"}`;
-    } else if (userMsg.match(/anomaly|problem|issue|error/)) {
-      internalResponse = `ANOMALY SCAN: Score ${(data.anomaly_score || 0).toFixed(3)} — Risk ${(risk * 100).toFixed(0)}% — ${data.intelligence?.fusion?.cause || "No anomalies detected"}`;
-    } else if (userMsg.match(/recommend|action|do|fix/)) {
-      internalResponse = `DECISION ENGINE: "${decision?.action || "System Monitoring"}" — Confidence ${((decision?.confidence || 0) * 100).toFixed(0)}% — ${risk > 0.7 ? "Recommend immediate investigation" : risk > 0.4 ? "Continue elevated monitoring" : "No action required"}`;
-    } else if (userMsg.match(/predict|future|will|next/)) {
-      internalResponse = `TEMPORAL FORECAST: ${risk > 0.6 ? "CPU spike predicted ~12s. Stability degradation likely." : risk > 0.3 ? "Minor fluctuations expected. Self-stabilization probable." : "System stable projection for next 60s."} Failure probability: ${(risk * 120).toFixed(0)}%`;
-    } else if (userMsg.match(/why|cause|reason|root/)) {
-      internalResponse = `ROOT CAUSE ANALYSIS: ${data.intelligence?.fusion?.cause || "Operating within baseline parameters."} — Events logged: ${data.events?.length || 0}`;
-    }
+    try {
+      const response = await api.post("/chat", { query: origInput });
+      const result = response.data;
 
-    if (internalResponse) {
-      setTimeout(() => {
-        setMessages(prev => [...prev, { role: "assistant", content: internalResponse }]);
-        setLoading(false);
-      }, 600);
-    } else {
-      try {
-        const context = `System state: Health=${data.health_score || 100}%, CPU=${data.cpu_percent || 0}%, Memory=${data.memory || 0}%, Anomaly=${data.anomaly_score || 0}, Status=${level}, Decision="${decision?.action || 'None'}", Cause="${data.intelligence?.fusion?.cause || 'Unknown'}". User query: ${origInput}`;
-        const res = await fetch("https://api.anthropic.com/v1/messages", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 1000, messages: [{ role: "user", content: context }] }),
-        });
-        const result = await res.json();
-        setMessages(prev => [...prev, { role: "assistant", content: result.content?.[0]?.text || "Analysis unavailable." }]);
-      } catch {
-        setMessages(prev => [...prev, { role: "assistant", content: `LOCAL INTELLIGENCE: ${data.intelligence?.fusion?.cause || "All systems nominal."}` }]);
+      let content = "Analysis unavailable.";
+
+      if (result.mode === "status") {
+        content =
+          `SYSTEM STATUS: CPU ${result.cpu ?? "—"}% · ` +
+          `MEM ${result.memory ?? "—"}% · ` +
+          `DISK ${result.disk ?? "—"}%\n` +
+          `Decision: ${result.decision ?? "None"}\n` +
+          `Root cause: ${result.root_cause ?? "Unknown"}`;
+      } else if (result.mode === "confirm") {
+        content = result.message ?? "The backend requires confirmation before execution.";
+      } else if (result.mode === "executed") {
+        content = result.message ?? "Action execution completed.";
+      } else if (result.mode === "cancelled") {
+        content = result.message ?? "Action cancelled.";
+      } else if (result.mode === "info") {
+        content = result.message ?? "No additional information available.";
+      } else if (result.mode === "explain" && result.structured) {
+        const structured = result.structured;
+        content =
+          `SUMMARY: ${structured.summary ?? "—"}\n\n` +
+          `ROOT CAUSE: ${structured.root_cause ?? "—"}\n\n` +
+          `EXPLANATION: ${structured.explanation ?? "—"}\n\n` +
+          `RECOMMENDED ACTION: ${structured.recommended_action ?? "—"}\n` +
+          `CONFIDENCE: ${
+            structured.confidence !== undefined
+              ? `${(structured.confidence * 100).toFixed(0)}%`
+              : "—"
+          }`;
+      } else if (result.mode === "fallback") {
+        content = result.response ?? "Analysis unavailable.";
+      } else if (result.message) {
+        content = result.message;
       }
+
+      setMessages(prev => [
+        ...prev,
+        { role: "assistant", content }
+      ]);
+    } catch (error) {
+      console.error("[AIOps] Cognitive chat request failed:", error);
+      setMessages(prev => [
+        ...prev,
+        {
+          role: "assistant",
+          content: "COGNITIVE CORE ERROR — Backend chat service unavailable."
+        }
+      ]);
+    } finally {
       setLoading(false);
     }
-  }, [input, loading, data, level, risk, decision]);
+  }, [input, loading]);
+
 
   useEffect(() => {
     if (chatRef.current) chatRef.current.scrollTop = chatRef.current.scrollHeight;
@@ -667,14 +812,22 @@ const AIChat = ({ data, level, risk, decision }) => {
 };
 
 /* ── EVENT LOG ────────────────────────────────────────────── */
-const EventLog = ({ events }) => {
-  const demo = [
-    { severity: "INFO", message: "System heartbeat nominal", timestamp: "00:01" },
-    { severity: "MEDIUM", message: "Memory usage elevated 68%", timestamp: "00:05" },
-    { severity: "HIGH", message: "CPU anomaly detected — burst pattern", timestamp: "00:12" },
-    { severity: "INFO", message: "Load balancer redistributed tasks", timestamp: "00:18" },
-  ];
-  const items = (events && events.length > 0) ? events : demo;
+interface SystemEvent {
+  type?: string;
+  event?: string;
+  message?: string;
+  severity?: string;
+  timestamp?: string | number;
+  time?: string | number;
+  [key: string]: unknown;
+}
+
+interface EventLogProps {
+  events?: SystemEvent[];
+}
+
+const EventLog = ({ events }: EventLogProps) => {
+  const items = events ?? [];
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "7px" }}>
@@ -702,7 +855,14 @@ const EventLog = ({ events }) => {
 };
 
 /* ── DATA STREAM BAR ──────────────────────────────────────── */
-const DataBar = ({ value, color, label, max = 100 }) => {
+interface DataBarProps {
+  value: number;
+  color: string;
+  label: string;
+  max?: number;
+}
+
+const DataBar = ({ value, color, label, max = 100 }: DataBarProps) => {
   const pct = Math.min(100, (value / max) * 100);
   const isHigh = pct > 75;
   const barColor = isHigh ? T.danger : pct > 50 ? T.warning : color;
@@ -733,130 +893,539 @@ const DataBar = ({ value, color, label, max = 100 }) => {
   );
 };
 
-/* ── UPTIME INDICATOR ─────────────────────────────────────── */
-const UptimeDots = ({ count = 30, health }) => {
-  const dots = Array.from({ length: count }, (_, i) => {
-    const isRecent = i >= count - 3;
-    const rand = Math.random();
-    const ok = isRecent ? health > 70 : rand > 0.08;
-    return ok;
-  });
+/* ── HEALTH CHECK HISTORY ─────────────────────────────────── */
+interface UptimeDotsProps {
+  history: HistoryPoint[];
+}
+
+const UptimeDots = ({ history }: UptimeDotsProps) => {
+  const points = history.slice(-30);
+
   return (
     <div style={{ display: "flex", gap: "3px", flexWrap: "wrap" }}>
-      {dots.map((ok, i) => (
-        <div key={i} style={{
-          width: "7px", height: "18px", borderRadius: "1px",
-          background: ok ? T.success : T.danger,
-          opacity: ok ? (0.4 + (i / count) * 0.6) : 0.8,
-          boxShadow: ok ? `0 0 4px ${T.success}40` : `0 0 4px ${T.danger}60`,
-        }} />
-      ))}
+      {points.map((point, i) => {
+        const health = point.health ?? 0;
+        const ok = health > 70;
+
+        return (
+          <div key={i} style={{
+            width: "7px", height: "18px", borderRadius: "1px",
+            background: ok ? T.success : T.danger,
+            opacity: 0.4 + ((i + 1) / Math.max(points.length, 1)) * 0.6,
+            boxShadow: ok ? `0 0 4px ${T.success}40` : `0 0 4px ${T.danger}60`,
+          }} />
+        );
+      })}
     </div>
   );
 };
 
+/* ── BACKEND TELEMETRY TYPES ─────────────────────────────── */
+interface PipelineData {
+  decision?: {
+    action?: string;
+    risk_level?: string;
+    confidence?: number;
+    auto_execute?: boolean;
+    requires_confirmation?: boolean;
+    executable?: boolean;
+    timestamp?: string;
+    root_cause?: {
+      type?: string;
+      process?: string | null;
+      confidence?: number;
+      severity?: number;
+      evidence?: string[];
+      recommended_action?: string;
+    } | null;
+  };
+  system_risk?: number;
+  root_cause?: string | null;
+  causal?: {
+    primary_cause?: string | null;
+  };
+  prediction?: {
+    type?: string;
+    confidence?: number;
+  };
+}
+
+interface ForecastData {
+  summary?: string;
+  direction?: string;
+  peak_risk?: string;
+  first_risk_at?: number | null;
+  confidence?: number;
+  confidence_label?: string;
+  trustworthy?: boolean;
+  trend_insights?: Array<{
+    metric?: string;
+    direction?: string;
+    rate?: string;
+    concern?: boolean;
+    detail?: string;
+  }>;
+  what_to_watch?: string[];
+  data_age_minutes?: number;
+  points?: Array<{
+    t?: number;
+    cpu?: number;
+    memory?: number;
+    anomaly?: number;
+    risk?: string;
+    label?: string;
+    explanation?: string;
+  }>;
+}
+
+interface SystemStatus {
+  cpu_percent?: number;
+  memory?: number;
+  disk_percent?: number;
+  network_percent?: number;
+  anomaly_score?: number;
+  health_score?: number;
+  severity?: string;
+  reason?: string;
+  latest_decision?: {
+    action?: string;
+    confidence?: number;
+    priority?: string;
+  };
+  intelligence?: {
+    anomaly_score?: number;
+    stability?: number;
+    features?: {
+      disk?: number;
+      network?: number;
+    };
+    fusion?: {
+      cause?: string;
+    };
+  };
+  patterns?: Array<{
+    type?: string;
+    severity?: string;
+    frequency?: string;
+    [key: string]: unknown;
+  }>;
+  events?: SystemEvent[];
+  stability?: number;
+  [key: string]: unknown;
+}
+
+interface CognitivePattern {
+  type?: string;
+  seen?: number;
+  prevented?: number;
+  accuracy?: number;
+  lead_time?: number;
+  confidence?: number;
+  data_quality?: string;
+  trustworthy?: boolean;
+}
+
+interface DnaData {
+  patterns?: number;
+  pattern_list?: CognitivePattern[];
+  total_failures?: number;
+  prevented?: number;
+}
+
+interface BackendAction {
+  id: string;
+  label: string;
+  description: string;
+  safe?: boolean;
+  targets?: string[];
+}
+
+interface BackendActionResult {
+  success?: boolean;
+  action_id?: string;
+  process_count?: number;
+  details?: string[];
+  risk?: string;
+  remediation_candidate?: boolean;
+  primary_process?: {
+    pid?: number;
+    name?: string;
+    cpu_percent?: number;
+    memory_percent?: number;
+    risk_level?: string;
+    confidence?: number;
+    classification?: string;
+  } | null;
+  processes?: Array<{
+    pid?: number;
+    name?: string;
+    cpu_percent?: number;
+    memory_percent?: number;
+    risk_level?: string;
+    confidence?: number;
+    classification?: string;
+  }>;
+  policy?: {
+    automatic_termination?: boolean;
+    protected_pid_1?: boolean;
+    protected_backend_pid?: boolean;
+    identity_required?: boolean;
+    creation_time_required?: boolean;
+    review_required_for_uncertain_processes?: boolean;
+  };
+  note?: string;
+  error?: string;
+  blocked?: boolean;
+  reason?: string;
+}
+
+
+interface HistoryPoint {
+  time: number;
+  label: string;
+  cpu: number;
+  memory: number;
+  disk: number;
+  network: number;
+  anomaly: number;
+  health: number;
+  stability: number;
+}
+
 /* ── MAIN DASHBOARD ──────────────────────────────────────── */
 export default function Dashboard() {
-  const [data, setData] = useState({});
-  const [history, setHistory] = useState([]);
-  const [manualAction, setManualAction] = useState(null);
+
+  const [cognitivePredictions, setCognitivePredictions] = useState<any[]>([]);
+  const [predictionBusy, setPredictionBusy] = useState<string | null>(null);
+
+  const [data, setData] = useState<SystemStatus>({});
+  const [history, setHistory] = useState<HistoryPoint[]>([]);
+  const [forecast, setForecast] = useState<ForecastData>({});
+  const [alertEvents, setAlertEvents] = useState<SystemEvent[]>([]);
+  const [dna, setDna] = useState<DnaData>({});
+  const [pipeline, setPipeline] = useState<PipelineData>({});
+  const [availableActions, setAvailableActions] = useState<BackendAction[]>([]);
+  const [manualAction, setManualAction] = useState<string | null>(null);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionResult, setActionResult] = useState<BackendActionResult | null>(null);
   const prevLevel = useRef("OPTIMAL");
 
+  const fetchAvailableActions = useCallback(async () => {
+    try {
+      const response = await api.get<BackendAction[]>("/actions/available");
+      setAvailableActions(response.data);
+      setActionError(null);
+    } catch (error) {
+      console.error("[AIOps] Failed to load available actions:", error);
+      setActionError("ACTION REGISTRY UNAVAILABLE");
+    }
+  }, []);
+
+  const executeManualAction = useCallback(async (action: BackendAction) => {
+    if (actionLoading) return;
+
+    setActionLoading(action.id);
+    setManualAction(null);
+    setActionError(null);
+    setActionResult(null);
+
+    try {
+      const response = await api.post(
+        "/actions/execute",
+        null,
+        { params: { action_id: action.id } }
+      );
+
+      const result = response.data;
+
+      if (result.success) {
+        setActionResult(result);
+        setManualAction(`${action.label} — COMPLETED`);
+      } else if (result.blocked) {
+        setActionError(
+          `${action.label} — BLOCKED: ${result.reason ?? "backend safety policy"}`
+        );
+      } else {
+        setActionError(
+          `${action.label} — FAILED: ${
+            result.error ?? result.details?.[0] ?? "unknown error"
+          }`
+        );
+      }
+    } catch (error) {
+      console.error("[AIOps] Action execution failed:", error);
+      setActionError(`${action.label} — REQUEST FAILED`);
+    } finally {
+      setActionLoading(null);
+    }
+  }, [actionLoading]);
+
   useEffect(() => {
-    const fetchData = async () => {
+    fetchAvailableActions();
+  }, [fetchAvailableActions]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const fetchTelemetry = async () => {
       try {
-        const res = await fetch("http://localhost:8000/os/status");
-        const json = await res.json();
+        const response = await api.get<SystemStatus>("/os/status");
+        const json = response.data;
+
+        if (cancelled) return;
+
         console.log("[AIOps] Backend response:", json);
         setData(json);
-        const newPoint = {
+
+        const newPoint: HistoryPoint = {
           time: Date.now(),
-          label: new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" }),
-          cpu: json.cpu_percent || 0,
-          memory: json.memory || 0,
-          // ✅ Clean fallback: flat field first, then nested (already %-scaled), else default
-          disk: json.disk_percent ?? (json.intelligence?.features?.disk ?? 0.28) * 100,
-          network: json.network_percent ?? (json.intelligence?.features?.network ?? 0.32) * 100,
-          anomaly: Math.min(100, (json.anomaly_score ?? json.intelligence?.anomaly_score ?? 0) * 100),
-          health: json.health_score || 100,
+          label: new Date().toLocaleTimeString("en-US", {
+            hour12: false,
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+          }),
+          cpu: json.cpu_percent ?? 0,
+          memory: json.memory ?? 0,
+          disk: json.disk_percent
+            ?? ((json.intelligence?.features?.disk ?? 0) * 100),
+          network: json.network_percent
+            ?? ((json.intelligence?.features?.network ?? 0) * 100),
+          anomaly: Math.min(
+            100,
+            (json.anomaly_score ?? json.intelligence?.anomaly_score ?? 0) * 100
+          ),
+          health: json.health_score ?? 0,
+          stability: json.stability ?? 0,
         };
-        console.log("[AIOps] Last history point:", newPoint);
+
         setHistory(prev => [...prev.slice(-39), newPoint]);
-      } catch {
-        // Demo mode: realistic simulated data
-        const t = Date.now() / 1000;
-        const newPoint = {
-          time: Date.now(),
-          label: new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" }),
-          cpu: Math.max(5, Math.min(95, 35 + Math.sin(t * 0.3) * 18 + Math.random() * 10)),
-          memory: Math.max(10, Math.min(90, 48 + Math.cos(t * 0.2) * 12 + Math.random() * 6)),
-          disk: Math.max(5, Math.min(80, 28 + Math.sin(t * 0.15) * 8 + Math.random() * 4)),
-          network: Math.max(2, Math.min(70, 32 + Math.cos(t * 0.4) * 10 + Math.random() * 5)),
-          anomaly: Math.max(0, Math.min(100, Math.sin(t * 0.5) * 18 + Math.random() * 8 + 5)),
-          health: Math.max(60, Math.min(100, 90 + Math.sin(t * 0.1) * 6)),
-        };
-        setHistory(prev => [...prev.slice(-39), newPoint]);
+      } catch (error) {
+        if (cancelled) return;
+
+        console.error("[AIOps] Backend telemetry unavailable:", error);
+
+        // IMPORTANT: no synthetic telemetry fallback.
+        // Keep the last verified backend values on screen.
       }
     };
-    fetchData();
-    // ✅ 500ms — fast enough to capture real CPU fluctuations
-    const id = setInterval(fetchData, 500);
-    return () => clearInterval(id);
+
+    const fetchPipeline = async () => {
+      try {
+        const pipelineResponse = await api.get<PipelineData>("/cognitive/pipeline");
+
+        if (cancelled) return;
+
+        setPipeline(pipelineResponse.data);
+      } catch (error) {
+        if (cancelled) return;
+
+        console.error("Cognitive pipeline fetch failed:", error);
+      }
+    };
+
+    const fetchForecast = async () => {
+      try {
+        const forecastResponse = await api.get<ForecastData>("/cognitive/forecast");
+
+        if (cancelled) return;
+
+        setForecast(forecastResponse.data);
+      } catch (error) {
+        if (cancelled) return;
+
+        console.error("Forecast fetch failed:", error);
+      }
+    };
+
+    const fetchAlertHistory = async () => {
+      try {
+        const alertsResponse = await api.get<SystemEvent[]>("/alerts/history?limit=10");
+
+        if (cancelled) return;
+
+        setAlertEvents(
+          (alertsResponse.data ?? []).map((alert) => ({
+            ...alert,
+            message:
+              alert.message ??
+              alert.event ??
+              alert.type ??
+              "Alert recorded",
+            timestamp: alert.timestamp ?? alert.time ?? "NOW",
+            severity: alert.severity ?? "INFO",
+          }))
+        );
+      } catch (error) {
+        if (cancelled) return;
+
+        console.error("Alert history fetch failed:", error);
+      }
+    };
+
+    const fetchDna = async () => {
+      try {
+        const dnaResponse = await api.get<DnaData>("/cognitive/dna");
+
+        if (cancelled) return;
+
+        setDna(dnaResponse.data);
+      } catch (error) {
+        if (cancelled) return;
+
+        console.error("Cognitive DNA fetch failed:", error);
+      }
+    };
+
+    // Initial load.
+    fetchTelemetry();
+    fetchPipeline();
+    fetchForecast();
+    fetchAlertHistory();
+    fetchDna();
+
+    // Telemetry is lightweight and remains responsive.
+    const telemetryId = setInterval(fetchTelemetry, 500);
+
+    // Cognitive pipeline performs DQN simulation/training, so poll less often.
+    const pipelineId = setInterval(fetchPipeline, 2000);
+
+    // Forecast has its own backend cache and changes much more slowly.
+    const forecastId = setInterval(fetchForecast, 10000);
+    const alertId = setInterval(fetchAlertHistory, 5000);
+    const dnaId = setInterval(fetchDna, 30000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(telemetryId);
+      clearInterval(pipelineId);
+      clearInterval(forecastId);
+      clearInterval(alertId);
+      clearInterval(dnaId);
+    };
   }, []);
 
   // ── Derived state ──
-  const health = data.health_score || (history[history.length - 1]?.health ?? 92);
-  // ✅ FIXED: read anomaly_score from top-level first, then fallback
-  const anomaly = data.anomaly_score || data.intelligence?.anomaly_score || 0;
-  const stability = data.intelligence?.stability || data.stability || 0.97;
-  const decision = data.latest_decision || {};
-  // ✅ Weighted risk: anomaly gets 70% weight, health degradation 30% — smoother, less spike-sensitive
-  const risk = Math.min(1, anomaly * 0.7 + (100 - health) / 100 * 0.3);
-  const level = risk > 0.75 ? "CRITICAL" : risk > 0.45 ? "WARNING" : "OPTIMAL";
-  const color = level === "CRITICAL" ? T.danger : level === "WARNING" ? T.warning : T.success;
+  const health = data.health_score ?? history[history.length - 1]?.health ?? 0;
+  const anomaly = data.anomaly_score ?? data.intelligence?.anomaly_score ?? 0;
+  const stability = data.stability ?? history[history.length - 1]?.stability ?? 0;
+  const decision = {
+    ...(data.latest_decision ?? {}),
+    ...(pipeline.decision ?? {}),
+  };
+  const decisionRootCause =
+    pipeline.decision?.root_cause?.type ||
+    pipeline.causal?.primary_cause ||
+    data.intelligence?.fusion?.cause ||
+    null;
+
+  // ── Forecast-backed risk ──
+  // TP-140: live cognitive prediction polling
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadPredictions = async () => {
+      try {
+        const data = await fetchCognitivePredictions();
+        if (!cancelled) {
+          setCognitivePredictions(Array.isArray(data) ? data : []);
+        }
+      } catch (error) {
+        console.error("Cognitive predictions fetch failed:", error);
+      }
+    };
+
+    loadPredictions();
+    const timer = window.setInterval(loadPredictions, 5000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, []);
+
+  // Current system risk comes from the live cognitive pipeline.
+  // Forecast peak risk remains a future-risk indicator.
+  const risk =
+    pipeline.system_risk !== undefined
+      ? pipeline.system_risk
+      : Math.min(
+          1,
+          anomaly * 0.7 + ((100 - health) / 100) * 0.3
+        );
+
+  const level =
+    risk > 0.75 ? "CRITICAL" :
+    risk > 0.45 ? "WARNING" :
+    "OPTIMAL";
+
+  const color =
+    level === "CRITICAL" ? T.danger :
+    level === "WARNING" ? T.warning :
+    T.success;
+
   const isCritical = level === "CRITICAL";
   const isWarning = level === "WARNING";
 
   useEffect(() => {
     if (level === "CRITICAL" && prevLevel.current !== "CRITICAL") {
       try {
-        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const AudioContextClass =
+          window.AudioContext ||
+          (window as typeof window & {
+            webkitAudioContext?: typeof AudioContext;
+          }).webkitAudioContext;
+
+        if (!AudioContextClass) return;
+
+        const ctx = new AudioContextClass();
+
         [880, 660, 880].forEach((freq, i) => {
           const osc = ctx.createOscillator();
           const gain = ctx.createGain();
-          osc.connect(gain); gain.connect(ctx.destination);
+
+          osc.connect(gain);
+          gain.connect(ctx.destination);
           osc.frequency.value = freq;
           gain.gain.value = 0.07;
+
           osc.start(ctx.currentTime + i * 0.18);
           osc.stop(ctx.currentTime + i * 0.18 + 0.14);
         });
       } catch {}
     }
+
     prevLevel.current = level;
   }, [level]);
 
-  const lastHistory = history[history.length - 1] || { cpu: 0, memory: 0, disk: 28, network: 32 };
+  const lastHistory: HistoryPoint =
+    history[history.length - 1] ?? {
+      time: 0,
+      label: "--:--:--",
+      cpu: 0,
+      memory: 0,
+      disk: 0,
+      network: 0,
+      anomaly: 0,
+      health: 0,
+    };
 
   const radarData = [
-    { subject: "CPU", value: lastHistory.cpu || 30 },
-    { subject: "Memory", value: lastHistory.memory || 45 },
-    { subject: "Disk", value: lastHistory.disk || 28 },
-    { subject: "Network", value: lastHistory.network || 32 },
+    { subject: "CPU", value: lastHistory.cpu },
+    { subject: "Memory", value: lastHistory.memory },
+    { subject: "Disk", value: lastHistory.disk },
+    { subject: "Network", value: lastHistory.network },
     // ✅ FIXED: anomaly already scaled 0-100
-    { subject: "Anomaly", value: lastHistory.anomaly || 5 },
+    { subject: "Anomaly", value: lastHistory.anomaly },
     { subject: "Stability", value: stability * 100 },
   ];
 
-  const learnedPatterns = data.patterns || [
-    { type: "CPU Spike Pattern", severity: "HIGH", frequency: "Every 15min" },
-    { type: "Memory Leak Pattern", severity: "MEDIUM", frequency: "Daily" },
-    { type: "Network Congestion", severity: "LOW", frequency: "Peak hours" },
-    { type: "Disk I/O Saturation", severity: "MEDIUM", frequency: "Batch jobs" },
-  ];
+  const learnedPatterns = Array.isArray(dna.pattern_list)
+    ? dna.pattern_list
+    : [];
 
   // Sparkline history slices
-  const cpuSpark = history.slice(-20).map(h => h.cpu);
-  const memSpark = history.slice(-20).map(h => h.memory);
   const anomalySpark = history.slice(-20).map(h => h.anomaly);
 
   return (
@@ -939,10 +1508,10 @@ export default function Dashboard() {
           <MetricCard
             label="System Stability"
             value={`${(stability * 100).toFixed(1)}%`}
-            subtitle="Predictive confidence index"
+            subtitle="Resource stability index"
             icon="◈"
-            tooltip="Statistical measure of system predictability"
-            sparkData={history.slice(-20).map(() => stability * 100 + (Math.random() - 0.5) * 2)}
+            tooltip="Derived from CPU, memory, disk pressure, anomaly pressure, and recent volatility"
+            sparkData={history.slice(-20).map(point => point.stability * 100)}
             sparkColor={T.primary}
           />
           <MetricCard
@@ -1008,23 +1577,42 @@ export default function Dashboard() {
               </div>
             </Section>
 
-            {/* Uptime History */}
-            <Section title="Uptime History" subtitle="Last 30 check intervals">
-              <UptimeDots count={30} health={health} />
+            {/* Health Check History */}
+            <Section title="Health Check History" subtitle="Last 30 check intervals">
+              <UptimeDots history={history} />
               <div style={{ marginTop: "10px", display: "flex", justifyContent: "space-between", fontSize: "10px", fontFamily: "'Share Tech Mono', monospace", color: T.textDim }}>
                 <span>30 intervals ago</span>
-                <span style={{ color: T.success }}>99.7% uptime</span>
+                <span style={{ color: T.success }}>CURRENT HEALTH {health.toFixed(1)}%</span>
                 <span>now</span>
               </div>
             </Section>
 
             {/* Future State Projection */}
-            <Section title="Future State Projection" subtitle="AI temporal simulation · next 60s" alert={risk > 0.6}>
+            <Section
+              title="Future State Projection"
+              subtitle={`AI forecast · next ${forecast.points?.length ? Math.max(...forecast.points.map(p => p.t ?? 0)) : 60} min`}
+              alert={forecast.peak_risk?.toUpperCase() === "CRITICAL"}
+            >
               <div style={{ display: "flex", flexDirection: "column", gap: "8px", fontSize: "11px", fontFamily: "'Share Tech Mono', monospace" }}>
                 {[
-                  { label: risk > 0.6 ? "⚠ CPU SPIKE PREDICTED ~12s" : "✓ CPU STABLE PROJECTION", ok: risk <= 0.6 },
-                  { label: risk > 0.5 ? "⚠ STABILITY DEGRADATION EXPECTED" : "✓ STABILITY MAINTAINED", ok: risk <= 0.5 },
-                  { label: `◈ FAILURE PROBABILITY: ${(risk * 120).toFixed(0)}%`, highlight: true },
+                  {
+                    label: forecast.points?.length
+                      ? `✓ CPU FORECAST: ${forecast.points[forecast.points.length - 1]?.cpu?.toFixed(1) ?? "—"}% AT +${forecast.points[forecast.points.length - 1]?.t ?? "—"} MIN`
+                      : "… WAITING FOR FORECAST DATA",
+                    ok: forecast.peak_risk?.toUpperCase() !== "CRITICAL",
+                  },
+                  {
+                    label: forecast.direction
+                      ? `◈ TREND: ${forecast.direction}`
+                      : "◈ TREND: —",
+                    ok: forecast.direction?.toUpperCase() !== "DECLINING",
+                  },
+                  {
+                    label: forecast.peak_risk
+                      ? `◈ PEAK RISK: ${forecast.peak_risk.toUpperCase()} · CONFIDENCE: ${forecast.confidence !== undefined ? (forecast.confidence * 100).toFixed(0) : "—"}%`
+                      : "◈ PEAK RISK: —",
+                    highlight: true,
+                  },
                 ].map((item, i) => (
                   <div key={i} style={{
                     padding: "10px 12px", borderRadius: "4px",
@@ -1037,6 +1625,219 @@ export default function Dashboard() {
                   </div>
                 ))}
               </div>
+            </Section>
+
+
+            {/* Live Cognitive Predictions */}
+            <Section
+              title="Predicted Events"
+              subtitle="Live cognitive failure forecast"
+              alert={cognitivePredictions.some((p) => String(p.severity).toUpperCase() === "CRITICAL")}
+              accentColor={T.accent}
+            >
+              {cognitivePredictions.length === 0 ? (
+                <div style={{
+                  padding: "14px",
+                  borderRadius: "4px",
+                  background: "rgba(0,0,0,0.25)",
+                  border: `1px solid ${T.border}`,
+                  color: T.textDim,
+                  fontSize: "11px",
+                  fontFamily: "'Share Tech Mono', monospace",
+                }}>
+                  NO ACTIVE PREDICTIONS
+                </div>
+              ) : (
+                <div style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "8px",
+                  fontFamily: "'Share Tech Mono', monospace",
+                }}>
+                  {cognitivePredictions.map((prediction) => {
+                    const severity = String(prediction.severity || "LOW").toUpperCase();
+                    const severityColor =
+                      severity === "CRITICAL" ? T.danger :
+                      severity === "MEDIUM" ? T.warning :
+                      T.accent;
+
+                    const busy = predictionBusy === prediction.id;
+
+                    return (
+                      <div
+                        key={prediction.id}
+                        style={{
+                          padding: "11px 12px",
+                          borderRadius: "4px",
+                          background: "rgba(0,0,0,0.28)",
+                          border: `1px solid ${severityColor}35`,
+                          borderLeft: `3px solid ${severityColor}`,
+                        }}
+                      >
+                        <div style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          gap: "8px",
+                          marginBottom: "6px",
+                        }}>
+                          <span style={{
+                            color: severityColor,
+                            fontWeight: 700,
+                            fontSize: "11px",
+                          }}>
+                            {String(prediction.type || "EVENT")}
+                          </span>
+
+                          <span style={{
+                            color: T.textDim,
+                            fontSize: "10px",
+                          }}>
+                            ETA {Number(prediction.eta_minutes || 0).toFixed(0)} MIN
+                          </span>
+                        </div>
+
+                        <div style={{
+                          color: T.text,
+                          fontSize: "11px",
+                          lineHeight: "1.5",
+                          marginBottom: "7px",
+                        }}>
+                          {prediction.message || "Predicted system event"}
+                        </div>
+
+                        <div style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          gap: "8px",
+                          marginBottom: "8px",
+                        }}>
+                          <span style={{
+                            color: prediction.trustworthy === false ? T.warning : T.success,
+                            fontSize: "10px",
+                            fontWeight: 700,
+                          }}>
+                            CONFIDENCE: {Number(prediction.confidence || 0).toFixed(0)}%
+                          </span>
+
+                          <span style={{
+                            color: T.textDim,
+                            fontSize: "9px",
+                          }}>
+                            {prediction.trustworthy === false ? "LEARNING SIGNAL" : "TRUSTED"}
+                          </span>
+                        </div>
+
+                        {prediction.action && (
+                          <div style={{
+                            color: T.textDim,
+                            fontSize: "10px",
+                            lineHeight: "1.5",
+                            marginBottom: "8px",
+                          }}>
+                            ACTION: {prediction.action}
+                          </div>
+                        )}
+
+                        <div style={{
+                          display: "flex",
+                          gap: "6px",
+                        }}>
+                          {!prediction.acknowledged && (
+                            <button
+                              disabled={busy}
+                              onClick={async () => {
+                                try {
+                                  setPredictionBusy(prediction.id);
+                                  await acknowledgeCognitivePrediction(prediction.id);
+                                  const data = await fetchCognitivePredictions();
+                                  setCognitivePredictions(Array.isArray(data) ? data : []);
+                                } catch (error) {
+                                  console.error("Prediction acknowledge failed:", error);
+                                } finally {
+                                  setPredictionBusy(null);
+                                }
+                              }}
+                              style={{
+                                flex: 1,
+                                padding: "6px 8px",
+                                borderRadius: "3px",
+                                border: `1px solid ${T.accent}50`,
+                                background: "transparent",
+                                color: T.accent,
+                                cursor: busy ? "wait" : "pointer",
+                                fontFamily: "'Share Tech Mono', monospace",
+                                fontSize: "9px",
+                              }}
+                            >
+                              ACKNOWLEDGE
+                            </button>
+                          )}
+
+                          <button
+                            disabled={busy}
+                            onClick={async () => {
+                              try {
+                                setPredictionBusy(prediction.id);
+                                await resolveCognitivePrediction(prediction.id, true);
+                                const data = await fetchCognitivePredictions();
+                                setCognitivePredictions(Array.isArray(data) ? data : []);
+                              } catch (error) {
+                                console.error("Prediction resolve failed:", error);
+                              } finally {
+                                setPredictionBusy(null);
+                              }
+                            }}
+                            style={{
+                              flex: 1,
+                              padding: "6px 8px",
+                              borderRadius: "3px",
+                              border: `1px solid ${T.success}50`,
+                              background: "transparent",
+                              color: T.success,
+                              cursor: busy ? "wait" : "pointer",
+                              fontFamily: "'Share Tech Mono', monospace",
+                              fontSize: "9px",
+                            }}
+                          >
+                            CORRECT
+                          </button>
+
+                          <button
+                            disabled={busy}
+                            onClick={async () => {
+                              try {
+                                setPredictionBusy(prediction.id);
+                                await resolveCognitivePrediction(prediction.id, false);
+                                const data = await fetchCognitivePredictions();
+                                setCognitivePredictions(Array.isArray(data) ? data : []);
+                              } catch (error) {
+                                console.error("Prediction resolve failed:", error);
+                              } finally {
+                                setPredictionBusy(null);
+                              }
+                            }}
+                            style={{
+                              flex: 1,
+                              padding: "6px 8px",
+                              borderRadius: "3px",
+                              border: `1px solid ${T.danger}50`,
+                              background: "transparent",
+                              color: T.danger,
+                              cursor: busy ? "wait" : "pointer",
+                              fontFamily: "'Share Tech Mono', monospace",
+                              fontSize: "9px",
+                            }}
+                          >
+                            INCORRECT
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </Section>
 
             {/* Signal Radar */}
@@ -1061,10 +1862,10 @@ export default function Dashboard() {
 
             {/* Resource Monitor */}
             <Section title="Resource Monitor" subtitle="Live subsystem utilization">
-              <DataBar value={lastHistory.cpu || 35} color={T.accent} label="CPU CORES" />
-              <DataBar value={lastHistory.memory || 48} color={T.primary} label="MEMORY" />
-              <DataBar value={lastHistory.disk || 28} color={T.success} label="DISK I/O" />
-              <DataBar value={lastHistory.network || 32} color={T.warning} label="NETWORK" />
+              <DataBar value={lastHistory.cpu} color={T.accent} label="CPU CORES" />
+              <DataBar value={lastHistory.memory} color={T.primary} label="MEMORY" />
+              <DataBar value={lastHistory.disk} color={T.success} label="DISK I/O" />
+              <DataBar value={lastHistory.network} color={T.warning} label="NETWORK" />
               <div style={{ marginTop: "14px" }}>
                 <div style={{ fontSize: "10px", color: T.textDim, fontFamily: "'Share Tech Mono', monospace", marginBottom: "6px", display: "flex", justifyContent: "space-between" }}>
                   <span>RISK FIELD</span>
@@ -1096,7 +1897,7 @@ export default function Dashboard() {
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", fontSize: "11px", fontFamily: "'Share Tech Mono', monospace" }}>
                   <div><div style={{ color: T.textDim, marginBottom: "3px" }}>CONFIDENCE</div><div style={{ color: T.success, fontWeight: 700 }}>{((decision?.confidence || 0) * 100).toFixed(1)}%</div></div>
-                  <div><div style={{ color: T.textDim, marginBottom: "3px" }}>PRIORITY</div><div style={{ color: T.warning, fontWeight: 700 }}>{decision?.priority || "NORMAL"}</div></div>
+                  <div><div style={{ color: T.textDim, marginBottom: "3px" }}>PRIORITY</div><div style={{ color: T.warning, fontWeight: 700 }}>{decision?.risk_level || decision?.priority || "NORMAL"}</div></div>
                 </div>
               </div>
               <div style={{ fontSize: "10px", color: T.textDim, fontFamily: "'Share Tech Mono', monospace", marginBottom: "6px" }}>CONFIDENCE FIELD</div>
@@ -1105,20 +1906,39 @@ export default function Dashboard() {
               </div>
               <div style={{ fontSize: "10px", color: T.textDim, fontFamily: "'Share Tech Mono', monospace", marginBottom: "6px" }}>ROOT CAUSE ANALYSIS</div>
               <div style={{ background: "rgba(0,0,0,0.25)", padding: "12px", borderRadius: "4px", fontSize: "11px", color: T.text, lineHeight: "1.7", fontFamily: "'Share Tech Mono', monospace", borderLeft: `2px solid ${color}` }}>
-                {data.intelligence?.fusion?.cause || "No anomalies detected — system operating within baseline parameters."}
+                {decisionRootCause || "No anomalies detected — system operating within baseline parameters."}
               </div>
             </Section>
 
             {/* Causal Chain */}
-            <Section title="Causal Correlation" subtitle="Signal dependency chain">
+            <Section title="Causal Correlation" subtitle="Backend causal analysis">
               <div style={{ fontSize: "11px", fontFamily: "'Share Tech Mono', monospace" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px", flexWrap: "wrap" }}>
-                  {[{ label: "CPU ↑", color: T.accent }, { label: "→", color: T.textDim }, { label: "MEM ↑", color: T.warning }, { label: "→", color: T.textDim }, { label: "ANOMALY ↑", color: T.danger }].map((s, i) => (
-                    <span key={i} style={{ color: s.color, fontWeight: 700 }}>{s.label}</span>
-                  ))}
+                <div style={{
+                  padding: "10px 12px",
+                  background: "rgba(0,0,0,0.3)",
+                  borderRadius: "4px",
+                  borderLeft: `2px solid ${decisionRootCause ? T.warning : T.textDim}`,
+                  marginBottom: "10px",
+                }}>
+                  <div style={{ color: T.textDim, marginBottom: "5px" }}>
+                    PRIMARY CAUSE
+                  </div>
+                  <div style={{ color: decisionRootCause ? T.warning : T.text, fontWeight: 700 }}>
+                    {pipeline.causal?.primary_cause ||
+                      pipeline.decision?.root_cause?.type ||
+                      "NO CAUSAL RELATIONSHIP IDENTIFIED"}
+                  </div>
                 </div>
-                <div style={{ padding: "10px 12px", background: "rgba(0,0,0,0.3)", borderRadius: "4px", borderLeft: `2px solid ${T.accent}` }}>
-                  → DECISION: <span style={{ color: T.accent, fontWeight: 700 }}>{decision?.action || "MONITOR"}</span>
+
+                <div style={{
+                  padding: "10px 12px",
+                  background: "rgba(0,0,0,0.3)",
+                  borderRadius: "4px",
+                  borderLeft: `2px solid ${T.accent}`,
+                }}>
+                  → DECISION: <span style={{ color: T.accent, fontWeight: 700 }}>
+                    {decision?.action || "MONITOR"}
+                  </span>
                 </div>
               </div>
             </Section>
@@ -1127,51 +1947,201 @@ export default function Dashboard() {
             <Section title="Learned Patterns" subtitle="Historical intelligence database">
               <div style={{ display: "flex", flexDirection: "column", gap: "7px" }}>
                 {learnedPatterns.slice(0, 4).map((p, i) => {
-                  const pc = p.severity === "HIGH" ? T.danger : p.severity === "MEDIUM" ? T.warning : T.accent;
+                  const pc = p.trustworthy === false
+                    ? T.warning
+                    : (p.confidence ?? 0) >= 80
+                      ? T.success
+                      : T.accent;
+
                   return (
-                    <div key={i} style={{ padding: "9px 12px", borderRadius: "4px", background: "rgba(0,0,0,0.2)", borderLeft: `2px solid ${pc}`, fontSize: "11px", fontFamily: "'Share Tech Mono', monospace" }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "2px" }}>
-                        <span style={{ color: T.text, fontWeight: 600 }}>{p.type}</span>
-                        <span style={{ color: pc, fontSize: "10px" }}>{p.severity}</span>
+                    <div key={i} style={{
+                      padding: "9px 12px",
+                      borderRadius: "4px",
+                      background: "rgba(0,0,0,0.2)",
+                      borderLeft: `2px solid ${pc}`,
+                      fontSize: "11px",
+                      fontFamily: "'Share Tech Mono', monospace"
+                    }}>
+                      <div style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        marginBottom: "3px"
+                      }}>
+                        <span style={{ color: T.text, fontWeight: 600 }}>
+                          {p.type ?? "UNKNOWN"}
+                        </span>
+                        <span style={{ color: pc, fontSize: "10px" }}>
+                          {p.confidence != null ? `${p.confidence.toFixed(0)}% CONF.` : "NO CONF."}
+                        </span>
                       </div>
-                      <div style={{ fontSize: "10px", color: T.textDim }}>FREQ: {p.frequency}</div>
+
+                      <div style={{
+                        display: "flex",
+                        gap: "12px",
+                        flexWrap: "wrap",
+                        fontSize: "10px",
+                        color: T.textDim
+                      }}>
+                        <span>SEEN: {p.seen ?? 0}</span>
+                        <span>PREVENTED: {p.prevented ?? 0}</span>
+                        <span>ACCURACY: {p.accuracy != null ? `${p.accuracy.toFixed(1)}%` : "—"}</span>
+                        <span>LEAD: {p.lead_time != null ? `${p.lead_time.toFixed(1)}s` : "—"}</span>
+                      </div>
+
+                      {p.data_quality && (
+                        <div style={{
+                          marginTop: "3px",
+                          fontSize: "9px",
+                          color: T.textDim
+                        }}>
+                          DATA QUALITY: {p.data_quality.toUpperCase()}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
+
+                {learnedPatterns.length === 0 && (
+                  <div style={{
+                    padding: "10px 12px",
+                    color: T.textDim,
+                    fontSize: "10px",
+                    fontFamily: "'Share Tech Mono', monospace"
+                  }}>
+                    NO LEARNED PATTERNS AVAILABLE
+                  </div>
+                )}
               </div>
             </Section>
 
-            {/* Manual Override */}
-            <Section title="Manual Override" subtitle="Operator intervention console">
+            {/* Operator Actions */}
+            <Section title="Operator Actions" subtitle="Authenticated backend actions">
               <div style={{ display: "flex", flexDirection: "column", gap: "9px" }}>
-                {[
-                  { label: "EMERGENCY STABILIZE", color: T.danger, action: "Emergency Stabilize — INITIATED", icon: "⚡" },
-                  { label: "RESOURCE REBALANCE", color: T.warning, action: "Resource Rebalance — EXECUTING", icon: "◈" },
-                  { label: "ENABLE AUTO-PILOT", color: T.accent, action: "AI Auto-Pilot — ENABLED", icon: "▸" },
-                ].map((btn, i) => (
+                {availableActions.map((action) => (
                   <button
-                    key={i}
-                    onClick={() => setManualAction(btn.action)}
+                    key={action.id}
+                    onClick={() => executeManualAction(action)}
+                    disabled={actionLoading !== null}
                     style={{
-                      background: `${btn.color}15`,
-                      border: `1px solid ${btn.color}60`,
-                      borderRadius: "4px", padding: "11px 16px",
-                      color: btn.color, fontSize: "12px", fontWeight: 700,
-                      cursor: "pointer", fontFamily: "'Rajdhani', sans-serif",
-                      letterSpacing: "0.1em", textAlign: "left",
+                      background: actionLoading === action.id
+                        ? `${T.accent}20`
+                        : `${T.accent}08`,
+                      border: `1px solid ${T.accent}40`,
+                      borderRadius: "4px",
+                      padding: "11px 16px",
+                      color: T.accent,
+                      fontSize: "12px",
+                      fontWeight: 700,
+                      cursor: actionLoading !== null ? "wait" : "pointer",
+                      fontFamily: "'Rajdhani', sans-serif",
+                      letterSpacing: "0.08em",
+                      textAlign: "left",
+                      opacity: actionLoading !== null && actionLoading !== action.id ? 0.5 : 1,
                       transition: "all 0.2s cubic-bezier(0.4,0,0.2,1)",
                     }}
-                    onMouseEnter={e => { e.currentTarget.style.transform = "scale(1.02)"; e.currentTarget.style.background = `${btn.color}25`; e.currentTarget.style.boxShadow = `0 0 20px ${btn.color}30`; }}
-                    onMouseLeave={e => { e.currentTarget.style.transform = "scale(1)"; e.currentTarget.style.background = `${btn.color}15`; e.currentTarget.style.boxShadow = "none"; }}
                   >
-                    {btn.icon} {btn.label}
+                    {actionLoading === action.id ? "◌ EXECUTING..." : `▸ ${action.label}`}
+                    <div style={{
+                      marginTop: "4px",
+                      fontSize: "9px",
+                      fontWeight: 400,
+                      letterSpacing: "0.02em",
+                      color: T.textMuted,
+                    }}>
+                      {action.description}
+                    </div>
                   </button>
                 ))}
-                {manualAction && (
+
+                {availableActions.length === 0 && !actionError && (
                   <div style={{
-                    padding: "9px 12px", borderRadius: "4px",
-                    background: "rgba(0,255,157,0.07)", border: `1px solid ${T.success}50`,
-                    fontSize: "11px", color: T.success,
+                    padding: "10px 12px",
+                    color: T.textDim,
+                    fontSize: "10px",
+                    fontFamily: "'Share Tech Mono', monospace",
+                  }}>
+                    LOADING ACTION REGISTRY...
+                  </div>
+                )}
+
+                {actionError && (
+                  <div style={{
+                    padding: "9px 12px",
+                    borderRadius: "4px",
+                    background: "rgba(255,51,102,0.07)",
+                    border: `1px solid ${T.danger}50`,
+                    fontSize: "10px",
+                    color: T.danger,
+                    fontFamily: "'Share Tech Mono', monospace",
+                  }}>
+                    ⚠ {actionError}
+                  </div>
+                )}
+
+                {actionResult && (
+                  <div style={{
+                    padding: "10px 12px",
+                    borderRadius: "4px",
+                    background: "rgba(0,212,255,0.05)",
+                    border: `1px solid ${T.accent}35`,
+                    fontFamily: "'Share Tech Mono', monospace",
+                    fontSize: "9px",
+                    color: T.textMuted,
+                  }}>
+                    <div style={{
+                      color: T.accent,
+                      fontSize: "10px",
+                      marginBottom: "7px",
+                      letterSpacing: "0.08em",
+                    }}>
+                      DIAGNOSTIC RESULT · {actionResult.process_count ?? 0} PROCESSES INSPECTED
+                    </div>
+
+                    {actionResult.processes?.slice(0, 5).map((process, index) => (
+                      <div key={`${process.pid ?? "process"}-${index}`} style={{
+                        padding: "5px 0",
+                        borderTop: index === 0 ? "none" : `1px solid ${T.border}`,
+                      }}>
+                        <span style={{ color: T.text }}>
+                          {process.name ?? "unknown"}
+                        </span>
+                        <span> · PID {process.pid ?? "—"}</span>
+                        <span> · CPU {process.cpu_percent?.toFixed(1) ?? "—"}%</span>
+                        <span> · MEM {process.memory_percent?.toFixed(1) ?? "—"}%</span>
+                        <span> · {process.classification ?? "—"}</span>
+                      </div>
+                    ))}
+
+                    {actionResult.risk && (
+                      <div style={{
+                        marginTop: "7px",
+                        color: T.warning,
+                        lineHeight: 1.5,
+                      }}>
+                        {actionResult.risk}
+                      </div>
+                    )}
+
+                    {actionResult.note && (
+                      <div style={{
+                        marginTop: "7px",
+                        color: T.success,
+                        lineHeight: 1.5,
+                      }}>
+                        {actionResult.note}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {manualAction && !actionError && (
+                  <div style={{
+                    padding: "9px 12px",
+                    borderRadius: "4px",
+                    background: "rgba(0,255,157,0.07)",
+                    border: `1px solid ${T.success}50`,
+                    fontSize: "11px",
+                    color: T.success,
                     fontFamily: "'Share Tech Mono', monospace",
                     animation: "slideIn 0.3s ease-out",
                   }}>
@@ -1182,13 +2152,13 @@ export default function Dashboard() {
             </Section>
 
             <Section title="System Events" subtitle="Chronological event log">
-              <EventLog events={data.events} />
+              <EventLog events={alertEvents} />
             </Section>
           </div>
 
           {/* RIGHT COLUMN — AI CHAT */}
           <div style={{ position: "sticky", top: "28px", height: "calc(100vh - 56px)" }}>
-            <AIChat data={data} level={level} risk={risk} decision={decision} />
+            <AIChat />
           </div>
         </div>
       </div>

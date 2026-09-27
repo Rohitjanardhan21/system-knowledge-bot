@@ -59,7 +59,11 @@ def _cpu_stress_worker(stop_event, intensity: float = 0.75):
     import psutil
 
     cpu_count = max(1, psutil.cpu_count(logical=True) or 1)
-    worker_count = max(1, round(cpu_count * intensity))
+
+    # Use all available logical CPUs so the requested intensity
+    # represents CPU utilization rather than reducing the number
+    # of workers. This is important inside the 4-vCPU VM.
+    worker_count = cpu_count
 
     processes = []
 
@@ -282,18 +286,38 @@ def stop_all() -> dict:
 
 def get_status() -> dict:
     now = time.time()
+
     with _lock:
+        # Clean up scenarios whose duration has already expired.
+        # This protects status reporting even if the auto-stop thread
+        # was delayed, interrupted, or otherwise failed to remove
+        # the entry from _active_stress.
+        expired = []
+
+        for sid, entry in list(_active_stress.items()):
+            elapsed = now - entry["started_at"]
+            if elapsed >= entry["duration_s"]:
+                entry["stop_event"].set()
+                expired.append(sid)
+
+        for sid in expired:
+            _active_stress.pop(sid, None)
+
         active = [
             {
                 "scenario_id": sid,
-                "label":       SCENARIOS.get(sid, {}).get("label", sid),
-                "elapsed_s":   round(now - e["started_at"], 1),
-                "remaining_s": max(0, round(e["duration_s"] - (now - e["started_at"]), 1)),
+                "label": SCENARIOS.get(sid, {}).get("label", sid),
+                "elapsed_s": round(now - e["started_at"], 1),
+                "remaining_s": max(
+                    0,
+                    round(e["duration_s"] - (now - e["started_at"]), 1),
+                ),
             }
             for sid, e in _active_stress.items()
         ]
+
     return {
-        "running":      bool(active),
-        "active":       active,
+        "running": bool(active),
+        "active": active,
         "history_count": len(_stress_log),
     }
