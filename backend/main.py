@@ -2555,14 +2555,6 @@ if _os.path.isdir(_FRONTEND_DIR):
         p = _os.path.join(_FRONTEND_DIR, "index.html")
         return _FR(p) if _os.path.exists(p) else _HR("<h1>CVIS backend is running</h1>")
 
-    @app.get("/onboarding", include_in_schema=False)
-    async def serve_onboarding():
-        p = _os.path.join(_FRONTEND_DIR, "onboarding.html")
-        if _os.path.exists(p):
-            return _FR(p)
-        from fastapi.responses import RedirectResponse
-        return RedirectResponse("/")
-
     try:
         app.mount("/assets", _SS(_FRONTEND_DIR, html=False), name="frontend-assets")
     except Exception:
