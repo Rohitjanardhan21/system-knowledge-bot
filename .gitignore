@@ -1,6 +1,7 @@
 # ── Secrets — NEVER commit these ─────────────────────────
 .env
 .env.*
+!.env.example
 !.env.example          # the template IS safe to commit
 *.key
 *.pem
@@ -72,5 +73,43 @@ trivy.sarif
 .device_key_response
 data/
 frontend/assets/
-system_facts/nodes/*.json
-bot_audit/decisions.log
+
+# ===== Runtime / generated telemetry =====
+
+# Runtime databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Runtime logs
+logs/
+*.log
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Local environment
+
+# Runtime state / telemetry
+
+# Runtime system facts
+
+# Runtime audit/log files
+
+# Local environment
+
+# Python
+__pycache__/
+*.pyc
+
+# Runtime state / telemetry
+system_state/*
+!system_state/.gitkeep
+system_facts/*
+!system_facts/.gitkeep
+bot_audit/*
+!bot_audit/.gitkeep
+
+# Runtime-generated system collector state
+system_collector/system_facts/nodes/
