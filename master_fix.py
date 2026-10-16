@@ -3,11 +3,28 @@ Synapse Master Fix Script
 Renames CVIS -> Synapse and fixes all demo issues in one shot.
 Run from ~/system-knowledge-bot/
 """
-import os, re
+import sys
+from pathlib import Path
+
+from safe_patch import write_text_safely
+
+ROOT = Path(__file__).resolve().parent
+APPLY = "--apply" in sys.argv
+
+if not APPLY:
+    print("DRY RUN: no project files will be changed. Review the diffs below.")
+
+
+def read_text(relative_path):
+    return (ROOT / relative_path).read_text(encoding="utf-8")
+
+
+def write_text(relative_path, content):
+    return write_text_safely(ROOT / relative_path, content, apply=APPLY)
 
 # ── 1. Fix frontend/index.html ────────────────────────────────────────────────
 print("Fixing frontend/index.html...")
-c = open('frontend/index.html').read()
+c = read_text("frontend/index.html")
 
 # Rename CVIS -> Synapse in visible text
 c = c.replace('CVIS <span>/ Cognitive</span>', 'Synapse <span>/ AI</span>')
@@ -103,12 +120,12 @@ c = c.replace(
     'Deliberately stress the machine to trigger real Synapse predictions.'
 )
 
-open('frontend/index.html', 'w').write(c)
+write_text("frontend/index.html", c)
 print(f"  frontend/index.html — done ({len(c.splitlines())} lines)")
 
 # ── 2. Fix backend/main.py ────────────────────────────────────────────────────
 print("Fixing backend/main.py...")
-m = open('backend/main.py').read()
+m = read_text("backend/main.py")
 m = m.replace('CVIS v9 AIOps Backend', 'Synapse AI Backend')
 m = m.replace('CVIS v9 Backend', 'Synapse Backend')
 m = m.replace('"CVIS v9 started', '"Synapse started')
@@ -117,25 +134,29 @@ m = m.replace('title="CVIS v9 AIOps Backend"', 'title="Synapse AI Backend"')
 m = m.replace('version="9.0.0"', 'version="1.0.6"')
 m = m.replace('description="PyTorch LSTM + beta-VAE + sklearn IF', 'description="Synapse — PyTorch LSTM + beta-VAE + sklearn IF')
 m = m.replace('log.info("CVIS', 'log.info("Synapse')
-open('backend/main.py', 'w').write(m)
+write_text("backend/main.py", m)
 print("  backend/main.py — done")
 
 # ── 3. Fix docker-compose.yml if exists ──────────────────────────────────────
 for fname in ['docker-compose.yml', 'docker-compose.yaml']:
-    if os.path.exists(fname):
+    if (ROOT / fname).exists():
         print(f"Fixing {fname}...")
-        d = open(fname).read()
+        d = read_text(fname)
         d = d.replace('cvis-backend', 'synapse-backend')
         d = d.replace('cvis-os', 'synapse')
-        open(fname, 'w').write(d)
+        write_text(fname, d)
         print(f"  {fname} — done")
 
 # ── 4. Fix README if exists ──────────────────────────────────────────────────
-if os.path.exists('README.md'):
+if (ROOT / "README.md").exists():
     print("Fixing README.md...")
-    r = open('README.md').read()
+    r = read_text("README.md")
     r = r.replace('CVIS', 'Synapse')
-    open('README.md', 'w').write(r)
+    write_text("README.md", r)
     print("  README.md — done")
 
-print("\nAll fixes applied. Ready to rebuild.")
+print(
+    "\nPatch preview complete."
+    if not APPLY
+    else "\nAll fixes applied. Ready to rebuild."
+)

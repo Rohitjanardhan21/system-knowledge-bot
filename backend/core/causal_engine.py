@@ -62,6 +62,7 @@ def map_action(cause_type):
         "thermal_overload": "increase_cooling",
         "mechanical_fault": "inspect_mechanics",
         "electrical_instability": "check_power",
+        "application_crash": "investigate",
         "background_load": "observe"
     }.get(cause_type, "observe")
 
@@ -123,6 +124,7 @@ class CausalEngine:
             "mechanical_fault": ["Vibration ↑", "Wear ↑", "Failure risk ↑"],
             "electrical_instability": ["Voltage fluctuation", "Instability ↑"],
             "moderate_cpu_load": ["Load ↑", "Performance ↓"],
+            "application_crash": ["Process failure", "Application unavailable"],
             "background_load": ["Normal variation"]
         }
 
@@ -212,6 +214,12 @@ class CausalEngine:
 
         elif cpu > MODERATE_CPU:
             cause_type = "moderate_cpu_load"
+
+        elif any(
+            isinstance(p, dict) and p.get("crashed") is True
+            for p in contributors
+        ):
+            cause_type = "application_crash"
 
         else:
             cause_type = "background_load"

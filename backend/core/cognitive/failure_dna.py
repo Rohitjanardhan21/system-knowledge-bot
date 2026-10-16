@@ -4,7 +4,7 @@ CVIS Failure DNA Engine
 Learns your machine's unique failure fingerprint.
 Includes: Trust Layer + Anomaly Explainability
 """
-import json, os, time, threading
+import json, os, time, threading, uuid
 from collections import deque
 from dataclasses import dataclass, field, asdict
 from typing import Optional
@@ -184,7 +184,7 @@ class FailureDNAEngine:
 
     def record_failure(self, event_type: str, description: str, severity: str = "HIGH"):
         with self._lock:
-            event_id = f"{event_type}_{int(time.time())}"
+            event_id = f"{event_type}_{uuid.uuid4().hex}"
             pre_snapshot = list(self._metric_buffer)
             event = FailureEvent(
                 event_id=event_id, event_type=event_type,
@@ -919,11 +919,26 @@ class FailureDNAEngine:
 
         Learn from a FailureEvent, retain the event in history, and
         persist both learned patterns and history.
+
+        Learning is idempotent by event_id. An event that has already
+        been recorded must not be learned or appended again.
         """
         with self._lock:
+            event_id = getattr(event, "event_id", None)
+
+            if event_id is not None:
+                already_known = any(
+                    getattr(existing, "event_id", None) == event_id
+                    for existing in self._history
+                )
+
+                if already_known:
+                    return event
+
             self._learn_pattern(event)
             self._history.append(event)
             self._save()
+
         return event
 
     def _learn_pattern(self, event: FailureEvent):

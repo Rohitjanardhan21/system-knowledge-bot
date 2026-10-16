@@ -3,7 +3,7 @@ CVIS Universal Agent — with Auto-Adaptation Layer
 Runs on any OS, fingerprints the machine, learns its baseline,
 and pushes adaptive metrics to CVIS server every 5 seconds.
 
-Usage: python3 cvis_agent.py --server http://IP:8000 --key test123 --device mypc
+Usage: python3 cvis_agent.py --server http://IP:8000 --key YOUR_API_KEY --device mypc
 """
 import argparse, platform, socket, time, uuid, json, urllib.request, urllib.error
 import os, shutil, math, statistics

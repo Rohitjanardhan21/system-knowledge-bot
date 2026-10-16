@@ -12,17 +12,15 @@ services:
     # Override CMD to single uvicorn worker without hot reload
     command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --log-level info
     environment:
-      - ENV=dev
+      - "ENV=${ENV:?Set ENV explicitly to dev or production}"
       - LOG_LEVEL=info
       - GUNICORN_WORKERS=1
       - OMP_NUM_THREADS=1
       - MKL_NUM_THREADS=1
       - OPENBLAS_NUM_THREADS=1
-      # Weak dev secrets (acceptable because this never leaves localhost)
       - JWT_SECRET=${JWT_SECRET}
-      - ALLOWED_ORIGIN=*
-    ports:
-      - "8000:8000"     # expose directly for Swagger UI, curl testing
+      - "ALLOWED_ORIGIN=${ALLOWED_ORIGIN:-http://localhost:8020,http://127.0.0.1:8020,http://localhost,http://127.0.0.1}"
+    # expose directly for Swagger UI, curl testing
     volumes:
       # Mount source code live — uvicorn --reload picks up changes
       - .:/app
@@ -47,8 +45,6 @@ services:
   redis:
     # No password in dev
     command: redis-server --maxmemory 64mb --maxmemory-policy allkeys-lru
-    ports:
-      - "6379:6379"     # expose for redis-cli debugging
 
   # No Prometheus/Grafana in dev by default — uncomment to enable
   prometheus:

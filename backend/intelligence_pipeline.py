@@ -1,4 +1,5 @@
 from pathlib import Path
+from dataclasses import asdict, is_dataclass
 import os
 import json
 import time
@@ -8,6 +9,9 @@ from backend.action_executor import ActionExecutor
 from backend.dqn_agent import DQNAgent
 from backend.core.learning_engine import LearningEngine
 from backend.timeline_engine import get_timeline
+from judgment.engine import evaluate
+from judgment.posture import resolve_posture
+from preflight.evaluator import evaluate_preflight
 
 dqn_agent = DQNAgent()
 decision_engine = DecisionEngineV2(agent=dqn_agent)
@@ -313,7 +317,7 @@ def run_intelligence_pipeline(allow_execution=True, live_metrics=None):
     # If no fresh nodes are available, fall back to the local live collector
     # rather than trusting stale system_facts/current.json telemetry.
     if live_metrics:
-        metrics.update(live_metrics)
+        metrics.update(live_metrics); metrics["cpu"] = live_metrics.get("cpu", live_metrics.get("cpu_percent", 0)); metrics["memory"] = live_metrics.get("memory", live_metrics.get("memory_percent", 0)); metrics["disk"] = live_metrics.get("disk", live_metrics.get("disk_percent", 0))
     elif nodes:
         _, live_node_summary = aggregate_nodes(nodes)
         if live_node_summary:
@@ -343,6 +347,21 @@ def run_intelligence_pipeline(allow_execution=True, live_metrics=None):
     # -----------------------------------------
 
     all_processes, node_summary = aggregate_nodes(nodes)
+
+    # Include processes supplied directly with live metrics.
+    if live_metrics and isinstance(live_metrics.get("processes"), list):
+        known_pids = {p.get("pid") for p in all_processes if p.get("pid") is not None}
+        live_node = live_metrics.get("node") or live_metrics.get("hostname") or "local"
+
+        for process in live_metrics["processes"]:
+            if not isinstance(process, dict) or process.get("pid") in known_pids:
+                continue
+
+            p = dict(process)
+            p.setdefault("node", live_node)
+            p.setdefault("cpu", p.get("cpu_percent", 0) or 0)
+            p.setdefault("memory", p.get("mem", p.get("memory_percent", 0)) or 0)
+            all_processes.append(p)
 
     root = find_root_cause(all_processes)
     global_top = get_global_top(all_processes)
@@ -380,6 +399,33 @@ def run_intelligence_pipeline(allow_execution=True, live_metrics=None):
     )
 
     # -----------------------------------------
+    # 🧠 JUDGMENT + POSTURE
+    # -----------------------------------------
+
+    cpu_baseline = thresholds.get("cpu", {}).get("mean")
+
+    baseline = {
+        "cpu_usage": cpu_baseline
+    }
+
+    judgment_facts = {
+        **metrics,
+        "cpu_usage": metrics.get("cpu"),
+    }
+
+    judgments = evaluate(judgment_facts, baseline)
+    posture = resolve_posture(judgments)
+
+    # -----------------------------------------
+    # 🛡️ PREFLIGHT GATE
+    # -----------------------------------------
+
+    preflight = evaluate_preflight(
+        posture.posture,
+        judgments
+    )
+
+    # -----------------------------------------
     # 🧠 SIMULATED DQN LEARNING
     # -----------------------------------------
     # Learn from a counterfactual transition without executing
@@ -391,8 +437,13 @@ def run_intelligence_pipeline(allow_execution=True, live_metrics=None):
     # -----------------------------------------
 
     execution = None
-    if allow_execution and decision.get("auto_execute") and decision.get("executable"):
-        execution = executor.execute(decision)
+    if (
+        allow_execution
+        and preflight.decision == "safe"
+        and decision.get("auto_execute")
+        and decision.get("executable")
+    ):
+        execution = executor.execute(decision, source="auto")
 
     # -----------------------------------------
     # 📜 TIMELINE
@@ -411,11 +462,35 @@ def run_intelligence_pipeline(allow_execution=True, live_metrics=None):
         avg_cpu = metrics.get("cpu", 0)
         avg_memory = metrics.get("memory", 0)
 
+    # Preserve the causal classification (e.g. application_crash) from the
+    # decision engine on top of the process-level root cause.
+    decision_root = decision.get("root_cause")
+    if isinstance(decision_root, dict) and decision_root.get("type"):
+        final_root_cause = {**(root or {}), **decision_root}
+    else:
+        final_root_cause = root
+
     # -----------------------------------------
     # 📦 FINAL RESPONSE (UI READY)
     # -----------------------------------------
 
     return {
+        # 🧠 REASONING STATE
+        "judgments": [
+            asdict(j) if is_dataclass(j) else j
+            for j in judgments
+        ],
+        "posture": (
+            asdict(posture)
+            if is_dataclass(posture)
+            else posture
+        ),
+        "preflight": (
+            asdict(preflight)
+            if is_dataclass(preflight)
+            else preflight
+        ),
+
         # 🔥 CORE METRICS
         "cpu": round(avg_cpu, 2),
         "memory": round(avg_memory, 2),
@@ -428,10 +503,10 @@ def run_intelligence_pipeline(allow_execution=True, live_metrics=None):
         "processes": sorted(all_processes, key=lambda x: x["cpu"], reverse=True)[:10],
 
         # 🔥 ROOT CAUSE
-        "root_cause": root,
+        "root_cause": final_root_cause,
 
         "causal": {
-            "primary_cause": root
+            "primary_cause": final_root_cause
         },
 
         # 🔥 APPLICATION / WORKLOAD ATTRIBUTION

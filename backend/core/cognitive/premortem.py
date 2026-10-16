@@ -547,7 +547,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="CVIS Failure Pre-Mortem")
     parser.add_argument("--server", default="http://localhost:8000")
-    parser.add_argument("--key",    default="test123")
+    parser.add_argument("--key",    required=True)
     parser.add_argument("--json",   action="store_true")
     args = parser.parse_args()
 

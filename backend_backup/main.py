@@ -252,7 +252,7 @@ app = FastAPI(
 # ── CORS ─────────────────────────────────────────────────
 # In production, set ALLOWED_ORIGIN=https://yourdomain.com
 # in your .env file.  Leave unset for local development only.
-_ALLOWED_ORIGIN = os.environ.get("ALLOWED_ORIGIN", "*")
+_ALLOWED_ORIGIN = os.environ.get("ALLOWED_ORIGIN", "")
 if _ALLOWED_ORIGIN != "*":
     _origins = [o.strip() for o in _ALLOWED_ORIGIN.split(",")]
 else:
@@ -289,10 +289,13 @@ class RefreshRequest(BaseModel):
     refresh_token: str
 
 # In production replace with a real user store / LDAP / SSO
-_USERS = {
-    os.environ.get("CVIS_ADMIN_USER", "admin"):
-    os.environ.get("CVIS_ADMIN_PASS", "changeme"),
-}
+_ADMIN_USER = os.environ.get("CVIS_ADMIN_USER")
+_ADMIN_PASS = os.environ.get("CVIS_ADMIN_PASS")
+_USERS = (
+    {_ADMIN_USER: _ADMIN_PASS}
+    if _ADMIN_USER and _ADMIN_PASS
+    else {}
+)
 
 @app.post("/auth/login", tags=["Auth"])
 async def login(req: LoginRequest):
@@ -605,6 +608,6 @@ if __name__ == "__main__":
     print(f"  psutil : {'✓' if PS_OK else '✗'}")
     print("  Docs   : http://localhost:8000/docs")
     print("=" * 60)
-    uvicorn.run("backend_v9:app", host="0.0.0.0",
+    uvicorn.run("backend_v9:app", host=os.environ.get("HOST", "127.0.0.1"),
                 port=int(os.environ.get("PORT", 8000)),
                 reload=False, log_level="warning", access_log=False)

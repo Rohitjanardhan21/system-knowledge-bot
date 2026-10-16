@@ -61,23 +61,34 @@ def _read_secret(env_key: str) -> str:
     # 3. Plain env var (dev / docker-compose with env_file)
     return os.environ.get(env_key, "")
 
-JWT_SECRET      = _read_secret("JWT_SECRET") or secrets.token_hex(32)
+_ENV_MODE = os.environ.get("ENV", "").strip().lower()
+_DEVELOPMENT_MODES = {"dev", "development"}
+JWT_SECRET = _read_secret("JWT_SECRET")
+if not JWT_SECRET:
+    if _ENV_MODE not in _DEVELOPMENT_MODES:
+        raise RuntimeError(
+            "JWT_SECRET must be configured; generated signing secrets are "
+            "allowed only when ENV is explicitly dev or development"
+        )
+    JWT_SECRET = secrets.token_hex(32)
+    log.warning("JWT_SECRET is unset; using a process-local development secret")
 JWT_ALGORITHM   = "HS256"
-ACCESS_TTL_S    = int(os.environ.get("JWT_ACCESS_TTL_S",  "3600"))    # 15 min
+ACCESS_TTL_S    = int(os.environ.get("JWT_ACCESS_TTL_S",  "900"))     # 15 min
 REFRESH_TTL_S   = int(os.environ.get("JWT_REFRESH_TTL_S", "604800")) # 7 days
 
 # Bootstrap admin API key
 BOOTSTRAP_API_KEY = _read_secret("CVIS_API_KEY")
 _api_key_store: dict[str, dict] = {}   # sha256(key) → {name, scope, created_at}
+_redis_backed_api_keys: set[str] = set()  # hashes successfully persisted to Redis
 
 if not BOOTSTRAP_API_KEY:
+    if _ENV_MODE not in _DEVELOPMENT_MODES:
+        raise RuntimeError(
+            "CVIS_API_KEY must be configured; generated bootstrap keys are "
+            "allowed only when ENV is explicitly dev or development"
+        )
     BOOTSTRAP_API_KEY = secrets.token_urlsafe(32)
-    log.warning(
-        "\n\n  *** NO CVIS_API_KEY SET — BOOTSTRAP KEY (save this, shown once) ***\n"
-        "  %s\n"
-        "  Production: set via Docker secret, _FILE env var, or .env\n",
-        BOOTSTRAP_API_KEY,
-    )
+    log.warning("CVIS_API_KEY is unset; using a process-local development key")
 
 _hash = hashlib.sha256(BOOTSTRAP_API_KEY.encode()).hexdigest()
 _api_key_store[_hash] = {"name": "bootstrap", "scope": "admin", "created_at": time.time()}
@@ -95,8 +106,27 @@ async def get_redis():
             )
             await _redis_client.ping()
         except Exception:
+            client = _redis_client
             _redis_client = None
+            if client is not None:
+                try:
+                    await client.aclose()
+                except Exception:
+                    log.exception("Failed to close unavailable Redis client")
     return _redis_client
+
+
+async def close_redis_client():
+    """Close the cached Redis client during application shutdown."""
+    global _redis_client
+    client = _redis_client
+    _redis_client = None
+    if client is not None:
+        try:
+            await client.aclose()
+        except Exception:
+            log.exception("Failed to close Redis authentication client")
+
 
 # ── Schemes ───────────────────────────────────────────────
 bearer_scheme  = HTTPBearer(auto_error=False)
@@ -162,34 +192,78 @@ async def _verify_jwt(token: str) -> dict:
     if payload.get("type") != "access":
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Not an access token")
 
-    # Check revocation in Redis (jti blocklist)
+    jti = payload.get("jti")
+    if not isinstance(jti, str) or not jti:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token is missing a JTI")
+
+    # JWT authentication requires a successful revocation check.
     redis = await get_redis()
-    if redis:
-        try:
-            revoked = await redis.get(f"revoked_jti:{payload['jti']}")
-            if revoked:
-                raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token revoked")
-        except Exception:
-            pass   # Redis unavailable → skip revocation check
+    if redis is None:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "Token revocation verification is temporarily unavailable",
+        )
+    try:
+        revoked = await redis.get(f"revoked_jti:{jti}")
+    except Exception as exc:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "Token revocation verification is temporarily unavailable",
+        ) from exc
+    if revoked:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token revoked")
 
     return payload
 
 
 async def _verify_api_key(key: str) -> dict:
     h = hashlib.sha256(key.encode()).hexdigest()
-    # Check in-memory store first
     entry = _api_key_store.get(h)
-    if entry:
-        return entry
-    # Then Redis
-    redis = await get_redis()
-    if redis:
+
+    # Keys persisted to Redis must be checked against Redis on every request.
+    # This prevents another worker's revocation from being bypassed by a stale
+    # in-memory cache entry.
+    if h in _redis_backed_api_keys:
+        redis = await get_redis()
+        if redis is None:
+            raise HTTPException(
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                "API-key verification is temporarily unavailable",
+            )
         try:
             raw = await redis.hgetall(f"api_key:{h}")
-            if raw:
-                return raw
-        except Exception:
-            pass
+        except Exception as exc:
+            raise HTTPException(
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                "API-key verification is temporarily unavailable",
+            ) from exc
+        if not raw:
+            _api_key_store.pop(h, None)
+            _redis_backed_api_keys.discard(h)
+            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid API key")
+        return raw
+
+    # Local-only bootstrap/development keys remain usable without Redis.
+    if entry:
+        return entry
+
+    # Keys created by another worker or before this process started.
+    redis = await get_redis()
+    if redis is None:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "API-key verification is temporarily unavailable",
+        )
+    try:
+        raw = await redis.hgetall(f"api_key:{h}")
+        if raw:
+            return raw
+    except Exception as exc:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "API-key verification is temporarily unavailable",
+        ) from exc
+
     raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid API key")
 
 
@@ -241,40 +315,124 @@ def require_scope(needed: str = "read"):
 # ── API key management ────────────────────────────────────
 async def create_api_key(name: str, scope: str = "read", device_id: str | None = None) -> str:
     key = secrets.token_urlsafe(32)
-    h   = hashlib.sha256(key.encode()).hexdigest()
+    h = hashlib.sha256(key.encode()).hexdigest()
     entry = {"name": name, "scope": scope, "created_at": str(time.time())}
     if device_id:
         entry["device_id"] = device_id
-    _api_key_store[h] = entry
+
     redis = await get_redis()
     if redis:
         try:
             await redis.hset(f"api_key:{h}", mapping=entry)
-        except Exception:
-            pass
+        except Exception as exc:
+            log.error("API-key persistence failed; key was not issued")
+            raise HTTPException(
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                "API-key storage is temporarily unavailable",
+            ) from exc
+        _redis_backed_api_keys.add(h)
+    else:
+        mode = os.environ.get("ENV", "").strip().lower()
+        if mode not in {"dev", "development", "test", "testing"}:
+            raise HTTPException(
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                "API-key storage is unavailable",
+            )
+
+    # Cache only after persistence succeeds, or in explicit development mode.
+    _api_key_store[h] = entry
     return key   # shown once — caller must store it
 
 
 async def revoke_api_key(key_hash: str) -> bool:
-    if key_hash in _api_key_store:
-        del _api_key_store[key_hash]
+    bootstrap_hash = hashlib.sha256(BOOTSTRAP_API_KEY.encode()).hexdigest()
+    if secrets.compare_digest(key_hash, bootstrap_hash):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "The bootstrap API key must be rotated through configuration",
+        )
+
+    local_exists = key_hash in _api_key_store
+    redis_backed = key_hash in _redis_backed_api_keys
     redis = await get_redis()
-    if redis:
-        try:
-            await redis.delete(f"api_key:{key_hash}")
-        except Exception:
-            pass
+
+    if redis is None:
+        if redis_backed or not local_exists:
+            raise HTTPException(
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                "Cannot verify API-key revocation while Redis is unavailable",
+            )
+        # A key known to be local-only can be revoked in this worker.
+        _api_key_store.pop(key_hash, None)
+        _redis_backed_api_keys.discard(key_hash)
+        return True
+
+    try:
+        deleted = await redis.delete(f"api_key:{key_hash}")
+    except Exception as exc:
+        log.error("API-key revocation failed because Redis deletion failed")
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "API-key revocation could not be confirmed",
+        ) from exc
+
+    if not local_exists and not deleted:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "API key not found")
+
+    # Remove the local cache only after Redis deletion succeeds.
+    _api_key_store.pop(key_hash, None)
+    _redis_backed_api_keys.discard(key_hash)
     return True
 
 
 async def revoke_jwt(jti: str, ttl: int = REFRESH_TTL_S):
-    """Add JTI to Redis blocklist (expires after refresh TTL)."""
+    """Add a JTI to Redis blocklist or fail without claiming revocation."""
+    if not isinstance(jti, str) or not jti:
+        raise ValueError("jti is required")
     redis = await get_redis()
-    if redis:
-        try:
-            await redis.setex(f"revoked_jti:{jti}", ttl, "1")
-        except Exception:
-            pass
+    if redis is None:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "Token revocation storage is temporarily unavailable",
+        )
+    try:
+        await redis.set(f"revoked_jti:{jti}", "1", ex=ttl)
+    except Exception as exc:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "Token revocation could not be confirmed",
+        ) from exc
+
+
+async def _consume_refresh_jti(jti: str, expires_at: int) -> None:
+    """Atomically mark a refresh JTI used; reject replay and storage failure."""
+    if not isinstance(jti, str) or not jti:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Refresh token is missing a JTI")
+
+    ttl = int(expires_at - time.time())
+    if ttl <= 0:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Refresh token expired")
+
+    redis = await get_redis()
+    if redis is None:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "Refresh-token verification is temporarily unavailable",
+        )
+    try:
+        consumed = await redis.set(
+            f"revoked_jti:{jti}",
+            "1",
+            ex=ttl,
+            nx=True,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "Refresh-token verification is temporarily unavailable",
+        ) from exc
+    if not consumed:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Refresh token already used")
 
 
 async def refresh_access_token(refresh_token: str) -> TokenPair:
@@ -286,9 +444,16 @@ async def refresh_access_token(refresh_token: str) -> TokenPair:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, str(e))
     if payload.get("type") != "refresh":
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Not a refresh token")
-    # Rotate: revoke old refresh token
-    await revoke_jwt(payload["jti"], REFRESH_TTL_S)
-    return issue_token_pair(payload["sub"], payload.get("scope", "read"))
+    subject = payload.get("sub")
+    if not isinstance(subject, str) or not subject:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Refresh token has no subject")
+    expires_at = payload.get("exp")
+    if isinstance(expires_at, bool) or not isinstance(expires_at, (int, float)):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Refresh token has no expiry")
+
+    # SET NX is a single-use check-and-consume, including concurrent requests.
+    await _consume_refresh_jti(payload.get("jti"), int(expires_at))
+    return issue_token_pair(subject, payload.get("scope", "read"))
 
 
 # ─────────────────────────────────────────────────────────

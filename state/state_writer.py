@@ -1,34 +1,86 @@
-# ==========================================================
-# System Knowledge Bot — State Writer
-#
-# Writes resolved system state to disk
-# Read-only for all consumers (GUI, CLI, voice)
-# ==========================================================
-
-import json
 from pathlib import Path
-from datetime import datetime, timezone
+import json
+from dataclasses import asdict, is_dataclass
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-STATE_DIR = PROJECT_ROOT / "system_state"
-HISTORY_DIR = STATE_DIR / "history"
+STATE_PATH = Path("state/latest.json")
+HISTORY_PATH = Path("state/history.json")
 
-STATE_DIR.mkdir(exist_ok=True)
-HISTORY_DIR.mkdir(exist_ok=True)
+MAX_HISTORY = 20
 
 
-def write_state(facts, judgments, posture):
-    timestamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
+def _serialize(value):
+    if is_dataclass(value):
+        return asdict(value)
 
-    record = {
-        "timestamp": timestamp,
-        "facts": facts,
-        "judgments": [j.__dict__ for j in judgments],
-        "posture": posture.__dict__,
+    if isinstance(value, dict):
+        return value
+
+    if isinstance(value, list):
+        return [_serialize(item) for item in value]
+
+    if hasattr(value, "__dict__"):
+        return value.__dict__
+
+    return value
+
+
+def _load_history():
+    if not HISTORY_PATH.exists():
+        return []
+
+    try:
+        with HISTORY_PATH.open("r", encoding="utf-8") as f:
+            history = json.load(f)
+
+        if isinstance(history, list):
+            return history
+
+    except (json.JSONDecodeError, OSError):
+        pass
+
+    return []
+
+
+def write_state(
+    facts,
+    judgments,
+    posture,
+    actions=None,
+    execution_plan=None,
+    execution_results=None,
+):
+    STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+    serialized_facts = _serialize(facts)
+    serialized_judgments = [_serialize(j) for j in judgments]
+    serialized_posture = _serialize(posture)
+
+    state = {
+        "facts": serialized_facts,
+        "judgments": serialized_judgments,
+        "posture": serialized_posture,
+        "actions": _serialize(actions or []),
+        "execution_plan": _serialize(execution_plan or []),
+        "execution_results": _serialize(execution_results or []),
     }
 
-    with open(STATE_DIR / "latest.json", "w") as f:
-        json.dump(record, f, indent=2)
+    # Current state
+    with STATE_PATH.open("w", encoding="utf-8") as f:
+        json.dump(state, f, indent=2, default=str)
 
-    with open(HISTORY_DIR / f"{timestamp}.json", "w") as f:
-        json.dump(record, f, indent=2)
+    # Historical telemetry
+    history = _load_history()
+
+    history.append({
+        "timestamp": serialized_facts.get("timestamp"),
+        "cpu": serialized_facts.get("cpu", {}),
+        "memory": serialized_facts.get("memory", {}),
+        "disk": serialized_facts.get("disk", {}),
+    })
+
+    history = history[-MAX_HISTORY:]
+
+    with HISTORY_PATH.open("w", encoding="utf-8") as f:
+        json.dump(history, f, indent=2, default=str)
+
+    return STATE_PATH

@@ -16,32 +16,58 @@
     },
     "cpu": {
       "type": "object",
-      "required": ["usage_percent", "cores"],
+      "required": [
+        "usage_percent",
+        "cores"
+      ],
       "properties": {
-        "usage_percent": { "type": "number" },
-        "cores": { "type": "integer" }
+        "usage_percent": {
+          "type": "number"
+        },
+        "cores": {
+          "type": "integer"
+        }
       }
     },
     "memory": {
       "type": "object",
-      "required": ["used_mb", "total_mb"],
+      "required": [
+        "used_mb",
+        "total_mb"
+      ],
       "properties": {
-        "used_mb": { "type": "number" },
-        "total_mb": { "type": "number" }
+        "used_mb": {
+          "type": "number"
+        },
+        "total_mb": {
+          "type": "number"
+        }
       }
     },
     "disk": {
       "type": "object",
-      "required": ["used_percent"],
+      "required": [
+        "used_percent"
+      ],
       "properties": {
-        "used_percent": { "type": "number" }
+        "used_percent": {
+          "type": "number"
+        }
       }
     },
     "load": {
       "type": "array",
-      "items": { "type": "number" },
+      "items": {
+        "type": "number"
+      },
       "minItems": 3,
       "maxItems": 3
+    },
+    "events": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
     }
   }
 }

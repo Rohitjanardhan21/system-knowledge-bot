@@ -2,7 +2,7 @@
 # 🧠 DECISION ENGINE (ZERO-HALLUCINATION + PRODUCTION SAFE)
 # ---------------------------------------------------------
 
-from backend.learning_engine import LearningEngine
+from backend.core.learning_engine import LearningEngine
 
 engine = LearningEngine()
 

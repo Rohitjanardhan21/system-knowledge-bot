@@ -177,7 +177,23 @@ async def get_db():
             _conn = await aiosqlite.connect(DB_PATH, check_same_thread=False)
             _conn.row_factory = aiosqlite.Row
             await _conn.executescript(_SCHEMA)
-                       # Backward-compatible schema migration.
+
+            # Backward-compatible prediction schema migration.
+            async with _conn.execute("PRAGMA table_info(predictions)") as cur:
+                prediction_columns = {row["name"] for row in await cur.fetchall()}
+
+            if "acknowledged" not in prediction_columns:
+                await _conn.execute(
+                    """
+                    ALTER TABLE predictions
+                    ADD COLUMN acknowledged INTEGER NOT NULL DEFAULT 0
+                    """
+                )
+                log.info("Added predictions.acknowledged column")
+
+            await _conn.commit()
+
+            # Backward-compatible schema migration.
             # Existing alerts keep lifecycle_version=1.
             async with _conn.execute("PRAGMA table_info(alerts)") as cur:
                 columns = {row["name"] for row in await cur.fetchall()}
@@ -603,10 +619,11 @@ async def save_prediction_outcome(outcome: dict) -> bool:
         return False
     try:
         await db.execute("""
-            INSERT OR REPLACE INTO prediction_outcomes (
+            INSERT INTO prediction_outcomes (
                 prediction_id, incident_id, outcome, lead_time_seconds,
                 false_positive, false_negative, prevented, validated_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(prediction_id) DO NOTHING
         """, (
             outcome.get("prediction_id"),
             outcome.get("incident_id"),

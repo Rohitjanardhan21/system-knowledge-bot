@@ -15,10 +15,15 @@ import subprocess
 import platform
 import logging
 import time
-from typing import Optional
+import stat
+from pathlib import Path
+from typing import Optional, Sequence
+
+from cvis_temp import cleanup_stale_temp_files
 
 log = logging.getLogger("cvis.actions")
 OS  = platform.system()
+PROJECT_LOG_DIR = Path(__file__).resolve().parents[3] / "logs"
 
 # ── Action registry ───────────────────────────────────────
 ACTIONS = {
@@ -70,10 +75,10 @@ ACTIONS = {
 }
 
 # ── Executors ─────────────────────────────────────────────
-def _run(cmd: str, shell=True) -> tuple[int, str]:
+def _run(cmd: Sequence[str]) -> tuple[int, str]:
     try:
         r = subprocess.run(
-            cmd, shell=shell, capture_output=True, text=True, timeout=30
+            list(cmd), shell=False, capture_output=True, text=True, timeout=30
         )
         return r.returncode, (r.stdout + r.stderr).strip()
     except subprocess.TimeoutExpired:
@@ -82,41 +87,23 @@ def _run(cmd: str, shell=True) -> tuple[int, str]:
         return -1, str(e)
 
 def action_clear_temp() -> dict:
-    freed = 0
-    results = []
-
-    # Linux/macOS
-    tmp_paths = ["/tmp", "/var/tmp"] if OS != "Windows" else [os.environ.get("TEMP", "C:\\Temp")]
-    for path in tmp_paths:
-        if not os.path.exists(path):
-            continue
-        before = shutil.disk_usage(path).used
-        try:
-            for item in os.scandir(path):
-                try:
-                    if item.is_file():
-                        os.unlink(item.path)
-                    elif item.is_dir():
-                        shutil.rmtree(item.path, ignore_errors=True)
-                except Exception:
-                    pass
-            after = shutil.disk_usage(path).used
-            freed += max(0, before - after)
-            results.append(f"Cleaned {path}")
-        except Exception as e:
-            results.append(f"Could not clean {path}: {e}")
-
+    removed, failed = cleanup_stale_temp_files()
     return {
-        "success": True,
-        "freed_mb": round(freed / 1024 / 1024, 1),
-        "details": results,
+        "success": failed == 0,
+        "removed": removed,
+        "failed": failed,
+        "details": [
+            "Removed stale CVIS-owned temporary files only."
+            if failed == 0
+            else f"Could not remove {failed} stale CVIS temporary file(s)."
+        ],
     }
 
 def action_clear_docker_cache() -> dict:
     if not shutil.which("docker"):
         return {"success": False, "details": ["Docker not found"]}
 
-    code, out = _run("docker system prune -f 2>&1")
+    code, out = _run(["docker", "system", "prune", "-f"])
     freed_line = [l for l in out.splitlines() if "reclaimed" in l.lower()]
     return {
         "success": code == 0,
@@ -127,34 +114,69 @@ def action_clear_docker_cache() -> dict:
 
 def action_clear_logs() -> dict:
     results = []
+    failures = []
     if OS == "Linux":
-        code, out = _run("journalctl --vacuum-size=50M 2>&1")
-        results.append(f"Journal: {out[:200]}")
+        code, out = _run(["journalctl", "--vacuum-size=50M"])
+        if code == 0:
+            results.append(f"Journal: {out[:200]}")
+        else:
+            failures.append(f"Journal cleanup failed: {out[:200]}")
 
-    # Clear CVIS logs
-    cvis_log_dirs = ["/app/logs", "./logs", os.path.expanduser("~/cvis/logs")]
-    for d in cvis_log_dirs:
-        if os.path.isdir(d):
-            for f in os.listdir(d):
-                if f.endswith(".log"):
+    if PROJECT_LOG_DIR.is_symlink():
+        failures.append(f"Refusing symlink log directory: {PROJECT_LOG_DIR}")
+    elif PROJECT_LOG_DIR.is_dir():
+        try:
+            with os.scandir(PROJECT_LOG_DIR) as entries:
+                for entry in entries:
+                    if not entry.name.endswith(".log"):
+                        continue
                     try:
-                        path = os.path.join(d, f)
-                        size = os.path.getsize(path)
-                        open(path, "w").close()
-                        results.append(f"Cleared {f} ({size//1024}KB)")
-                    except Exception:
-                        pass
+                        if entry.is_symlink() or not entry.is_file(
+                            follow_symlinks=False
+                        ):
+                            continue
+                        flags = os.O_WRONLY | getattr(os, "O_NOFOLLOW", 0)
+                        fd = os.open(entry.path, flags)
+                        try:
+                            if not stat.S_ISREG(os.fstat(fd).st_mode):
+                                failures.append(
+                                    f"Refusing non-regular log file: {entry.name}"
+                                )
+                                continue
+                            size = os.fstat(fd).st_size
+                            os.ftruncate(fd, 0)
+                        finally:
+                            os.close(fd)
+                        results.append(f"Cleared {entry.name} ({size // 1024}KB)")
+                    except OSError as exc:
+                        failures.append(f"Could not clear {entry.name}: {exc}")
+        except OSError as exc:
+            failures.append(f"Could not read log directory: {exc}")
+    else:
+        results.append("CVIS log directory not found")
 
-    return {"success": True, "details": results}
+    return {
+        "success": not failures,
+        "details": results + failures,
+        "failed": len(failures),
+    }
 
 def action_clear_pip_cache() -> dict:
-    code, out = _run("pip cache purge 2>&1")
+    code, out = _run([sys.executable, "-m", "pip", "cache", "purge"])
     return {
         "success": code == 0,
         "details": [out[:200]],
     }
 
 def action_drop_caches() -> dict:
+    # Disabled until trusted, one-time approval is implemented.
+    return {
+        "success": False,
+        "blocked": True,
+        "reason": "trusted_approval_not_implemented",
+        "details": ["drop_caches is disabled pending trusted approval."],
+    }
+
     import os
     import subprocess
 
@@ -635,10 +657,7 @@ EXECUTORS = {
 
 # Actions permitted to run from autonomous remediation.
 # Keep this list intentionally small and explicit.
-AUTONOMOUS_ALLOWED_ACTIONS = {
-    # No actions are currently approved for autonomous execution.
-    # drop_caches requires host-level privileges unavailable to the backend container.
-}
+AUTONOMOUS_ALLOWED_ACTIONS = {"clear_temp"}
 
 
 def execute_action(action_id: str, source: str = "manual") -> dict:
@@ -652,6 +671,37 @@ def execute_action(action_id: str, source: str = "manual") -> dict:
             "blocked": True,
             "reason": "action_not_allowed_for_autonomous_execution",
             "action_id": action_id,
+        }
+
+    # Fail closed until a trusted log-retention/path policy exists.
+    if action_id == "clear_logs":
+        return {
+            "success": False,
+            "blocked": True,
+            "reason": "trusted_log_path_policy_not_implemented",
+            "action_id": action_id,
+        }
+
+    # Defense in depth: do not dispatch this action without a trusted
+    # approval contract. Caller-provided flags are not authorization.
+    if action_id == "drop_caches":
+        return {
+            "success": False,
+            "blocked": True,
+            "reason": "trusted_approval_not_implemented",
+            "action_id": action_id,
+        }
+
+    # Fail closed until trusted, action-specific approval exists.
+    if action_id in {"clear_docker_cache", "clear_pip_cache"}:
+        return {
+            "success": False,
+            "blocked": True,
+            "reason": "trusted_approval_not_implemented",
+            "action_id": action_id,
+            "details": [
+                f"{action_id} is disabled pending trusted, one-time approval."
+            ],
         }
 
     start = time.time()
@@ -689,10 +739,5 @@ async def run_action(action_id: str):
 """
 
 if __name__ == "__main__":
-    # Test all actions
-    for action_id in EXECUTORS:
-        print(f"\nTesting: {action_id}")
-        result = execute_action(action_id)
-        print(f"  Success: {result['success']}")
-        for d in result.get("details", [])[:2]:
-            print(f"  {d}")
+    print("Actions are not executed by direct module invocation.")
+    print("Invoke a specific action through the authenticated API instead.")

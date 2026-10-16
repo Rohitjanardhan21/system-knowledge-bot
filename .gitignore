@@ -113,3 +113,40 @@ bot_audit/*
 
 # Runtime-generated system collector state
 system_collector/system_facts/nodes/
+
+# Resolved Docker configuration — may contain secrets
+compose-resolved.yml
+
+# Timestamped local backups
+*.backup-*
+
+# Local test/runtime state (do not commit generated execution records)
+state/*.lock
+state/**/*.lock
+state/*.tmp
+state/**/*.tmp
+state/actions.json
+state/audit.json
+state/history.json
+state/latest.json
+state/current_generation_worker_*.json
+state/recovery_race_*.json
+state/recovery-isolation-*-worker-*.json
+state/stale_generation_result.json
+state/**/cleanup_*.tmp
+state/**/worker_*_side_effect.tmp
+
+# Local test output captures
+collected.txt
+test_output.txt
+linux_tests.txt
+windows_tests.txt
+
+# Local incident evidence — preserve locally, do not commit
+state/incident-evidence_*/
+
+# Timestamped test output captures
+test_output_*.txt
+
+# Local safety backups — preserve locally, do not commit
+.safety-backup/

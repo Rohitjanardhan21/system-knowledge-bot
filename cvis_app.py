@@ -18,6 +18,7 @@ Build:
 
 import sys
 import os
+import secrets
 import threading
 import time
 import json
@@ -48,7 +49,8 @@ log = logging.getLogger("cvis.app")
 
 # Constants
 BACKEND_URL  = "http://localhost:9000"   # port 9000 — avoids Windows reserved ports
-API_KEY      = "test123"
+API_KEY      = os.environ.get("CVIS_API_KEY") or secrets.token_urlsafe(32)
+os.environ["CVIS_API_KEY"] = API_KEY
 WINDOW_W     = 1440
 WINDOW_H     = 900
 MIN_W        = 1024
@@ -163,18 +165,6 @@ def _start_backend():
         # Always run from repo root so all relative paths resolve correctly
         os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
-        # Clear port 9000 if a previous instance is still holding it
-        if sys.platform == "win32":
-            import subprocess
-            subprocess.call(
-                f'for /f "tokens=5" %a in (\'netstat -ano ^| findstr :{PORT}\') '
-                f'do taskkill /F /PID %a',
-                shell=True,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-            time.sleep(0.8)
-
         os.makedirs("data",           exist_ok=True)
         os.makedirs("logs",           exist_ok=True)
         os.makedirs("model_versions", exist_ok=True)
@@ -197,7 +187,7 @@ def _start_backend():
         log.info("Starting CVIS backend on %s", BACKEND_URL)
         uvicorn.run(
             fastapi_app,
-            host="0.0.0.0",
+            host="127.0.0.1",
             port=PORT,
             log_level="warning",
             access_log=False,
@@ -221,10 +211,9 @@ def _wait_for_backend(timeout: int = 60) -> bool:
                 return True
         except Exception:
             time.sleep(1.0)
-    # Even if health check failed from this thread, backend may still
-    # be accessible from pywebview — let it try anyway
-    _backend_up = True
-    return True
+    _backend_up = False
+    log.error("Backend health check failed after %s seconds", timeout)
+    return False
 
 
 # Notifications

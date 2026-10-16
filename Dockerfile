@@ -40,6 +40,11 @@ COPY --chown=cvis:cvis frontend/ ./frontend/
 # 🔥 Copy FULL backend (includes gunicorn_conf.py, main.py, etc.)
 COPY --chown=cvis:cvis backend/ ./backend/
 COPY --chown=cvis:cvis frontend/ ./frontend/
+COPY --chown=cvis:cvis cvis_temp.py ./cvis_temp.py
+COPY --chown=cvis:cvis agent/ ./agent/
+COPY --chown=cvis:cvis preflight/ ./preflight/
+COPY --chown=cvis:cvis timeline/ ./timeline/
+COPY --chown=cvis:cvis judgment/ ./judgment/
 
 # Ensure Python can resolve modules
 ENV PYTHONPATH=/app

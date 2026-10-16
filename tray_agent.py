@@ -6,7 +6,7 @@ No browser needed. Like a smoke detector — you forget it's there until it save
 
 Usage:
     python3 tray_agent.py
-    python3 tray_agent.py --server http://localhost:8000 --key test123
+    python3 tray_agent.py --server http://localhost:8000 --key YOUR_API_KEY
 
 Requirements:
     pip install pystray pillow plyer requests
@@ -17,16 +17,22 @@ import sys
 import os
 import argparse
 import requests
+import subprocess
 from datetime import datetime
 
 # ── Config ────────────────────────────────────────────────
 DEFAULT_SERVER  = "http://localhost:8000"
-DEFAULT_KEY     = "test123"
+DEFAULT_KEY     = os.environ.get("CVIS_API_KEY", "")
 POLL_INTERVAL   = 10   # seconds between checks
 NOTIFY_COOLDOWN = 300  # seconds between same-type notifications
 
 # ── Notification cooldown tracker ─────────────────────────
 _last_notified: dict = {}
+
+def _applescript_string(value: str) -> str:
+    flattened = " ".join(value.splitlines())
+    escaped = flattened.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
 
 def should_notify(key: str) -> bool:
     now = time.time()
@@ -50,18 +56,36 @@ def notify(title: str, message: str, urgency: str = "normal"):
     except Exception:
         pass
 
-    # Fallback per OS
+    # Fallback per OS. Keep remote notification text out of a shell.
     import platform
     OS = platform.system()
     try:
         if OS == "Darwin":
-            os.system(f'osascript -e \'display notification "{message}" with title "{title}"\'')
+            script = (
+                f"display notification {_applescript_string(message)} "
+                f"with title {_applescript_string(title)}"
+            )
+            result = subprocess.run(
+                ["osascript", "-e", script],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
         elif OS == "Linux":
-            os.system(f'notify-send "{title}" "{message}" -t 8000')
+            result = subprocess.run(
+                ["notify-send", title, message, "-t", "8000"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
         else:
             print(f"[CVIS] {title}: {message}")
-    except Exception:
-        print(f"[CVIS] {title}: {message}")
+            return
+
+        if result.returncode != 0:
+            print(f"[CVIS] Notification failed: {result.stderr.strip()}")
+    except Exception as exc:
+        print(f"[CVIS] Notification failed: {exc}")
 
 # ── Health check ──────────────────────────────────────────
 def check_health(server: str, key: str) -> dict | None:
@@ -216,6 +240,8 @@ if __name__ == "__main__":
     parser.add_argument("--console", action="store_true",
                         help="Run in console mode without tray icon")
     args = parser.parse_args()
+    if not args.key:
+        parser.error("provide --key or set CVIS_API_KEY")
 
     notify("CVIS Started", f"Monitoring {args.server} silently in background.")
 

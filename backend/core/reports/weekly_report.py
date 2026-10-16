@@ -34,7 +34,7 @@ from typing import Optional
 log = logging.getLogger("cvis.email")
 
 DEFAULT_SERVER = "http://localhost:8000"
-DEFAULT_KEY    = os.environ.get("CVIS_API_KEY", "test123")
+DEFAULT_KEY    = os.environ.get("CVIS_API_KEY", "")
 
 
 # ─────────────────────────────────────────────────────────

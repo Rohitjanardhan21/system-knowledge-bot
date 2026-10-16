@@ -1,5 +1,12 @@
 import json
+import platform
+import socket
+import time
+import sys
 from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(PROJECT_ROOT))
 
 from system_collectors.factory import get_collector
 
@@ -10,10 +17,26 @@ def main():
     collector = get_collector()
     facts = collector.collect_all()
 
-    with open(OUTPUT_PATH, "w") as f:
-        json.dump(facts, f, indent=2)
+    sample = {
+        "schema_version": "1.0",
+        "device": {
+            "hostname": socket.gethostname(),
+            "os": platform.system().lower(),
+            "platform": platform.platform()
+        },
+        "timestamp": time.time(),
+        "collected_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "data_quality": {
+            "fresh": True,
+            "missing": []
+        },
+        "facts": facts
+    }
 
-    print("System facts collected successfully.")
+    with open(OUTPUT_PATH, "w", encoding="utf-8") as f:
+        json.dump(sample, f, indent=2)
+
+    print("System telemetry collected successfully.")
 
 if __name__ == "__main__":
     main()

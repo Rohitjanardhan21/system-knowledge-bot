@@ -1,11 +1,14 @@
 # CVIS v9 — Python dependencies
 # Core API
-fastapi==0.115.5
+# Starlette 1.x avoids AnyIO's deprecated BlockingPortal alias in TestClient.
+fastapi==0.143.0
+starlette==1.8.0
 uvicorn[standard]==0.32.1
 pydantic==2.9.2
 
 # HTTP client (async webhooks)
 httpx==0.28.0
+httpx2==2.13.1
 
 # OS metrics
 psutil==6.1.0

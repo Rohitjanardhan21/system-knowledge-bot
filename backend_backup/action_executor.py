@@ -1,3 +1,4 @@
+import os
 import time
 import psutil
 from datetime import datetime
@@ -235,6 +236,11 @@ class ActionExecutor:
     # 🔥 SAFE PROCESS KILL
     # ---------------------------------------------------------
     def kill_process_by_name(self, target_name):
+        if os.environ.get("CVIS_ENABLE_LEGACY_PROCESS_TERMINATION") != "1":
+            return {
+                "status": "blocked",
+                "reason": "legacy_process_termination_disabled",
+            }
 
         for proc in psutil.process_iter(['pid', 'name']):
             try:

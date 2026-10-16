@@ -1,18 +1,13 @@
+import os
 """
 CVIS v9 — tests/test_suite.py
 Coverage: auth, redis_store (mocked), ml_engine, alert_engine, API endpoints
 """
-
-import os
-
-# ── bootstrap env BEFORE importing app modules ───────────
-os.environ.setdefault("CVIS_API_KEY",     "test-bootstrap-key-abc123")
-os.environ.setdefault( "JWT_SECRET", "test-jwt-secret-not-for-prod-2026")
 os.environ.setdefault("CVIS_ADMIN_PASS",  "test-admin-pass")
 os.environ.setdefault("CVIS_ADMIN_USER",  "admin")
 os.environ.setdefault("REDIS_URL",        "redis://localhost:6379/0")
 
-import asyncio, hashlib, time
+import asyncio, hashlib, os, time
 import numpy as np
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
@@ -38,13 +33,19 @@ class TestAuth:
         from backend.core.auth.auth import issue_token_pair, _verify_jwt, JWT_OK
         if not JWT_OK:
             pytest.skip("PyJWT not installed")
-        pair   = issue_token_pair("test-user", scope="read")
+        pair = issue_token_pair("test-user", scope="read")
         assert pair.access_token
         assert pair.refresh_token
         assert pair.expires_in > 0
-        loop   = asyncio.new_event_loop()
-        payload = loop.run_until_complete(_verify_jwt(pair.access_token))
-        loop.close()
+
+        mock_redis = MagicMock()
+        mock_redis.get = AsyncMock(return_value=None)
+        with patch(
+            "backend.core.auth.auth.get_redis",
+            new=AsyncMock(return_value=mock_redis),
+        ):
+            payload = asyncio.run(_verify_jwt(pair.access_token))
+
         assert payload["sub"] == "test-user"
         assert payload["scope"] == "read"
         assert payload["type"] == "access"
@@ -116,12 +117,13 @@ class TestRedisStore:
         stored  = None
 
         mock_redis = AsyncMock()
-        async def _setex(key, ttl, value):
+        async def _set(key, value, ex):
             nonlocal stored
             stored = value
+            assert ex == 3
         async def _get(key):
             return stored
-        mock_redis.setex = _setex
+        mock_redis.set = _set
         mock_redis.get   = _get
 
         with patch("backend.core.storage.redis_store.get_client", AsyncMock(return_value=mock_redis)):
@@ -396,12 +398,11 @@ class TestAPIEndpoints:
         assert created["status"] == "pending"
 
         from backend.core.auth.auth import create_api_key
-        device_key = asyncio.run(
-            create_api_key(
-                "api-test-device",
-                scope="write",
-                device_id=device_id,
-            )
+        device_key = client.portal.call(
+            create_api_key,
+            "api-test-device",
+            "write",
+            device_id,
         )
         device_headers = {"X-API-Key": device_key}
 
@@ -494,3 +495,37 @@ class TestAPIEndpoints:
             headers=AUTH_HEADERS,
         )
         assert r.status_code == 404
+
+    def test_jwt_revoked_token_rejected(self):
+        from fastapi import HTTPException
+        from backend.core.auth.auth import issue_token_pair, _verify_jwt
+        pair = issue_token_pair("test-user", scope="read")
+        mock_redis = MagicMock()
+        mock_redis.get = AsyncMock(return_value="revoked")
+        with patch("backend.core.auth.auth.get_redis",
+                   new=AsyncMock(return_value=mock_redis)):
+            with pytest.raises(HTTPException) as exc:
+                asyncio.run(_verify_jwt(pair.access_token))
+        assert exc.value.status_code == 401
+
+    def test_jwt_rejects_when_redis_missing(self):
+        from fastapi import HTTPException
+        from backend.core.auth.auth import issue_token_pair, _verify_jwt
+        pair = issue_token_pair("test-user", scope="read")
+        with patch("backend.core.auth.auth.get_redis",
+                   new=AsyncMock(return_value=None)):
+            with pytest.raises(HTTPException) as exc:
+                asyncio.run(_verify_jwt(pair.access_token))
+        assert exc.value.status_code == 503
+
+    def test_jwt_rejects_when_redis_fails(self):
+        from fastapi import HTTPException
+        from backend.core.auth.auth import issue_token_pair, _verify_jwt
+        pair = issue_token_pair("test-user", scope="read")
+        mock_redis = MagicMock()
+        mock_redis.get = AsyncMock(side_effect=ConnectionError("test outage"))
+        with patch("backend.core.auth.auth.get_redis",
+                   new=AsyncMock(return_value=mock_redis)):
+            with pytest.raises(HTTPException) as exc:
+                asyncio.run(_verify_jwt(pair.access_token))
+        assert exc.value.status_code == 503

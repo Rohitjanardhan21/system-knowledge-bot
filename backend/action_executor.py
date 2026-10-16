@@ -1,5 +1,6 @@
 import time
 import psutil
+from backend.core.process_lifecycle import get_process_lifecycle_monitor
 from datetime import datetime, timezone
 
 from backend.timeline_engine import log_event
@@ -14,6 +15,9 @@ from backend.action_history import record as record_action
 from backend.os_system.action_feedback import penalize, is_blocked
 from backend.policy_engine import is_action_allowed
 from backend.core.actions.action_executor import ACTIONS, execute_action
+
+# In-process capability granted only after successful approval consumption.
+_PROCESS_TERMINATION_AUTHORITY = object()
 
 
 COOLDOWN_SECONDS = 2
@@ -60,6 +64,12 @@ class ActionExecutor:
         self.last_global_action = 0
 
         self.agent = agent if agent is not None else DQNAgent()
+        if isinstance(self.agent, DQNAgent):
+            self.simulation_agent = DQNAgent(
+                checkpoint_path=f"{self.agent.checkpoint_path}.simulation"
+            )
+        else:
+            self.simulation_agent = self.agent
 
         self.simulator = SimulationEngine({
             "cpu": {"memory": 0.3},
@@ -159,7 +169,7 @@ class ActionExecutor:
     # ---------------------------------------------------------
     # 🔥 MAIN EXECUTION
     # ---------------------------------------------------------
-    def execute(self, decision):
+    def execute(self, decision, source="manual"):
 
         action = decision.get("action")
         context = decision.get("context", "general")
@@ -243,8 +253,73 @@ class ActionExecutor:
                 "simulated": simulated
             }
 
+        # ---------------- DESTRUCTIVE ACTION APPROVAL ----------------
+        # Approval is mandatory for process termination, regardless of
+        # source, confidence, or caller-provided confirmation flags.
+        if action in {"kill_process", "kill_high_cpu_process"}:
+            approval_id = decision.get("approval_id")
+            device_id = decision.get("device_id")
+            expected_pid = decision.get("target_pid")
+            expected_create_time = decision.get("target_create_time")
+
+            if (
+                not approval_id
+                or not device_id
+                or not target_name
+                or expected_pid is None
+                or expected_create_time is None
+            ):
+                return {
+                    "status": "blocked_approval",
+                    "action": action,
+                    "reason": "approval_and_exact_identity_required",
+                    "message": "No process was terminated.",
+                }
+
+            try:
+                from backend.core.auth.approval_service import consume_approval
+
+                authorized = consume_approval(
+                    approval_id,
+                    device_id=device_id,
+                    action=action,
+                    pid=expected_pid,
+                    create_time=expected_create_time,
+                    name=target_name,
+                )
+            except Exception:
+                # Fail closed if approval verification is unavailable.
+                return {
+                    "status": "blocked_approval",
+                    "action": action,
+                    "reason": "approval_verification_unavailable",
+                    "message": "No process was terminated.",
+                }
+
+            if not authorized:
+                return {
+                    "status": "blocked_approval",
+                    "action": action,
+                    "reason": "approval_invalid_expired_or_already_used",
+                    "message": "No process was terminated.",
+                }
+
         # ---------------- EXECUTION ----------------
-        result = self._execute_action(action, target_name, decision)
+        termination_authority = (
+            _PROCESS_TERMINATION_AUTHORITY
+            if action in {"kill_process", "kill_high_cpu_process"}
+            else None
+        )
+        result = self._execute_action(
+            action,
+            target_name,
+            decision,
+            source=source,
+            termination_authority=termination_authority,
+        )
+
+        # Preserve execution provenance for auditing and safety tests.
+        result["execution_source"] = source
 
         time.sleep(1)
 
@@ -262,6 +337,10 @@ class ActionExecutor:
         # ---------------- REWARD ----------------
         reward = self._compute_reward(before, after, result)
 
+        # Learning reward must never be positive without verified success.
+        if not verification.get("verified", False):
+            reward = min(float(reward), 0.0)
+
         next_state = self.agent.encode_state(after)
 
         if result.get("status") == "executed":
@@ -270,16 +349,17 @@ class ActionExecutor:
             # for replay so DQNAgent.remember() receives its own vocabulary.
             learning_action = decision.get("learning_action", action)
 
-            self.agent.remember(
-                state,
-                learning_action,
-                reward,
-                next_state,
-            )
-            self.agent.train()
+            if verification.get("verified", False):
+                self.agent.remember(
+                    state,
+                    learning_action,
+                    reward,
+                    next_state,
+                )
+                self.agent.train()
+                update_optimizer("balanced", reward)
 
             store_experience(state.tolist(), action, reward, before, after, verification)
-            update_optimizer("balanced", reward)
             record_action(action, reward)
 
             if reward < 0:
@@ -319,8 +399,8 @@ class ActionExecutor:
         if not isinstance(metrics, dict):
             return {"status": "invalid_metrics", "trained": False}
 
-        state = self.agent.encode_state(metrics)
-        action = self.agent.select_action(state)
+        state = self.simulation_agent.encode_state(metrics)
+        action = self.simulation_agent.select_action(state)
 
         before_score = self.simulator.evaluate_state(
             metrics, context=context
@@ -391,13 +471,13 @@ class ActionExecutor:
 
         reward = selected["reward"]
         after_score = selected["score"]
-        next_state = self.agent.encode_state(simulated)
+        next_state = self.simulation_agent.encode_state(simulated)
 
-        self.agent.remember(
+        self.simulation_agent.remember(
             state, action, reward, next_state
         )
 
-        loss = self.agent.train()
+        loss = self.simulation_agent.train()
 
         return {
             "status": "simulated",
@@ -434,7 +514,19 @@ class ActionExecutor:
     # ---------------------------------------------------------
     # ACTION HANDLER
     # ---------------------------------------------------------
-    def _execute_action(self, action, target_name, decision):
+    def _execute_action(
+        self, action, target_name, decision, source="manual",
+        termination_authority=None,
+    ):
+
+        if action in {"kill_process", "kill_high_cpu_process"}:
+            if termination_authority is not _PROCESS_TERMINATION_AUTHORITY:
+                return {
+                    "status": "blocked_approval",
+                    "action": action,
+                    "reason": "trusted_termination_authority_required",
+                    "message": "No process was terminated.",
+                }
 
         if action == "kill_process":
             # Destructive process termination MUST carry an exact identity.
@@ -454,10 +546,11 @@ class ActionExecutor:
                     ),
                 }
 
-            return self.kill_process_by_name(
+            return self._terminate_process_by_identity(
                 target_name,
                 expected_pid=expected_pid,
                 expected_create_time=expected_create_time,
+                termination_authority=termination_authority,
             )
 
         if action == "kill_high_cpu_process":
@@ -479,16 +572,17 @@ class ActionExecutor:
                     ),
                 }
 
-            return self.kill_process_by_name(
+            return self._terminate_process_by_identity(
                 target_name,
                 expected_pid=expected_pid,
                 expected_create_time=expected_create_time,
+                termination_authority=termination_authority,
             )
 
         if action == "throttle_process":
             return {"status": "executed", "action": "throttle"}
 
-        canonical = execute_action(action, source="manual")
+        canonical = execute_action(action, source=source)
 
         return {
             "status": "executed" if canonical.get("success") else "failed",
@@ -501,6 +595,23 @@ class ActionExecutor:
     # ---------------------------------------------------------
     def kill_process_by_name(self, target_name, expected_pid=None,
                              expected_create_time=None):
+        """Public entry point: direct termination is not authorized."""
+        return {
+            "status": "blocked_approval",
+            "reason": "trusted_termination_authority_required",
+            "message": "No process was terminated.",
+        }
+
+    def _terminate_process_by_identity(
+        self, target_name, expected_pid=None, expected_create_time=None,
+        termination_authority=None,
+    ):
+        if termination_authority is not _PROCESS_TERMINATION_AUTHORITY:
+            return {
+                "status": "blocked_approval",
+                "reason": "trusted_termination_authority_required",
+                "message": "No process was terminated.",
+            }
         """
         Terminate a process only after validating its identity.
 
@@ -685,7 +796,24 @@ class ActionExecutor:
                 "cmdline": current.get("cmdline"),
             }
 
-            proc.terminate()
+            # Register the exact process identity as an expected termination
+            # immediately before the destructive operation.  The lifecycle
+            # monitor uses PID + creation time, so PID reuse cannot consume
+            # this authorization.
+            lifecycle_monitor = get_process_lifecycle_monitor()
+            lifecycle_monitor.mark_expected_termination(
+                int(current.get("pid")),
+                float(current_create_time),
+            )
+
+            try:
+                proc.terminate()
+            except Exception:
+                lifecycle_monitor.clear_expected_termination(
+                    int(current.get("pid")),
+                    float(current_create_time),
+                )
+                raise
 
             try:
                 proc.wait(timeout=5)
@@ -748,6 +876,10 @@ class ActionExecutor:
     def _compute_reward(self, before, after, result):
 
         if result.get("status") != "executed":
+            return -0.5
+
+        verification = result.get("verification") or {}
+        if not verification.get("verified", False):
             return -0.5
 
         action = result.get("action")

@@ -31,10 +31,17 @@ class AutoRemediationEngine:
     MAX_ACTIONS_PER_HOUR = 3
 
     REMEDIATION_MAP = {
-        "OOM":       [{"action_id":"drop_caches","label":"Drop Page Cache","min_confidence":85.0}],
-        "DISK_FULL": [{"action_id":"clear_logs","label":"Rotate & Clear Logs","min_confidence":85.0},
-                      {"action_id":"clear_temp","label":"Clear Temp Files","min_confidence":88.0}],
-        "CPU_STRESS":[], "CRASH":[], "THERMAL":[],
+        "OOM": [],
+        "DISK_FULL": [
+            {
+                "action_id": "clear_temp",
+                "label": "Clear Temp Files",
+                "min_confidence": 88.0,
+            }
+        ],
+        "CPU_STRESS": [],
+        "CRASH": [],
+        "THERMAL": [],
     }
 
     def __init__(self):

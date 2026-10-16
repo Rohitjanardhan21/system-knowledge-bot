@@ -45,8 +45,31 @@ async def get_client():
         return _client
     except Exception as e:
         log.warning("Redis unavailable (%s) — falling back to in-memory", e)
+        client = _client
         _client = None
+        if client is not None:
+            try:
+                await client.aclose()
+            except Exception:
+                log.exception("Failed to close unavailable Redis client")
         return None
+
+
+async def close_client():
+    """Close cached Redis connections during application shutdown."""
+    global _client, _pubsub_client
+    clients = (_client, _pubsub_client)
+    _client = None
+    _pubsub_client = None
+    closed_ids = set()
+    for client in clients:
+        if client is None or id(client) in closed_ids:
+            continue
+        closed_ids.add(id(client))
+        try:
+            await client.aclose()
+        except Exception:
+            log.exception("Failed to close Redis client")
 
 
 async def is_healthy() -> bool:
@@ -157,7 +180,7 @@ async def cache_metrics(metrics: dict, ttl: int = 3):
     if not c:
         return
     try:
-        await c.setex("cvis:metrics:latest", ttl, json.dumps(metrics))
+        await c.set("cvis:metrics:latest", json.dumps(metrics), ex=ttl)
     except Exception:
         pass
 
@@ -183,7 +206,7 @@ async def blocklist_token(jti: str, ttl: int = 604800):
     if not c:
         return
     try:
-        await c.setex(f"cvis:revoked_jti:{jti}", ttl, "1")
+        await c.set(f"cvis:revoked_jti:{jti}", "1", ex=ttl)
     except Exception:
         pass
 

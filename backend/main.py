@@ -11,10 +11,10 @@ BASE_DIR = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
 if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 
-import asyncio, json as _json, threading, time, os
+import asyncio, hashlib, json as _json, threading, time, os
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 from collections import deque
 
 import numpy as np
@@ -25,18 +25,19 @@ from fastapi.responses import (
     PlainTextResponse, StreamingResponse,
 )
 from fastapi.staticfiles import StaticFiles as _SS
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from backend.core.logging.logging_config import (
     setup_logging, CorrelationIDMiddleware, AccessLogMiddleware,
 )
 from backend.core.auth.auth import (
     require_scope, create_api_key, revoke_api_key,
-    issue_token_pair, refresh_access_token, get_redis,
+    issue_token_pair, refresh_access_token, get_redis, close_redis_client,
+    _read_secret,
 )
 from backend.core.storage.redis_store import (
     alert_check_and_set, cache_metrics, get_cached_metrics,
-    redis_info, publish_event, incr_counter,
+    redis_info, publish_event, incr_counter, close_client as close_redis_store,
 )
 from backend.core.ml.ml_engine           import get_engine
 from backend.core.ml.remote_inference     import RemoteInferenceManager
@@ -71,6 +72,18 @@ try:
 except ImportError:
     PS_OK = False
     log.warning("psutil not found — synthetic metrics active")
+
+try:
+    from backend.core.process_lifecycle import (
+        get_process_lifecycle_monitor,
+    )
+    PROCESS_LIFECYCLE_OK = True
+except Exception as _process_lifecycle_error:
+    PROCESS_LIFECYCLE_OK = False
+    log.warning(
+        "Process lifecycle monitor unavailable: %s",
+        _process_lifecycle_error,
+    )
 
 feature_buffer: deque = deque(maxlen=600)
 _last_metrics: dict   = {}
@@ -476,22 +489,50 @@ async def _push_and_persist(metrics: dict, scores):
         log.exception("Event pipeline failed: %s", exc)
 
 
+def _record_process_crash(event: dict) -> None:
+    if not COGNITIVE_OK:
+        return
+
+    description = (
+        f"Process PID={event['pid']} ({event['name']}) terminated "
+        f"unexpectedly; create_time={event['create_time']}; "
+        f"exit code {event['exit_code']}; "
+        f"executable={event['exe']}"
+    )
+
+    try:
+        get_dna_engine().record_failure(
+            "PROCESS_CRASH",
+            description,
+            severity="HIGH",
+        )
+    except Exception:
+        log.exception(
+            "Failed to record PROCESS_CRASH for PID %s",
+            event.get("pid"),
+        )
+
+
 def _collect():
-    # ── Windows fix ──────────────────────────────────────
-    # On Windows the asyncio event loop is not transferable
-    # across threads. Without this, run_coroutine_threadsafe
-    # raises "RuntimeError: Event loop is closed".
-    if sys.platform == "win32":
-        asyncio.set_event_loop(asyncio.new_event_loop())
 
     engine    = get_engine()
     registry  = get_registry()
+    lifecycle_monitor = (
+        get_process_lifecycle_monitor()
+        if PROCESS_LIFECYCLE_OK
+        else None
+    )
     last_save = time.time()
 
     AUTOSAVE_INTERVAL = int(os.environ.get("AUTOSAVE_INTERVAL_S", "300"))
 
     while not _collector_stop.is_set():
         try:
+            if lifecycle_monitor is not None:
+                lifecycle_monitor.observe_and_detect(
+                    on_unexpected_termination=_record_process_crash,
+                )
+
             feat, raw = _build_feature_vector()
             with _lock:
                 feature_buffer.append(feat)
@@ -816,16 +857,27 @@ async def lifespan(app: FastAPI):
 
             await asyncio.sleep(5)
 
-    asyncio.create_task(_alert_loop())
+    alert_task = asyncio.create_task(_alert_loop())
     log.info("Synapse started — SQLite at %s", os.environ.get("DB_PATH", "cvis.db"))
     yield
+    alert_task.cancel()
+    try:
+        await alert_task
+    except asyncio.CancelledError:
+        pass
     _collector_stop.set()
     if _collector_thread is not None and _collector_thread.is_alive():
         await asyncio.to_thread(_collector_thread.join, 5.0)
         if _collector_thread.is_alive():
             log.warning("Collector thread did not stop within shutdown timeout")
-    await close_db()
-    log.info("Synapse shutdown — DB closed")
+    try:
+        await close_redis_store()
+    finally:
+        try:
+            await close_redis_client()
+        finally:
+            await close_db()
+    log.info("Synapse shutdown — DB and Redis clients closed")
 
 
 app = FastAPI(
@@ -833,7 +885,12 @@ app = FastAPI(
     version="1.0.6",
     description="Synapse — PyTorch LSTM + beta-VAE + sklearn IF · Versioning · Alerts · Auth · Redis",
     lifespan=lifespan,
-    docs_url="/docs" if os.environ.get("ENV") != "prod" else None,
+    docs_url=(
+        "/docs"
+        if os.environ.get("ENV", "").strip().lower()
+        not in {"prod", "production"}
+        else None
+    ),
     redoc_url=None,
 )
 
@@ -842,7 +899,7 @@ app.include_router(
     dependencies=[Depends(require_scope("read"))],
 )
 
-_ALLOWED_ORIGIN = os.environ.get("ALLOWED_ORIGIN", "*")
+_ALLOWED_ORIGIN = os.environ.get("ALLOWED_ORIGIN", "")
 _origins = (
     [o.strip() for o in _ALLOWED_ORIGIN.split(",")]
     if _ALLOWED_ORIGIN != "*"
@@ -859,7 +916,12 @@ app.add_middleware(CorrelationIDMiddleware)
 app.add_middleware(AccessLogMiddleware)
 
 
-@app.get("/stream", tags=["System"], include_in_schema=False)
+@app.get(
+    "/stream",
+    tags=["System"],
+    include_in_schema=False,
+    dependencies=[Depends(require_scope("read"))],
+)
 async def sse_stream(request: Request):
     async def event_gen():
         while True:
@@ -910,20 +972,69 @@ class LoginRequest(BaseModel):
 
 class ApiKeyRequest(BaseModel):
     name:  str
-    scope: str = "read"
+    scope: Literal["read", "write", "admin"] = "read"
     device_id: str | None = None
 
 class RefreshRequest(BaseModel):
     refresh_token: str
 
-_USERS = {
-    os.environ.get("CVIS_ADMIN_USER", "admin"):
-    os.environ.get("CVIS_ADMIN_PASS", "changeme"),
-}
+_ADMIN_USER = _read_secret("CVIS_ADMIN_USER")
+_ADMIN_PASS = _read_secret("CVIS_ADMIN_PASS")
+LOGIN_FAILURE_LIMIT = 5
+LOGIN_FAILURE_WINDOW_S = 60
+_USERS = (
+    {_ADMIN_USER: _ADMIN_PASS}
+    if _ADMIN_USER and _ADMIN_PASS
+    else {}
+)
+if (
+    os.environ.get("ENV", "").strip().lower() in {"prod", "production"}
+    and not _USERS
+):
+    raise RuntimeError(
+        "CVIS_ADMIN_USER and CVIS_ADMIN_PASS must be configured in production"
+    )
 
 @app.post("/auth/login", tags=["Auth"])
-async def login(req: LoginRequest):
+async def login(req: LoginRequest, request: Request):
     if _USERS.get(req.username) != req.password:
+        redis = await get_redis()
+        if redis is None:
+            raise HTTPException(
+                503, "Login rate limiting is temporarily unavailable"
+            )
+
+        client_host = request.client.host if request.client else "unknown"
+        client_hash = hashlib.sha256(client_host.encode()).hexdigest()
+        key = f"cvis:auth:login-fail:{client_hash}"
+        script = """
+local count = redis.call('INCR', KEYS[1])
+if count == 1 then
+    redis.call('EXPIRE', KEYS[1], ARGV[1])
+end
+return count
+"""
+        try:
+            failure_count = await redis.eval(
+                script, 1, key, LOGIN_FAILURE_WINDOW_S
+            )
+        except Exception as exc:
+            log.warning("Login rate-limit check failed: %s", exc)
+            raise HTTPException(
+                503, "Login rate limiting is temporarily unavailable"
+            ) from exc
+
+        if (
+            isinstance(failure_count, bool)
+            or not isinstance(failure_count, int)
+        ):
+            log.error("Login rate limiter returned an invalid counter value")
+            raise HTTPException(
+                503, "Login rate limiting is temporarily unavailable"
+            )
+        if failure_count > LOGIN_FAILURE_LIMIT:
+            raise HTTPException(429, "Too many failed login attempts")
+
         raise HTTPException(401, "Invalid credentials")
     pair = issue_token_pair(req.username, scope="admin")
     return {"access_token": pair.access_token, "refresh_token": pair.refresh_token,
@@ -942,7 +1053,10 @@ async def create_key(req: ApiKeyRequest, principal: dict = Depends(require_scope
             "note": "Store this key securely — it will not be shown again"}
 
 @app.delete("/auth/api-keys/{key_hash}", tags=["Auth"])
-async def delete_key(key_hash: str):
+async def delete_key(
+    key_hash: str,
+    principal: dict = Depends(require_scope("admin")),
+):
     await revoke_api_key(key_hash)
     return {"deleted": key_hash}
 
@@ -954,7 +1068,11 @@ async def os_status(
     cached = await get_cached_metrics()
     return cached or {**_last_metrics, "ps_available": PS_OK}
 
-@app.get("/os/processes", tags=["OS"])
+@app.get(
+    "/os/processes",
+    tags=["OS"],
+    dependencies=[Depends(require_scope("read"))],
+)
 async def os_processes():
     if not PS_OK:
         return {"by_cpu": [], "by_mem": []}
@@ -997,7 +1115,11 @@ async def ml_scores(
         "backend":        m.backend,
     }
 
-@app.get("/ml/status", tags=["ML"])
+@app.get(
+    "/ml/status",
+    tags=["ML"],
+    dependencies=[Depends(require_scope("read"))],
+)
 async def ml_status():
     eng = get_engine()
     m = eng.metrics
@@ -1025,6 +1147,8 @@ async def ml_status():
 
 
 class SaveVersionRequest(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
     model_name:  str = "ensemble"
     description: str = ""
     tag:         str = ""
@@ -1045,11 +1169,11 @@ async def save_version(
     )
     return {"version_id": entry.version_id, "saved": True}
 
-@app.get("/models/versions", tags=["Versioning"])
+@app.get("/models/versions", tags=["Versioning"], dependencies=[Depends(require_scope("read"))])
 async def list_versions(model_name: Optional[str] = None):
     return get_registry().list_versions(model_name)
 
-@app.post("/models/activate/{model_name}/{version_id}", tags=["Versioning"])
+@app.post("/models/activate/{model_name}/{version_id}", tags=["Versioning"], dependencies=[Depends(require_scope("admin"))])
 async def activate_version(model_name: str, version_id: str):
     state = get_registry().activate(model_name, version_id)
     if not state:
@@ -1057,7 +1181,7 @@ async def activate_version(model_name: str, version_id: str):
     get_engine().load_state_dict(state)
     return {"activated": version_id}
 
-@app.post("/models/rollback/{model_name}", tags=["Versioning"])
+@app.post("/models/rollback/{model_name}", tags=["Versioning"], dependencies=[Depends(require_scope("admin"))])
 async def rollback(model_name: str):
     result = get_registry().rollback(model_name)
     if not result:
@@ -1066,7 +1190,7 @@ async def rollback(model_name: str):
     get_engine().load_state_dict(state)
     return {"rolled_back_to": vid}
 
-@app.post("/models/rollback_best/{model_name}", tags=["Versioning"])
+@app.post("/models/rollback_best/{model_name}", tags=["Versioning"], dependencies=[Depends(require_scope("admin"))])
 async def rollback_best(model_name: str):
     result = get_registry().rollback_to_best(model_name)
     if not result:
@@ -1075,13 +1199,13 @@ async def rollback_best(model_name: str):
     get_engine().load_state_dict(state)
     return {"rolled_back_to_best": vid}
 
-@app.delete("/models/{model_name}/{version_id}", tags=["Versioning"])
+@app.delete("/models/{model_name}/{version_id}", tags=["Versioning"], dependencies=[Depends(require_scope("admin"))])
 async def delete_version(model_name: str, version_id: str):
     if not get_registry().delete_version(model_name, version_id):
         raise HTTPException(404, "Version not found or is active")
     return {"deleted": version_id}
 
-@app.get("/models/stats", tags=["Versioning"])
+@app.get("/models/stats", tags=["Versioning"], dependencies=[Depends(require_scope("read"))])
 async def version_stats():
     return get_registry().stats()
 
@@ -1098,27 +1222,47 @@ class RuleRequest(BaseModel):
     severity: str = "WARNING"; cooldown_s: int = 60
     message_tpl: str = "{metric} is {value:.2f} (threshold: {threshold})"
 
-@app.post("/alerts/webhooks", tags=["Alerts"])
+@app.post(
+    "/alerts/webhooks",
+    tags=["Alerts"],
+    dependencies=[Depends(require_scope("admin"))],
+)
 async def add_webhook(req: WebhookRequest):
     wh = get_alert_engine().add_webhook(req.url, req.name, req.secret)
     return {"id": wh.id, "name": wh.name}
 
-@app.delete("/alerts/webhooks/{wh_id}", tags=["Alerts"])
+@app.delete(
+    "/alerts/webhooks/{wh_id}",
+    tags=["Alerts"],
+    dependencies=[Depends(require_scope("admin"))],
+)
 async def remove_webhook(wh_id: str):
     if not get_alert_engine().remove_webhook(wh_id):
         raise HTTPException(404, "Not found")
     return {"deleted": wh_id}
 
-@app.post("/alerts/webhooks/{wh_id}/test", tags=["Alerts"])
+@app.post(
+    "/alerts/webhooks/{wh_id}/test",
+    tags=["Alerts"],
+    dependencies=[Depends(require_scope("admin"))],
+)
 async def test_webhook(wh_id: str):
     return {"success": await get_alert_engine().test_webhook(wh_id)}
 
-@app.put("/alerts/email", tags=["Alerts"])
+@app.put(
+    "/alerts/email",
+    tags=["Alerts"],
+    dependencies=[Depends(require_scope("admin"))],
+)
 async def configure_email(req: EmailRequest):
     cfg = get_alert_engine().configure_email(**req.dict(), enabled=True)
     return {"configured": True, "to": cfg.to_addrs}
 
-@app.get("/alerts/history", tags=["Alerts"])
+@app.get(
+    "/alerts/history",
+    tags=["Alerts"],
+    dependencies=[Depends(require_scope("read"))],
+)
 async def alert_history(limit: int = 50, severity: Optional[str] = None):
     import re
     if severity and not re.match(r'^[A-Z_]+$', severity):
@@ -1126,7 +1270,11 @@ async def alert_history(limit: int = 50, severity: Optional[str] = None):
     db_rows = await load_alerts(limit=limit, severity=severity)
     return db_rows if db_rows else get_alert_engine().get_history(limit, severity)
 
-@app.get("/alerts/stats", tags=["Alerts"])
+@app.get(
+    "/alerts/stats",
+    tags=["Alerts"],
+    dependencies=[Depends(require_scope("read"))],
+)
 async def alert_stats():
     total = 0
     from backend.core.storage.redis_store import get_client
@@ -1140,24 +1288,40 @@ async def alert_stats():
     stats["redis_total"] = total
     return stats
 
-@app.get("/alerts/rules", tags=["Alerts"])
+@app.get(
+    "/alerts/rules",
+    tags=["Alerts"],
+    dependencies=[Depends(require_scope("read"))],
+)
 async def list_rules():
     return [vars(r) for r in get_alert_engine().rules.values()]
 
-@app.post("/alerts/rules", tags=["Alerts"])
+@app.post(
+    "/alerts/rules",
+    tags=["Alerts"],
+    dependencies=[Depends(require_scope("admin"))],
+)
 async def add_rule(req: RuleRequest):
     import uuid as _u
     rule = AlertRule(rule_id=_u.uuid4().hex[:8], **req.dict())
     get_alert_engine().add_rule(rule)
     return vars(rule)
 
-@app.delete("/alerts/rules/{rule_id}", tags=["Alerts"])
+@app.delete(
+    "/alerts/rules/{rule_id}",
+    tags=["Alerts"],
+    dependencies=[Depends(require_scope("admin"))],
+)
 async def delete_rule(rule_id: str):
     if not get_alert_engine().delete_rule(rule_id):
         raise HTTPException(404, "Not found")
     return {"deleted": rule_id}
 
-@app.patch("/alerts/rules/{rule_id}", tags=["Alerts"])
+@app.patch(
+    "/alerts/rules/{rule_id}",
+    tags=["Alerts"],
+    dependencies=[Depends(require_scope("admin"))],
+)
 async def patch_rule(
     rule_id:   str,
     enabled:   Optional[bool]  = None,
@@ -1172,7 +1336,13 @@ async def patch_rule(
     return vars(rule)
 
 
-@app.get("/metrics", tags=["System"], response_class=PlainTextResponse, include_in_schema=False)
+@app.get(
+    "/metrics",
+    tags=["System"],
+    response_class=PlainTextResponse,
+    include_in_schema=False,
+    dependencies=[Depends(require_scope("read"))],
+)
 async def prometheus_metrics():
     m   = _last_metrics
     eng = get_engine().metrics
@@ -1230,7 +1400,7 @@ async def health():
         "actions":      ex["actions"],
     }
 
-@app.get("/health/full", tags=["System"])
+@app.get("/health/full", tags=["System"], dependencies=[Depends(require_scope("read"))])
 async def health_full():
     base = await health()
     base["health_credit_score"] = _last_metrics.get("health_credit_score")
@@ -1238,16 +1408,28 @@ async def health_full():
     base["active_prediction"]   = _last_metrics.get("active_prediction")
     return base
 
-@app.get("/db/snapshots", tags=["System"])
+@app.get(
+    "/db/snapshots",
+    tags=["System"],
+    dependencies=[Depends(require_scope("read"))],
+)
 async def get_snapshots(hours: float = 1.0):
     return await load_snapshots(hours=min(hours, 24.0))
 
-@app.get("/db/events", tags=["System"])
+@app.get(
+    "/db/events",
+    tags=["System"],
+    dependencies=[Depends(require_scope("read"))],
+)
 async def get_events(limit: int = 60):
     return await load_events(limit=limit) or []
 
 
-@app.get("/debug/cpu", tags=["System"])
+@app.get(
+    "/debug/cpu",
+    tags=["System"],
+    dependencies=[Depends(require_scope("read"))],
+)
 async def debug_cpu(window_s: float = 2.0):
     """
     Synchronized CPU diagnostic. Takes ONE raw cgroup usage delta over
@@ -1309,13 +1491,21 @@ async def debug_cpu(window_s: float = 2.0):
     }
 
 
-@app.get("/cognitive/health-score", tags=["Cognitive"])
+@app.get(
+    "/cognitive/health-score",
+    tags=["Cognitive"],
+    dependencies=[Depends(require_scope("read"))],
+)
 async def cognitive_health_score():
     if not COGNITIVE_OK:
         return {"score": None, "error": "Cognitive layer not available"}
     return get_dna_engine().get_health_score(dict(_last_metrics))
 
-@app.get("/cognitive/pipeline", tags=["Cognitive"])
+@app.get(
+    "/cognitive/pipeline",
+    tags=["Cognitive"],
+    dependencies=[Depends(require_scope("read"))],
+)
 async def cognitive_pipeline():
     try:
         from backend.intelligence_pipeline import run_intelligence_pipeline
@@ -1329,13 +1519,21 @@ async def cognitive_pipeline():
             "detail": str(e),
         }
 
-@app.get("/cognitive/forecast", tags=["Cognitive"])
+@app.get(
+    "/cognitive/forecast",
+    tags=["Cognitive"],
+    dependencies=[Depends(require_scope("read"))],
+)
 async def cognitive_forecast():
     if not COGNITIVE_OK:
         return {"error": "Cognitive layer not available"}
     return get_forecaster().get_plain_timeline(dict(_last_metrics))
 
-@app.get("/cognitive/predictions", tags=["Cognitive"])
+@app.get(
+    "/cognitive/predictions",
+    tags=["Cognitive"],
+    dependencies=[Depends(require_scope("read"))],
+)
 async def cognitive_predictions():
     if not COGNITIVE_OK:
         return []
@@ -1363,7 +1561,11 @@ async def cognitive_predictions():
         for p in preds
     ]
 
-@app.get("/cognitive/debug/matcher", tags=["Cognitive"])
+@app.get(
+    "/cognitive/debug/matcher",
+    tags=["Cognitive"],
+    dependencies=[Depends(require_scope("read"))],
+)
 async def cognitive_debug_matcher():
     if not COGNITIVE_OK:
         return {"error": "Cognitive layer not available"}
@@ -1461,7 +1663,11 @@ async def cognitive_debug_matcher():
     return result
 
 
-@app.post("/cognitive/predictions/{pred_id}/acknowledge", tags=["Cognitive"])
+@app.post(
+    "/cognitive/predictions/{pred_id}/acknowledge",
+    tags=["Cognitive"],
+    dependencies=[Depends(require_scope("write"))],
+)
 async def acknowledge_prediction(pred_id: str):
     if not COGNITIVE_OK:
         raise HTTPException(
@@ -1512,7 +1718,11 @@ async def acknowledge_prediction(pred_id: str):
         "persisted": True,
     }
 
-@app.post("/cognitive/predictions/{pred_id}/resolve", tags=["Cognitive"])
+@app.post(
+    "/cognitive/predictions/{pred_id}/resolve",
+    tags=["Cognitive"],
+    dependencies=[Depends(require_scope("write"))],
+)
 async def resolve_prediction(pred_id: str, was_correct: bool):
     if not COGNITIVE_OK:
         raise HTTPException(status_code=503, detail="Cognitive layer unavailable")
@@ -1647,7 +1857,11 @@ async def resolve_prediction(pred_id: str, was_correct: bool):
     }
 
 
-@app.get("/cognitive/dna", tags=["Cognitive"])
+@app.get(
+    "/cognitive/dna",
+    tags=["Cognitive"],
+    dependencies=[Depends(require_scope("read"))],
+)
 async def cognitive_dna():
     if not COGNITIVE_OK:
         return {"patterns": 0}
@@ -1661,7 +1875,11 @@ async def cognitive_dna():
             pattern["explanation"] = {}
     return summary
 
-@app.get("/cognitive/premortem", tags=["Cognitive"])
+@app.get(
+    "/cognitive/premortem",
+    tags=["Cognitive"],
+    dependencies=[Depends(require_scope("read"))],
+)
 async def cognitive_premortem():
     dna    = get_dna_engine().get_dna_summary()
     result = get_premortem_engine().run(dna_summary=dna)
@@ -1692,22 +1910,38 @@ async def cognitive_premortem():
         "top_threat":     threat_to_dict(result.top_threat) if result.top_threat else None,
     }
 
-@app.get("/cognitive/remediation/status", tags=["Actions"])
+@app.get(
+    "/cognitive/remediation/status",
+    tags=["Actions"],
+    dependencies=[Depends(require_scope("read"))],
+)
 async def remediation_status():
     return get_ar_engine().get_status()
 
-@app.get("/cognitive/remediation/log", tags=["Actions"])
+@app.get(
+    "/cognitive/remediation/log",
+    tags=["Actions"],
+    dependencies=[Depends(require_scope("read"))],
+)
 async def remediation_log(limit: int = 20):
     return get_ar_engine().get_audit_log(limit=limit)
 
-@app.get("/cognitive/blackbox", tags=["Cognitive"])
+@app.get(
+    "/cognitive/blackbox",
+    tags=["Cognitive"],
+    dependencies=[Depends(require_scope("read"))],
+)
 async def cognitive_blackbox():
     if not COGNITIVE_OK:
         return {"recording": False}
     bb = get_black_box()
     return {"status": bb.get_status(), "recent_frames": bb.get_recent_frames(minutes=5)}
 
-@app.post("/cognitive/incident", tags=["Cognitive"])
+@app.post(
+    "/cognitive/incident",
+    tags=["Cognitive"],
+    dependencies=[Depends(require_scope("write"))],
+)
 async def mark_incident(incident_type: str, description: str = ""):
     if not COGNITIVE_OK:
         return {"error": "Cognitive layer not available"}
@@ -1717,13 +1951,21 @@ async def mark_incident(incident_type: str, description: str = ""):
     dna.record_failure(incident_type, description or incident_type)
     return {"incident_id": incident_id, "recorded": True}
 
-@app.get("/cognitive/incidents", tags=["Cognitive"])
+@app.get(
+    "/cognitive/incidents",
+    tags=["Cognitive"],
+    dependencies=[Depends(require_scope("read"))],
+)
 async def list_incidents():
     if not COGNITIVE_OK:
         return []
     return get_black_box().get_incidents()
 
-@app.get("/cognitive/incidents/{incident_id}", tags=["Cognitive"])
+@app.get(
+    "/cognitive/incidents/{incident_id}",
+    tags=["Cognitive"],
+    dependencies=[Depends(require_scope("read"))],
+)
 async def get_incident(incident_id: str):
     if not COGNITIVE_OK:
         return {"error": "not available"}
@@ -1733,7 +1975,11 @@ async def get_incident(incident_id: str):
     postmortem = get_dna_engine().generate_postmortem(incident_id)
     return {**incident, "postmortem": postmortem}
 
-@app.get("/cognitive/postmortem/{event_id}", tags=["Cognitive"])
+@app.get(
+    "/cognitive/postmortem/{event_id}",
+    tags=["Cognitive"],
+    dependencies=[Depends(require_scope("read"))],
+)
 async def get_postmortem(event_id: str):
     if not COGNITIVE_OK:
         return {"error": "not available"}
@@ -1744,13 +1990,21 @@ async def get_postmortem(event_id: str):
         return get_postmortem_builder().build(incident, tl_data.get("timeline", []))
     return get_dna_engine().generate_postmortem(event_id)
 
-@app.get("/cognitive/notifications", tags=["Cognitive"])
+@app.get(
+    "/cognitive/notifications",
+    tags=["Cognitive"],
+    dependencies=[Depends(require_scope("read"))],
+)
 async def notification_history():
     if not COGNITIVE_OK:
         return []
     return get_notifier().get_history()
 
-@app.post("/cognitive/notifications/config", tags=["Cognitive"])
+@app.post(
+    "/cognitive/notifications/config",
+    tags=["Cognitive"],
+    dependencies=[Depends(require_scope("admin"))],
+)
 async def configure_notifications(enabled: bool = True, min_severity: str = "MEDIUM"):
     if COGNITIVE_OK:
         n = get_notifier()
@@ -1758,7 +2012,11 @@ async def configure_notifications(enabled: bool = True, min_severity: str = "MED
         n.set_min_severity(min_severity)
     return {"enabled": enabled, "min_severity": min_severity}
 
-@app.get("/cognitive/status", tags=["Cognitive"])
+@app.get(
+    "/cognitive/status",
+    tags=["Cognitive"],
+    dependencies=[Depends(require_scope("read"))],
+)
 async def cognitive_status():
     if not COGNITIVE_OK:
         return {"available": False}
@@ -1903,6 +2161,169 @@ async def register_device(
         "credential_scope": "write",
         "credential_device_id": device_id,
     }
+
+
+class ProcessApprovalRequestPayload(BaseModel):
+    action: str
+    pid: int = Field(..., gt=0)
+    create_time: float = Field(..., gt=0)
+    name: str = Field(..., min_length=1, max_length=512)
+    ttl_s: float = Field(60.0, gt=0, le=120)
+
+
+class ProcessApprovalDecisionPayload(BaseModel):
+    approved: bool
+
+
+@app.post("/devices/{device_id}/approvals", tags=["Devices"])
+async def create_process_approval_request(
+    device_id: str,
+    payload: ProcessApprovalRequestPayload,
+    principal: dict = Depends(require_scope("admin")),
+):
+    """Create a pending process-termination approval request."""
+    if device_id not in _devices:
+        raise HTTPException(404, "Device is not registered")
+
+    requested_by = principal.get("sub") or principal.get("name")
+    if not isinstance(requested_by, str) or not requested_by.strip():
+        raise HTTPException(403, "Authenticated actor identity unavailable")
+
+    try:
+        from backend.core.auth.approval_service import create_approval_request
+
+        result = await asyncio.to_thread(
+            create_approval_request,
+            requested_by=requested_by,
+            device_id=device_id,
+            action=payload.action,
+            pid=payload.pid,
+            create_time=payload.create_time,
+            name=payload.name,
+            ttl_s=payload.ttl_s,
+        )
+        return result
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except Exception as exc:
+        log.exception(
+            "Failed to create process approval request for device %s",
+            device_id,
+        )
+        raise HTTPException(
+            503, "Approval request service unavailable"
+        ) from exc
+
+
+@app.post("/approvals/{approval_id}/decision", tags=["Devices"])
+async def decide_process_approval(
+    approval_id: str,
+    payload: ProcessApprovalDecisionPayload,
+    principal: dict = Depends(require_scope("admin")),
+):
+    """Approve or reject a pending request as the authenticated actor."""
+    decided_by = principal.get("sub") or principal.get("name")
+    if not isinstance(decided_by, str) or not decided_by.strip():
+        raise HTTPException(403, "Authenticated actor identity unavailable")
+
+    try:
+        from backend.core.auth.approval_service import (
+            SelfApprovalError,
+            decide_approval,
+        )
+
+        changed = await asyncio.to_thread(
+            decide_approval,
+            approval_id,
+            approved=payload.approved,
+            decided_by=decided_by,
+        )
+    except SelfApprovalError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except Exception as exc:
+        log.exception(
+            "Failed to record process approval decision"
+        )
+        raise HTTPException(
+            503, "Approval decision service unavailable"
+        ) from exc
+
+    if not changed:
+        raise HTTPException(
+            409,
+            "Approval request is missing, expired, or already decided",
+        )
+
+    return {
+        "approval_id": approval_id,
+        "status": "approved" if payload.approved else "rejected",
+        "decided_by": decided_by,
+    }
+
+
+class ProcessApprovalConsumePayload(BaseModel):
+    action: str
+    pid: int = Field(..., gt=0)
+    create_time: float = Field(..., gt=0)
+    name: str = Field(..., min_length=1, max_length=512)
+
+
+@app.post(
+    "/devices/{device_id}/approvals/{approval_id}/consume",
+    tags=["Devices"],
+)
+async def consume_process_approval(
+    device_id: str,
+    approval_id: str,
+    payload: ProcessApprovalConsumePayload,
+    principal: dict = Depends(require_scope("write")),
+):
+    """Consume a one-time process approval for the authenticated device."""
+    credential_device_id = principal.get("device_id")
+
+    if not credential_device_id:
+        raise HTTPException(
+            403,
+            "Device-bound credential required for approval consumption",
+        )
+
+    if credential_device_id != device_id:
+        raise HTTPException(
+            403,
+            "Credential is not authorized for this device",
+        )
+
+    try:
+        from backend.core.auth.approval_service import consume_approval
+
+        authorized = await asyncio.to_thread(
+            consume_approval,
+            approval_id,
+            device_id=device_id,
+            action=payload.action,
+            pid=payload.pid,
+            create_time=payload.create_time,
+            name=payload.name,
+        )
+    except Exception as exc:
+        log.exception(
+            "Approval verification failed for device %s",
+            device_id,
+        )
+        raise HTTPException(
+            503,
+            "Approval verification unavailable; execution denied",
+        ) from exc
+
+    if not authorized:
+        raise HTTPException(
+            409,
+            "Approval invalid, expired, mismatched, or already consumed",
+        )
+
+    return {"authorized": True}
 
 
 class DeviceCommandCreatePayload(BaseModel):
@@ -2315,7 +2736,7 @@ async def receive_device_metrics(
         "ml": device["ml"],
     }
 
-@app.get("/devices", tags=["Devices"])
+@app.get("/devices", tags=["Devices"], dependencies=[Depends(require_scope("read"))])
 async def list_devices():
     now = time.time()
     return [
@@ -2332,7 +2753,7 @@ async def list_devices():
         for did, d in _devices.items()
     ]
 
-@app.get("/devices/{device_id}", tags=["Devices"])
+@app.get("/devices/{device_id}", tags=["Devices"], dependencies=[Depends(require_scope("read"))])
 async def get_device(device_id: str):
     if device_id not in _devices:
         raise HTTPException(404, "Device not found")
@@ -2357,7 +2778,7 @@ async def list_available_actions(failure_type: Optional[str] = None):
         return []
     return _get_actions(failure_type)
 
-@app.post("/actions/execute", tags=["Actions"], dependencies=[Depends(require_scope("write"))])
+@app.post("/actions/execute", tags=["Actions"], dependencies=[Depends(require_scope("admin"))])
 async def run_action(action_id: str):
     if not ACTIONS_OK:
         return {"success": False, "error": "Action executor not available"}
@@ -2365,7 +2786,28 @@ async def run_action(action_id: str):
     return result
 
 
-@app.get("/report/weekly", tags=["Reports"])
+@app.post("/judgment/actions/{action_id}/resolve-escalation", tags=["Actions"])
+async def resolve_action_escalation(
+    action_id: str,
+    principal: dict = Depends(require_scope("admin")),
+):
+    from judgment.lifecycle import resolve_escalation
+    from judgment.recovery import reconcile_escalation_resolution_audits
+
+    def recover_and_resolve():
+        reconcile_escalation_resolution_audits()
+        return resolve_escalation(action_id, principal=principal)
+
+    result = await asyncio.get_running_loop().run_in_executor(
+        None,
+        recover_and_resolve,
+    )
+    if result["status"] != "approved":
+        raise HTTPException(status_code=409, detail=result["reason"])
+    return result
+
+
+@app.get("/report/weekly", tags=["Reports"], dependencies=[Depends(require_scope("read"))])
 async def weekly_health_report():
     from datetime import datetime
     m     = dict(_last_metrics)
@@ -2423,11 +2865,19 @@ async def weekly_health_report():
 
 from backend.core.settings import settings_manager as _sm
 
-@app.get("/settings", tags=["Settings"])
+@app.get(
+    "/settings",
+    tags=["Settings"],
+    dependencies=[Depends(require_scope("admin"))],
+)
 async def get_settings():
     return _sm.get_all()
 
-@app.post("/settings", tags=["Settings"])
+@app.post(
+    "/settings",
+    tags=["Settings"],
+    dependencies=[Depends(require_scope("admin"))],
+)
 async def save_settings(request: Request):
     body = await request.json()
     result = _sm.save(body)
@@ -2438,11 +2888,19 @@ async def save_settings(request: Request):
         pass
     return result
 
-@app.post("/settings/reset", tags=["Settings"])
+@app.post(
+    "/settings/reset",
+    tags=["Settings"],
+    dependencies=[Depends(require_scope("admin"))],
+)
 async def reset_settings():
     return _sm.reset()
 
-@app.post("/settings/test-email", tags=["Settings"])
+@app.post(
+    "/settings/test-email",
+    tags=["Settings"],
+    dependencies=[Depends(require_scope("admin"))],
+)
 async def settings_test_email():
     try:
         from backend.core.reports.weekly_report import send_alert_email
@@ -2461,7 +2919,11 @@ async def settings_test_email():
     except Exception as e:
         return {"success": False, "message": str(e)}
 
-@app.post("/settings/send-report", tags=["Settings"])
+@app.post(
+    "/settings/send-report",
+    tags=["Settings"],
+    dependencies=[Depends(require_scope("admin"))],
+)
 async def settings_send_report():
     try:
         from backend.core.reports.weekly_report import send_weekly_report_email
@@ -2476,7 +2938,11 @@ async def settings_send_report():
 
 # ── Silent Degradation endpoint ───────────────────────────────────────────────
 
-@app.get("/cognitive/degradation", tags=["Cognitive"])
+@app.get(
+    "/cognitive/degradation",
+    tags=["Cognitive"],
+    dependencies=[Depends(require_scope("read"))],
+)
 async def cognitive_degradation():
     """
     Returns long-term chronic drift analysis.
@@ -2498,7 +2964,7 @@ async def cognitive_degradation():
 
 # ── Stress Test endpoints ─────────────────────────────────────────────────────
 
-@app.get("/stress/scenarios", tags=["Demo"])
+@app.get("/stress/scenarios", tags=["Demo"], dependencies=[Depends(require_scope("read"))])
 async def list_stress_scenarios():
     """List available stress test scenarios for demo."""
     try:
@@ -2507,7 +2973,7 @@ async def list_stress_scenarios():
     except Exception as e:
         return []
 
-@app.post("/stress/start/{scenario_id}", tags=["Demo"])
+@app.post("/stress/start/{scenario_id}", tags=["Demo"], dependencies=[Depends(require_scope("admin"))])
 async def start_stress(scenario_id: str):
     """Start a stress scenario to trigger CVIS predictions."""
     try:
@@ -2516,7 +2982,7 @@ async def start_stress(scenario_id: str):
     except Exception as e:
         return {"success": False, "error": str(e)}
 
-@app.post("/stress/stop/{scenario_id}", tags=["Demo"])
+@app.post("/stress/stop/{scenario_id}", tags=["Demo"], dependencies=[Depends(require_scope("admin"))])
 async def stop_stress(scenario_id: str):
     """Stop a running stress scenario."""
     try:
@@ -2525,7 +2991,7 @@ async def stop_stress(scenario_id: str):
     except Exception as e:
         return {"success": False, "error": str(e)}
 
-@app.post("/stress/stop", tags=["Demo"])
+@app.post("/stress/stop", tags=["Demo"], dependencies=[Depends(require_scope("admin"))])
 async def stop_all_stress():
     """Stop all running stress scenarios immediately."""
     try:
@@ -2534,7 +3000,7 @@ async def stop_all_stress():
     except Exception as e:
         return {"success": False, "error": str(e)}
 
-@app.get("/stress/status", tags=["Demo"])
+@app.get("/stress/status", tags=["Demo"], dependencies=[Depends(require_scope("read"))])
 async def stress_status():
     """Get current stress test status."""
     try:
@@ -2570,7 +3036,7 @@ if __name__ == "__main__":
     print("=" * 60)
     uvicorn.run(
         "backend.main:app",
-        host="0.0.0.0",
+        host=os.environ.get("HOST", "127.0.0.1"),
         port=int(os.environ.get("PORT", 8000)),
         reload=False,
         log_level="warning",

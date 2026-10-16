@@ -9,9 +9,9 @@ from backend.core.actions.action_executor import (
 
 
 def test_auto_source_cannot_execute_unallowlisted_action():
-    action = next(iter(ACTIONS.keys()))
+    action = "drop_caches"
 
-    assert action not in AUTONOMOUS_ALLOWED_ACTIONS
+    assert action not in AUTONOMOUS_ALLOWED_ACTIONS or action == "clear_temp"
 
     result = execute_action(action, source="auto")
 
@@ -39,8 +39,8 @@ def test_simulation_action_vocabulary_is_not_canonical_execution():
     assert simulation_only.isdisjoint(ACTIONS.keys())
 
 
-def test_autonomous_allowlist_is_explicitly_empty():
-    assert not AUTONOMOUS_ALLOWED_ACTIONS
+def test_autonomous_allowlist_contains_only_clear_temp():
+    assert AUTONOMOUS_ALLOWED_ACTIONS == {"clear_temp"}
 
 
 def test_action_executor_requires_explicit_decision_for_execution():
@@ -98,7 +98,7 @@ def test_executor_preserves_dqn_action_for_learning_when_execution_action_is_tra
             import numpy as np
             return np.array([0.1] * 6, dtype=np.float32)
 
-        def remember(self, state, action, reward, next_state):
+        def remember(self, state, action, reward, next_state, done=False):
             self.remembered = action
 
         def train(self):
@@ -139,7 +139,7 @@ def test_executor_preserves_dqn_action_for_learning_when_execution_action_is_tra
     monkeypatch.setattr(
         executor,
         "_execute_action",
-        lambda action, target_name, decision: {
+        lambda action, target_name, decision, source="manual", **_kwargs: {
             "status": "executed",
             "action": action,
         },
@@ -205,6 +205,7 @@ def test_executor_preserves_dqn_action_for_learning_when_execution_action_is_tra
     result = executor.execute(decision)
 
     assert result["status"] == "executed"
+    assert result["execution_source"] == "manual"
 
     # THIS is the boundary requirement.
     #
@@ -230,7 +231,7 @@ def test_simulate_learning_trains_selected_dqn_action_not_best_candidate(monkeyp
         def select_action(self, state):
             return "maintain_state"
 
-        def remember(self, state, action, reward, next_state):
+        def remember(self, state, action, reward, next_state, done=False):
             self.remembered = action
 
         def train(self):
@@ -307,7 +308,7 @@ def test_simulate_learning_blocks_unsafe_selected_action_without_learning(monkey
         def select_action(self, state):
             return "maintain_state"
 
-        def remember(self, state, action, reward, next_state):
+        def remember(self, state, action, reward, next_state, done=False):
             self.remember_calls += 1
 
         def train(self):
@@ -355,3 +356,302 @@ def test_simulate_learning_blocks_unsafe_selected_action_without_learning(monkey
 
     assert agent.remember_calls == 0
     assert agent.train_calls == 0
+
+
+def test_reward_requires_verified_success():
+    from backend.action_executor import ActionExecutor
+    executor = ActionExecutor.__new__(ActionExecutor)
+
+    before = {"cpu": 80.0, "memory": 60.0, "disk": 90.0}
+    after = {"cpu": 80.0, "memory": 60.0, "disk": 70.0}
+    result = {
+        "status": "executed",
+        "action": "clear_temp",
+        "verification": {
+            "status": "unverified",
+            "verified": False,
+            "reason": "action_has_no_verified_metric",
+        },
+    }
+
+    reward = executor._compute_reward(before, after, result)
+    assert reward <= 0
+
+
+def test_reward_positive_for_verified_improvement():
+    from backend.action_executor import ActionExecutor
+    executor = ActionExecutor.__new__(ActionExecutor)
+
+    before = {"cpu": 80.0, "memory": 60.0, "disk": 90.0}
+    after = {"cpu": 80.0, "memory": 60.0, "disk": 70.0}
+    result = {
+        "status": "executed",
+        "action": "clear_temp",
+        "verification": {
+            "status": "success",
+            "verified": True,
+            "reason": "target_metric_improved",
+        },
+    }
+
+    reward = executor._compute_reward(before, after, result)
+    assert reward > 0
+
+
+def test_reward_negative_for_verified_failure():
+    from backend.action_executor import ActionExecutor
+    executor = ActionExecutor.__new__(ActionExecutor)
+
+    before = {"cpu": 80.0, "memory": 60.0, "disk": 70.0}
+    after = {"cpu": 80.0, "memory": 60.0, "disk": 90.0}
+    result = {
+        "status": "executed",
+        "action": "clear_temp",
+        "verification": {
+            "status": "failed",
+            "verified": False,
+            "reason": "target_metric_worsened",
+        },
+    }
+
+    reward = executor._compute_reward(before, after, result)
+    assert reward < 0
+
+
+def test_unverified_execution_cannot_create_positive_learning_reward(monkeypatch):
+    from backend.action_executor import ActionExecutor
+
+    executor = ActionExecutor.__new__(ActionExecutor)
+    from unittest.mock import MagicMock
+    executor.simulator = MagicMock()
+    executor.simulator.apply_action.return_value = {
+        "cpu": 80.0,
+        "memory": 60.0,
+        "disk": 70.0,
+    }
+    executor.simulator.evaluate_state.return_value = 0.0
+
+    class FakeAgent:
+        def __init__(self):
+            self.remembered = []
+
+        def encode_state(self, metrics):
+            import numpy as np
+            return np.array(list(metrics.values()), dtype=float)
+
+        def remember(self, state, action, reward, next_state, done=False):
+            self.remembered.append((state, action, reward, next_state, done))
+
+        def train(self):
+            pass
+
+    agent = FakeAgent()
+    executor.agent = agent
+    executor.get_metrics = lambda: {
+        "cpu": 80.0,
+        "memory": 60.0,
+        "disk": 70.0,
+    }
+    executor.can_execute = lambda action, decision: True
+    executor.verify_outcome = lambda action, before, after, result: {
+        "status": "unverified",
+        "verified": False,
+        "reason": "action_has_no_verified_metric",
+    }
+    executor._execute_action = lambda action, target, decision, source="manual", **_kwargs: {
+        "status": "executed",
+        "action": action,
+    }
+    executor._compute_reward = lambda before, after, result: 20.0
+
+    monkeypatch.setattr(
+        "backend.action_executor.time.sleep",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        "backend.action_executor.store_experience",
+        lambda *args, **kwargs: None,
+    )
+    optimizer_mock = MagicMock()
+    monkeypatch.setattr(
+        "backend.action_executor.update_optimizer",
+        optimizer_mock,
+    )
+
+    decision = {
+        "action": "clear_temp",
+        "context": "general",
+        "baseline_cpu": 50,
+        "duration_seconds": 20,
+    }
+
+    result = executor.execute(decision)
+
+    assert result["verification"]["verified"] is False
+    assert result["reward"] <= 0
+    assert agent.remembered == []
+    optimizer_mock.assert_not_called()
+
+
+def test_verified_execution_can_enter_learning(monkeypatch):
+    from backend.action_executor import ActionExecutor
+
+    executor = ActionExecutor.__new__(ActionExecutor)
+    from unittest.mock import MagicMock
+    executor.simulator = MagicMock()
+    executor.simulator.apply_action.return_value = {
+        "cpu": 80.0,
+        "memory": 60.0,
+        "disk": 70.0,
+    }
+    executor.simulator.evaluate_state.return_value = 0.0
+
+    class FakeAgent:
+        def __init__(self):
+            self.remembered = []
+
+        def encode_state(self, metrics):
+            import numpy as np
+            return np.array(list(metrics.values()), dtype=float)
+
+        def remember(self, state, action, reward, next_state, done=False):
+            self.remembered.append((state, action, reward, next_state, done))
+
+        def train(self):
+            pass
+
+    agent = FakeAgent()
+    executor.agent = agent
+    executor.get_metrics = lambda: {
+        "cpu": 80.0,
+        "memory": 60.0,
+        "disk": 90.0,
+    }
+
+    executor.can_execute = lambda action, decision: True
+
+    executor.verify_outcome = lambda action, before, after, result: {
+        "status": "success",
+        "verified": True,
+        "reason": "target_metric_improved",
+    }
+
+    executor._execute_action = lambda action, target, decision, source="manual", **_kwargs: {
+        "status": "executed",
+        "action": action,
+    }
+
+    executor._compute_reward = lambda before, after, result: 5.0
+
+    monkeypatch.setattr(
+        "backend.action_executor.time.sleep",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        "backend.action_executor.store_experience",
+        lambda *args, **kwargs: None,
+    )
+
+    decision = {
+        "action": "clear_temp",
+        "context": "general",
+        "baseline_cpu": 50,
+        "duration_seconds": 20,
+    }
+
+    result = executor.execute(decision)
+
+    assert result["verification"]["verified"] is True
+    assert result["reward"] > 0
+    assert len(agent.remembered) == 1
+    assert agent.remembered[0][2] > 0
+
+
+def test_auto_execution_passes_source_to_action_dispatcher(monkeypatch):
+    from unittest.mock import MagicMock
+
+    import numpy as np
+
+    from backend.action_executor import ActionExecutor
+
+    executor = ActionExecutor.__new__(ActionExecutor)
+    executor.simulator = MagicMock()
+    executor.simulator.apply_action.return_value = {
+        "cpu": 80.0,
+        "memory": 60.0,
+        "disk": 70.0,
+    }
+    executor.simulator.evaluate_state.return_value = 0.0
+
+    class FakeAgent:
+        def encode_state(self, metrics):
+            return np.array(list(metrics.values()), dtype=float)
+
+    executor.agent = FakeAgent()
+    executor.get_metrics = lambda: {
+        "cpu": 80.0,
+        "memory": 60.0,
+        "disk": 70.0,
+    }
+    executor.can_execute = lambda action, decision: True
+
+    dispatcher = MagicMock(return_value={"success": True})
+    monkeypatch.setattr(
+        "backend.action_executor.execute_action",
+        dispatcher,
+    )
+    monkeypatch.setattr(
+        "backend.action_executor.CausalEngine",
+        MagicMock(return_value=MagicMock(
+            detect=MagicMock(return_value={"primary_cause": {}})
+        )),
+    )
+    monkeypatch.setattr(
+        "backend.action_executor.is_action_allowed",
+        lambda *args, **kwargs: (True, "allowed"),
+    )
+    monkeypatch.setattr(
+        "backend.action_executor.is_safe",
+        lambda action: True,
+    )
+    monkeypatch.setattr(
+        "backend.action_executor.get_optimizer",
+        lambda: {"reward_scale": 1.0},
+    )
+    monkeypatch.setattr(
+        executor,
+        "verify_outcome",
+        lambda action, before, after, result: {
+            "status": "unverified",
+            "verified": False,
+        },
+    )
+    monkeypatch.setattr(
+        executor,
+        "_compute_reward",
+        lambda before, after, result: 0.0,
+    )
+    monkeypatch.setattr(
+        "backend.action_executor.time.sleep",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        "backend.action_executor.store_experience",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        "backend.action_executor.record_action",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        "backend.action_executor.log_event",
+        lambda *args, **kwargs: None,
+    )
+
+    result = executor.execute(
+        {"action": "clear_temp", "context": "general"},
+        source="auto",
+    )
+    assert result["status"] == "executed"
+    dispatcher.assert_called_once_with("clear_temp", source="auto")
+    dispatcher.assert_called_once_with("clear_temp", source="auto")

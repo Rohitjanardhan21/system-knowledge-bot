@@ -76,6 +76,8 @@ This installs Docker, hardens ufw/fail2ban, generates secrets, builds images, an
 ```bash
 # 1. Generate secrets
 bash scripts/secrets-setup.sh generate       # creates .env with random keys
+# For local development, set ENV=dev in .env; production uses ENV=prod.
+# Keep the generated production credentials private and configure them explicitly.
 
 # 2. Set your domain
 sed -i 's/yourdomain.com/acme.example.com/g' .env

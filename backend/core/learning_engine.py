@@ -13,6 +13,16 @@ WEIGHTS_FILE = Path("system_facts/history/action_weights.json")
 HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
 
 MAX_HISTORY = 200
+SUPPORTED_FEEDBACK_ACTIONS = frozenset({
+    "optimize_memory",
+    "reduce_compute_load",
+    "optimize_io",
+    "inspect_mechanics",
+    "increase_cooling",
+    "stabilize_power",
+    "monitor",
+    "immediate_stabilization",
+})
 
 
 class LearningEngine:
@@ -219,15 +229,21 @@ class LearningEngine:
     # ---------------------------------------------------------
     # LEARNING FROM FEEDBACK
     # ---------------------------------------------------------
-    def learn_from_feedback(self, action, success):
+    def learn_from_feedback(self, action, verification):
+        if not isinstance(action, str) or action not in SUPPORTED_FEEDBACK_ACTIONS:
+            raise ValueError("Unsupported feedback action")
+
+        if (
+            not isinstance(verification, dict)
+            or verification.get("verified") is not True
+            or verification.get("status") != "success"
+        ):
+            raise ValueError("Verified successful outcome evidence is required")
 
         if action not in self.action_weights:
             self.action_weights[action] = 0.5
 
-        if success:
-            self.action_weights[action] += 0.05
-        else:
-            self.action_weights[action] -= 0.05
+        self.action_weights[action] += 0.05
 
         self.action_weights[action] = max(
             0.1, min(1.0, self.action_weights[action])

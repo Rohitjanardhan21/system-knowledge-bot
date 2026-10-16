@@ -83,7 +83,7 @@ class SystemDataSource(DataSource):
 
     def collect(self):
 
-        cpu = psutil.cpu_percent(interval=0.5)
+        system_cpu = psutil.cpu_percent(interval=0.5)
         memory = psutil.virtual_memory().percent
         disk = psutil.disk_usage("/").percent
 
@@ -111,12 +111,12 @@ class SystemDataSource(DataSource):
             try:
                 info = proc.info
                 name = info.get("name") or "unknown"
-                cpu = proc.cpu_percent(interval=None)
+                process_cpu = proc.cpu_percent(interval=None)
 
                 processes.append({
                     "pid": info["pid"],
                     "name": name,
-                    "cpu": round(cpu, 2),
+                    "cpu": round(process_cpu, 2),
                     "memory": round(info.get("memory_percent") or 0.0, 2),
                     "category": self.categorize_process(name),
                     "application": self.identify_application(name)
@@ -125,7 +125,7 @@ class SystemDataSource(DataSource):
                 continue
 
         metrics = {
-            "cpu": cpu,
+            "cpu": system_cpu,
             "memory": memory,
             "disk": disk,
             "processes": processes,

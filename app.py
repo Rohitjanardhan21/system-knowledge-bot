@@ -10,6 +10,7 @@ Usage:
 import os
 import sys
 import time
+import secrets
 import signal
 import platform
 import argparse
@@ -76,16 +77,39 @@ def start_redis():
         print("[CVIS] Redis not found — running without cache (degraded mode)")
         return None
 
-def patch_env():
-    """Set default environment variables if not already set."""
+def patch_env(port):
+    """Configure explicit development or production credentials."""
+    mode = os.environ.get("ENV", "").strip().lower()
+    if mode not in {"dev", "development", "prod", "production"}:
+        raise RuntimeError(
+            "Set ENV explicitly to dev or production before starting CVIS"
+        )
+
+    secret_names = ("CVIS_API_KEY", "JWT_SECRET")
+    if mode in {"prod", "production"}:
+        required_names = (
+            *secret_names,
+            "CVIS_ADMIN_USER",
+            "CVIS_ADMIN_PASS",
+        )
+        missing = [
+            name for name in required_names
+            if not _has_configured_secret(name)
+        ]
+        if missing:
+            raise RuntimeError(
+                "Production startup requires configured credentials: "
+                + ", ".join(missing)
+            )
+    else:
+        os.environ.setdefault("CVIS_API_KEY", secrets.token_urlsafe(32))
+        os.environ.setdefault("JWT_SECRET", secrets.token_hex(32))
+        os.environ.setdefault("CVIS_ADMIN_USER", "admin")
+        os.environ.setdefault("CVIS_ADMIN_PASS", secrets.token_urlsafe(24))
+
     defaults = {
-        "CVIS_API_KEY":    "cvis-local",
-        "JWT_SECRET":      "localdevkey123456789012345678901234",
-        "CVIS_ADMIN_USER": "admin",
-        "CVIS_ADMIN_PASS": "admin",
-        "ENV":             "dev",
         "LOG_LEVEL":       "warning",
-        "ALLOWED_ORIGIN":  "*",
+        "ALLOWED_ORIGIN":  f"http://localhost:{port},http://127.0.0.1:{port}",
         "REDIS_URL":       "redis://localhost:6379/0",
         "POLL_INTERVAL_S": "1",
         "DB_PATH":         os.path.join(ROOT, "data", "cvis.db"),
@@ -99,6 +123,18 @@ def patch_env():
     os.makedirs(os.path.join(ROOT, "model_versions"), exist_ok=True)
     os.makedirs(os.path.join(ROOT, "logs"), exist_ok=True)
 
+def _has_configured_secret(name):
+    if os.environ.get(name):
+        return True
+    secret_path = os.environ.get(f"{name}_FILE")
+    if not secret_path:
+        return False
+    try:
+        with open(secret_path, encoding="utf-8") as secret_file:
+            return bool(secret_file.read().strip())
+    except OSError:
+        return False
+
 def open_browser(port, delay=3):
     """Open browser after backend starts."""
     def _open():
@@ -109,12 +145,12 @@ def open_browser(port, delay=3):
     t = threading.Thread(target=_open, daemon=True)
     t.start()
 
-def start_backend(port):
+def start_backend(host, port):
     """Start the FastAPI backend using uvicorn."""
     import uvicorn
     uvicorn.run(
         "backend.main:app",
-        host="0.0.0.0",
+        host=host,
         port=port,
         log_level="warning",
         access_log=False,
@@ -124,8 +160,18 @@ def start_backend(port):
 def main():
     parser = argparse.ArgumentParser(description="CVIS AIOps — Standalone Launcher")
     parser.add_argument("--port",       default=8000, type=int, help="Port to run on (default: 8000)")
+    parser.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="Bind address (default: loopback; use 0.0.0.0 only on trusted networks)",
+    )
     parser.add_argument("--no-browser", action="store_true",    help="Don't open browser automatically")
     parser.add_argument("--check",      action="store_true",    help="Check dependencies only")
+    parser.add_argument(
+        "--install-missing",
+        action="store_true",
+        help="Install missing Python dependencies with pip",
+    )
     args = parser.parse_args()
 
     print("=" * 55)
@@ -141,6 +187,9 @@ def main():
         print(f"   Run: pip install {' '.join(missing)}")
         if args.check:
             sys.exit(1)
+        if not args.install_missing:
+            print("   Re-run with --install-missing to install them automatically.")
+            sys.exit(1)
         print("\nInstalling missing packages...")
         subprocess.check_call([sys.executable, "-m", "pip", "install"] + missing)
         print("✅ Dependencies installed\n")
@@ -150,7 +199,10 @@ def main():
         sys.exit(0)
 
     # Setup environment
-    patch_env()
+    try:
+        patch_env(args.port)
+    except RuntimeError as exc:
+        parser.error(str(exc))
 
     # Start Redis (optional)
     redis_proc = start_redis()
@@ -169,13 +221,12 @@ def main():
     signal.signal(signal.SIGINT,  shutdown)
     signal.signal(signal.SIGTERM, shutdown)
 
-    print(f"\n[CVIS] Starting backend on port {args.port}...")
+    print(f"\n[CVIS] Starting backend on {args.host}:{args.port}...")
     print(f"[CVIS] Dashboard: http://localhost:{args.port}")
-    print(f"[CVIS] API key:   {os.environ['CVIS_API_KEY']}")
     print(f"[CVIS] Press Ctrl+C to stop\n")
 
     # Start backend (blocking)
-    start_backend(args.port)
+    start_backend(args.host, args.port)
 
 if __name__ == "__main__":
     main()

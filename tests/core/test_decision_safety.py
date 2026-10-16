@@ -5,7 +5,11 @@ from backend.decision_engine_v2 import DecisionEngineV2
 def test_unallowlisted_executable_action_cannot_auto_execute():
     engine = DecisionEngineV2.__new__(DecisionEngineV2)
 
-    action = next(iter(ACTIONS.keys()))
+    action = next(
+        action_id
+        for action_id in ACTIONS
+        if action_id not in AUTONOMOUS_ALLOWED_ACTIONS
+    )
 
     decision = engine._build_decision(
         "test decision",

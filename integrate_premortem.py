@@ -6,12 +6,16 @@
 # 4. Add the API endpoint
 # Run this script to apply steps 2-4 automatically.
 
-import re
+import sys
+from pathlib import Path
 
-MAIN_PATH = "backend/main.py"
+from safe_patch import write_text_safely
 
-with open(MAIN_PATH) as f:
-    src = f.read()
+ROOT = Path(__file__).resolve().parent
+MAIN_PATH = ROOT / "backend" / "main.py"
+APPLY = "--apply" in sys.argv
+
+src = MAIN_PATH.read_text(encoding="utf-8")
 
 # ── Step 1: Add import ──
 old_import = "from backend.core.cognitive.forecaster import get_forecaster"
@@ -20,12 +24,13 @@ new_import = (
     "from backend.core.cognitive.premortem   import get_premortem_engine"
 )
 
-if old_import in src:
+if new_import in src:
+    print("Import already present")
+elif src.count(old_import) == 1:
     src = src.replace(old_import, new_import)
     print("✅ Import added")
 else:
-    print("⚠ Import line not found — add manually:")
-    print("  from backend.core.cognitive.premortem import get_premortem_engine")
+    raise SystemExit("Expected exactly one forecaster import; refusing to patch.")
 
 # ── Step 2: Add ingest call in metric loop ──
 # Find where forecaster.ingest is called and add premortem.ingest next to it
@@ -35,12 +40,13 @@ new_ingest = (
     "            get_premortem_engine().ingest(metrics)"
 )
 
-if old_ingest in src:
+if "get_premortem_engine().ingest(metrics)" in src:
+    print("Ingest call already present")
+elif src.count(old_ingest) == 1:
     src = src.replace(old_ingest, new_ingest)
     print("✅ Ingest call added to metric loop")
 else:
-    print("⚠ Ingest line not found — add manually next to get_forecaster().ingest(metrics):")
-    print("  get_premortem_engine().ingest(metrics)")
+    raise SystemExit("Expected exactly one forecaster ingest call; refusing to patch.")
 
 # ── Step 3: Add API endpoint ──
 # Add after the /cognitive/forecast endpoint
@@ -92,18 +98,19 @@ async def cognitive_premortem():
 
 '''
 
-if old_endpoint in src:
+if '@app.get("/cognitive/premortem"' in src:
+    print("Pre-mortem endpoint already present")
+elif src.count(old_endpoint) == 1:
     src = src.replace(old_endpoint, new_endpoint_block + old_endpoint)
     print("✅ API endpoint added before /cognitive/forecast")
 else:
-    print("⚠ Endpoint injection point not found")
+    raise SystemExit("Expected exactly one forecast endpoint; refusing to patch.")
 
-with open(MAIN_PATH, "w") as f:
-    f.write(src)
+write_text_safely(MAIN_PATH, src, apply=APPLY)
 
 print()
 print("═══════════════════════════════════════════════")
-print("  Integration complete.")
+print("  Patch preview complete." if not APPLY else "  Integration complete.")
 print("  Now rebuild Docker:")
 print("  docker compose down && docker compose up -d --build backend")
 print("  Then test:")

@@ -37,11 +37,9 @@ ALLOWED_COMMANDS = frozenset(
         # Safe remediation commands
         "clear_temp",
         "clear_docker_cache",
-        "clear_logs",
         "clear_pip_cache",
 
         # Host-level remediation
-        "drop_caches",
 
         # Process remediation
         "kill_high_cpu",

@@ -16,7 +16,10 @@ import time
 import uuid
 import json
 import urllib.request
+import urllib.parse
 import urllib.error
+
+from cvis_temp import cleanup_stale_temp_files, managed_temp_directory
 
 # ── Optional psutil ───────────────────────────────────────
 try:
@@ -368,9 +371,54 @@ def transition_command(
         return None
     except Exception as e:
         print(f"[CVIS] Command transition error: {e}")
-def execute_device_command(command_type, payload):
+def consume_process_approval(
+    server, api_key, device_id, approval_id,
+    action, pid, create_time, name,
+):
+    """Consume a device-bound, one-time backend approval. Fail closed."""
+    if not all((server, api_key, device_id, approval_id, name)):
+        return False
+
+    try:
+        url = (
+            f"{server.rstrip('/')}/devices/"
+            f"{urllib.parse.quote(str(device_id), safe='')}/approvals/"
+            f"{urllib.parse.quote(str(approval_id), safe='')}/consume"
+        )
+        body = json.dumps({
+            "action": action,
+            "pid": int(pid),
+            "create_time": float(create_time),
+            "name": str(name),
+        }).encode("utf-8")
+
+        request = urllib.request.Request(
+            url,
+            data=body,
+            headers={
+                "Content-Type": "application/json",
+                "X-API-Key": api_key,
+            },
+            method="POST",
+        )
+
+        with urllib.request.urlopen(request, timeout=5) as response:
+            if response.status != 200:
+                return False
+            result = json.loads(response.read().decode("utf-8"))
+            return isinstance(result, dict) and result.get("authorized") is True
+
+    except Exception as exc:
+        print(f"[CVIS] Process approval verification denied: {exc}")
+        return False
+
+
+def execute_device_command(
+    command_type, payload, authorization_context=None
+):
     """Execute an allowlisted command locally on the device."""
     payload = payload or {}
+    authorization_context = authorization_context or {}
 
     # ------------------------------------------------------------
     # Diagnostic / read-only commands
@@ -448,47 +496,18 @@ def execute_device_command(command_type, payload):
     # Safe remediation commands
     # ------------------------------------------------------------
     if command_type == "clear_temp":
-        if OS == "Windows":
-            import tempfile
-            temp_dir = tempfile.gettempdir()
-        else:
-            temp_dir = "/tmp"
-
-        if not os.path.isdir(temp_dir):
-            return {
-                "success": False,
-                "error": f"Temporary directory not found: {temp_dir}",
-                "command_type": command_type,
-            }
-
-        removed = 0
-        failed = 0
-
         try:
-            for name in os.listdir(temp_dir):
-                path = os.path.join(temp_dir, name)
-
-                # Never follow/remove the temp directory itself.
-                try:
-                    if os.path.isdir(path) and not os.path.islink(path):
-                        import shutil
-                        shutil.rmtree(path)
-                    else:
-                        os.remove(path)
-                    removed += 1
-                except (PermissionError, FileNotFoundError, OSError):
-                    failed += 1
+            removed, failed = cleanup_stale_temp_files()
 
             return {
                 "success": failed == 0,
                 "command_type": command_type,
                 "action": "clear_temp",
-                "directory": temp_dir,
+                "directory": str(managed_temp_directory()),
                 "removed": removed,
                 "failed": failed,
             }
-
-        except Exception as exc:
+        except OSError as exc:
             return {
                 "success": False,
                 "error": str(exc),
@@ -497,6 +516,25 @@ def execute_device_command(command_type, payload):
 
     if command_type == "clear_pip_cache":
         import subprocess
+
+        if not all(
+            authorization_context.get(key)
+            for key in ("server", "api_key", "device_id")
+        ):
+            return {
+                "success": False,
+                "blocked": True,
+                "reason": "authenticated_device_command_required",
+                "command_type": command_type,
+            }
+
+        if payload.get("confirm") is not True:
+            return {
+                "success": False,
+                "blocked": True,
+                "reason": "explicit_confirmation_required",
+                "command_type": command_type,
+            }
 
         try:
             proc = subprocess.run(
@@ -525,6 +563,25 @@ def execute_device_command(command_type, payload):
 
     if command_type == "clear_docker_cache":
         import subprocess
+
+        if not all(
+            authorization_context.get(key)
+            for key in ("server", "api_key", "device_id")
+        ):
+            return {
+                "success": False,
+                "blocked": True,
+                "reason": "authenticated_device_command_required",
+                "command_type": command_type,
+            }
+
+        if payload.get("confirm") is not True:
+            return {
+                "success": False,
+                "blocked": True,
+                "reason": "explicit_confirmation_required",
+                "command_type": command_type,
+            }
 
         if OS != "Linux":
             return {
@@ -565,8 +622,14 @@ def execute_device_command(command_type, payload):
             }
 
     if command_type == "clear_logs":
-        # Intentionally conservative: only clean known CVIS temporary
-        # log files supplied explicitly by payload.
+        return {
+            "success": False,
+            "blocked": True,
+            "reason": "trusted_log_path_policy_not_implemented",
+            "command_type": command_type,
+        }
+
+        # Retained temporarily for review; unreachable while blocked.
         paths = payload.get("paths", [])
 
         if not isinstance(paths, list):
@@ -608,10 +671,29 @@ def execute_device_command(command_type, payload):
     # Host-level remediation
     # ------------------------------------------------------------
     if command_type == "drop_caches":
+        return {
+            "success": False,
+            "blocked": True,
+            "reason": "trusted_approval_not_implemented",
+            "command_type": command_type,
+        }
+
         if OS != "Linux":
             return {
                 "success": False,
                 "error": "drop_caches is supported on Linux only",
+                "command_type": command_type,
+            }
+
+        if not all(
+            authorization_context.get(key)
+            for key in ("server", "api_key", "device_id")
+        ):
+            return {
+                "success": False,
+                "error": (
+                    "drop_caches requires an authenticated device command"
+                ),
                 "command_type": command_type,
             }
 
@@ -696,15 +778,6 @@ def execute_device_command(command_type, payload):
         pid = payload.get("pid")
         expected_create_time = payload.get("create_time")
         expected_name = payload.get("name")
-        confirm = payload.get("confirm", False)
-
-        if not confirm:
-            return {
-                "success": False,
-                "error": "Process termination requires confirm=true",
-                "command_type": command_type,
-            }
-
         if pid is None or expected_create_time is None or not expected_name:
             return {
                 "success": False,
@@ -853,7 +926,35 @@ def execute_device_command(command_type, payload):
                 "memory_percent": round(mem, 2),
             }
 
+            # Approval is checked only after process identity and pressure
+            # checks. Caller-supplied confirm=True is not authorization.
+            approval_id = payload.get("approval_id")
+            context = authorization_context
+
+            if not consume_process_approval(
+                context.get("server"),
+                context.get("api_key"),
+                context.get("device_id"),
+                approval_id,
+                "kill_high_cpu",
+                pid,
+                current_create_time,
+                current_name,
+            ):
+                return {
+                    "success": False,
+                    "error": (
+                        "Process termination denied: trusted approval "
+                        "missing, invalid, expired, mismatched, or unavailable"
+                    ),
+                    "command_type": command_type,
+                    "pid": pid,
+                    "name": current_name,
+                }
+
             proc.terminate()
+
+
 
             try:
                 proc.wait(timeout=5)
@@ -971,7 +1072,15 @@ def process_pending_commands(server, api_key, device_id):
             )
             continue
 
-        result = execute_device_command(command_type, payload)
+        result = execute_device_command(
+            command_type,
+            payload,
+            authorization_context={
+                "server": server,
+                "api_key": api_key,
+                "device_id": device_id,
+            },
+        )
 
         final_status = "completed" if result.get("success") else "failed"
 

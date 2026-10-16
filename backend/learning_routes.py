@@ -1,15 +1,57 @@
-from fastapi import APIRouter
-from backend.learning_engine import LearningEngine
+import re
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, ConfigDict, StrictStr
+
+from backend.core.auth.auth import require_scope
+from backend.core.learning_engine import (
+    LearningEngine,
+    SUPPORTED_FEEDBACK_ACTIONS,
+)
+from backend.experience_store import consume_verified_experience
 
 router = APIRouter()
 engine = LearningEngine()
 
-@router.post("/api/learn")
-async def learn(payload: dict):
 
-    action = payload.get("action")
-    success = payload.get("success")
+class LearningFeedback(BaseModel):
+    model_config = ConfigDict(extra="forbid")
 
-    engine.learn_from_feedback(action, success)
+    action: StrictStr
+    experience_id: StrictStr
+
+
+@router.post(
+    "/api/learn",
+    dependencies=[Depends(require_scope("write"))],
+)
+async def learn(payload: LearningFeedback):
+    if payload.action not in SUPPORTED_FEEDBACK_ACTIONS:
+        raise HTTPException(422, "Unsupported learning action")
+
+    if re.fullmatch(r"[0-9a-f]{32}", payload.experience_id) is None:
+        raise HTTPException(422, "Invalid experience_id")
+
+    try:
+        verification = consume_verified_experience(
+            payload.experience_id,
+            payload.action,
+        )
+    except (OSError, ValueError) as exc:
+        raise HTTPException(
+            503,
+            "Verified experience evidence is unavailable",
+        ) from exc
+
+    if verification is None:
+        raise HTTPException(
+            409,
+            "No unused verified successful experience matches this feedback",
+        )
+
+    try:
+        engine.learn_from_feedback(payload.action, verification)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
 
     return {"status": "updated"}

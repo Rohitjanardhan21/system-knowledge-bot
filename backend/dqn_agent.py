@@ -45,7 +45,7 @@ class DQN(nn.Module):
 # -------------------------------------------------
 class DQNAgent:
 
-    def __init__(self):
+    def __init__(self, checkpoint_path=None):
 
         # -------------------------------------------------
         # 🔥 SAFE PROFILE HANDLING (CRITICAL FIX)
@@ -85,7 +85,11 @@ class DQNAgent:
         self.epsilon_decay = 0.995
 
         self.step_count = 0
-        self.checkpoint_path = os.getenv("DQN_CHECKPOINT_PATH", "/app/data/dqn_checkpoint.pt")
+        self.checkpoint_path = (
+            checkpoint_path
+            if checkpoint_path is not None
+            else os.getenv("DQN_CHECKPOINT_PATH", "/app/data/dqn_checkpoint.pt")
+        )
         self.checkpoint_interval = 10
 
         self.load_checkpoint()

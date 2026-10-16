@@ -6,8 +6,11 @@ Safe ceilings on all metrics — will not crash the machine.
 import threading
 import time
 import os
-import sys
+import logging
 
+from cvis_temp import create_temp_file
+
+_logger = logging.getLogger(__name__)
 _lock = threading.Lock()
 _active_stress: dict = {}   # scenario_id -> thread + stop_event
 _stress_log: list = []      # history of stress runs
@@ -23,16 +26,18 @@ def _get_current_memory_pct() -> float:
     try:
         import psutil
         return psutil.virtual_memory().percent
-    except Exception:
-        return 0.0
+    except (ImportError, OSError) as exc:
+        _logger.error("Cannot verify memory ceiling; stopping memory stress: %s", exc)
+        return 100.0
 
 
 def _get_current_cpu_pct() -> float:
     try:
         import psutil
         return psutil.cpu_percent(interval=0.1)
-    except Exception:
-        return 0.0
+    except (ImportError, OSError) as exc:
+        _logger.error("Cannot verify CPU ceiling; stopping CPU stress: %s", exc)
+        return CPU_CEILING
 
 
 # ── CPU stress worker ────────────────────────────────────────────────────────
@@ -45,8 +50,12 @@ def _cpu_stress_worker(stop_event: threading.Event, intensity: float = 0.75):
     import math
     while not stop_event.is_set():
         if _get_current_cpu_pct() >= CPU_CEILING:
-            time.sleep(0.5)
-            continue
+            _logger.warning(
+                "CPU stress stopped after reaching the %.1f%% ceiling",
+                CPU_CEILING,
+            )
+            stop_event.set()
+            break
         # Burn for `intensity` fraction of each 100ms window
         burn_end = time.time() + 0.1 * intensity
         while time.time() < burn_end and not stop_event.is_set():
@@ -70,17 +79,19 @@ def _memory_stress_worker(stop_event: threading.Event, target_mb: int = 400):
             mem_pct = _get_current_memory_pct()
 
             if mem_pct >= MEMORY_CEILING:
-                # Release one chunk to stay below ceiling
-                if chunks:
-                    chunks.pop()
-                time.sleep(0.5)
-                continue
+                _logger.warning(
+                    "Memory stress stopped after reaching the %.1f%% ceiling",
+                    MEMORY_CEILING,
+                )
+                stop_event.set()
+                break
 
             current_mb = len(chunks) * 10
             if current_mb < target_mb:
                 try:
                     chunks.append(bytearray(chunk_size))
                 except MemoryError:
+                    stop_event.set()
                     break
             time.sleep(0.3)
     finally:
@@ -94,7 +105,7 @@ def _disk_stress_worker(stop_event: threading.Event):
     Writes and reads a temp file repeatedly to spike disk I/O.
     Cleans up on stop.
     """
-    tmp_path = '/tmp/cvis_stress_io.tmp'
+    tmp_path = create_temp_file(prefix="cvis-stress-")
     data = b'x' * (1024 * 1024)  # 1MB buffer
     try:
         while not stop_event.is_set():
@@ -104,14 +115,18 @@ def _disk_stress_worker(stop_event: threading.Event):
                         f.write(data)
                 with open(tmp_path, 'rb') as f:
                     f.read()
-            except Exception:
-                pass
+            except OSError as exc:
+                _logger.error("Disk stress failed; stopping scenario: %s", exc)
+                stop_event.set()
+                break
             time.sleep(0.1)
     finally:
         try:
             os.remove(tmp_path)
-        except Exception:
-            pass
+        except FileNotFoundError:
+            return
+        except OSError:
+            _logger.exception("Failed to remove CVIS disk-stress temp file %s", tmp_path)
 
 
 # ── Scenario definitions ─────────────────────────────────────────────────────
@@ -157,41 +172,59 @@ def start_scenario(scenario_id: str) -> dict:
     if scenario_id not in SCENARIOS:
         return {"success": False, "error": f"Unknown scenario: {scenario_id}"}
 
-    with _lock:
-        if scenario_id in _active_stress:
-            return {"success": False, "error": "Scenario already running"}
-
     sc = SCENARIOS[scenario_id]
     duration = min(sc["duration_s"], MAX_DURATION_S)
     stop_event = threading.Event()
     threads = []
+    started_at = time.time()
 
-    if "cpu" in sc.get("workers", []):
-        t = threading.Thread(
-            target=_cpu_stress_worker,
-            args=(stop_event, sc.get("intensity", 0.75)),
-            daemon=True,
-        )
-        t.start()
-        threads.append(t)
+    with _lock:
+        if _active_stress:
+            active_id = next(iter(_active_stress))
+            return {
+                "success": False,
+                "error": f"Scenario already running: {active_id}",
+            }
+        _active_stress[scenario_id] = {
+            "stop_event": stop_event,
+            "threads": threads,
+            "started_at": started_at,
+            "duration_s": duration,
+            "scenario_id": scenario_id,
+        }
 
-    if "memory" in sc.get("workers", []):
-        t = threading.Thread(
-            target=_memory_stress_worker,
-            args=(stop_event, sc.get("target_mb", 400)),
-            daemon=True,
-        )
-        t.start()
-        threads.append(t)
+    try:
+        if "cpu" in sc.get("workers", []):
+            t = threading.Thread(
+                target=_cpu_stress_worker,
+                args=(stop_event, sc.get("intensity", 0.75)),
+                daemon=True,
+            )
+            t.start()
+            threads.append(t)
 
-    if "disk" in sc.get("workers", []):
-        t = threading.Thread(
-            target=_disk_stress_worker,
-            args=(stop_event,),
-            daemon=True,
-        )
-        t.start()
-        threads.append(t)
+        if "memory" in sc.get("workers", []):
+            t = threading.Thread(
+                target=_memory_stress_worker,
+                args=(stop_event, sc.get("target_mb", 400)),
+                daemon=True,
+            )
+            t.start()
+            threads.append(t)
+
+        if "disk" in sc.get("workers", []):
+            t = threading.Thread(
+                target=_disk_stress_worker,
+                args=(stop_event,),
+                daemon=True,
+            )
+            t.start()
+            threads.append(t)
+    except Exception:
+        stop_event.set()
+        with _lock:
+            _active_stress.pop(scenario_id, None)
+        raise
 
     # Auto-stop after duration
     def _auto_stop():
@@ -202,15 +235,7 @@ def start_scenario(scenario_id: str) -> dict:
 
     threading.Thread(target=_auto_stop, daemon=True).start()
 
-    started_at = time.time()
     with _lock:
-        _active_stress[scenario_id] = {
-            "stop_event":  stop_event,
-            "threads":     threads,
-            "started_at":  started_at,
-            "duration_s":  duration,
-            "scenario_id": scenario_id,
-        }
         _stress_log.append({
             "scenario_id": scenario_id,
             "label":       sc["label"],

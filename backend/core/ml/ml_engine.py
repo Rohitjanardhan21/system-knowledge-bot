@@ -1,3 +1,4 @@
+import threading
 """
 CVIS v9 — ML Engine
 Real PyTorch: 2-layer LSTM with BPTT + β-VAE (5→16→8→4→8→16→5)
@@ -232,8 +233,16 @@ class TrainingMetrics:
 # ─────────────────────────────────────────────────────────
 #  MAIN ML ENGINE
 # ─────────────────────────────────────────────────────────
+def _synchronized(method):
+    def wrapper(self, *args, **kwargs):
+        with self._lock:
+            return method(self, *args, **kwargs)
+    return wrapper
+
+
 class MLEngine:
     def __init__(self):
+        self._lock = threading.RLock()
         # Build models
         if TORCH_OK:
             self.lstm_net = MultivariateLSTMNet()
@@ -274,6 +283,7 @@ class MLEngine:
         self._tick     = 0
 
     # ── ingest + train ────────────────────────────────────
+    @_synchronized
     def ingest(self, feat: np.ndarray):
         """Called every tick with a normalised [0,1] feature vector."""
         self.feature_buf.append(feat.copy())
@@ -375,6 +385,7 @@ class MLEngine:
         self.metrics.steps_if = len(self.feature_buf)
 
     # ── score (inference) ─────────────────────────────────
+    @_synchronized
     def score(self, feat: np.ndarray) -> TrainingMetrics:
         """Compute all anomaly scores and update metrics."""
         # IF score
@@ -480,6 +491,7 @@ class MLEngine:
         return self.metrics
 
     # ── state dict (for versioning) ───────────────────────
+    @_synchronized
     def state_dict(self) -> dict:
         if TORCH_OK:
             return {
@@ -491,6 +503,7 @@ class MLEngine:
             }
         return {"lstm": self.lstm_net.state_dict(), "vae": self.vae_net.state_dict(), "metrics": asdict(self.metrics)}
 
+    @_synchronized
     def load_state_dict(self, state: dict):
         if TORCH_OK and "lstm" in state:
             self.lstm_net.load_state_dict(

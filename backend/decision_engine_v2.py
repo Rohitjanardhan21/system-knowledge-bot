@@ -304,8 +304,13 @@ class DecisionEngineV2:
             system_mode == "high_performance"
         )
 
-        # 🔴 SAFETY: NEVER AUTO-KILL PROCESSES
-        if final_action in {"kill_process", "kill_high_cpu_process"}:
+        # SAFETY: never auto-execute process termination.
+        # Include canonical executor IDs and legacy/internal aliases.
+        if final_action in {
+            "kill_process",
+            "kill_high_cpu",
+            "kill_high_cpu_process",
+        }:
             auto_execute = False
 
         # -------------------------------------------------
