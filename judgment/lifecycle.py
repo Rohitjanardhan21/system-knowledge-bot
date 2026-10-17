@@ -8,7 +8,7 @@ import secrets
 from judgment.audit import record_execution
 from judgment.state_lock import state_lock
 
-STATE_PATH = Path(r".\state\latest.json")
+STATE_PATH = Path("state") / "latest.json"
 
 
 TERMINAL_STATUSES = {"executed", "failed", "rejected"}
