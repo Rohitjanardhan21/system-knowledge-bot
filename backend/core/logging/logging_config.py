@@ -8,15 +8,24 @@ Structured JSON logging with:
   • uvicorn/gunicorn access log unified into root logger
 """
 
-import json, logging, logging.handlers, os, time, uuid
+import json
+import logging
+import logging.handlers
+import os
+import time
+import uuid
 from typing import Callable
+
+from fastapi import Request, Response
+from starlette.middleware.base import BaseHTTPMiddleware
 
 # ── Log level from env ────────────────────────────────────
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
-LOG_DIR   = os.environ.get("LOG_DIR",   "logs")
-LOKI_URL  = os.environ.get("LOKI_URL",  "")   # e.g. http://loki:3100/loki/api/v1/push
+LOG_DIR = os.environ.get("LOG_DIR", "logs")
+LOKI_URL = os.environ.get("LOKI_URL", "")  # e.g. http://loki:3100/loki/api/v1/push
 
 os.makedirs(LOG_DIR, exist_ok=True)
+
 
 # ── JSON formatter ────────────────────────────────────────
 class JsonFormatter(logging.Formatter):
@@ -24,12 +33,13 @@ class JsonFormatter(logging.Formatter):
     Emits one JSON object per line — consumed by Loki / ELK / CloudWatch.
     Fields: time, level, logger, message, [exc_info], [correlation_id], [**extra]
     """
+
     def format(self, record: logging.LogRecord) -> str:
         doc = {
-            "time":    self.formatTime(record, "%Y-%m-%dT%H:%M:%SZ"),
-            "level":   record.levelname,
-            "logger":  record.name,
-            "pid":     record.process,
+            "time": self.formatTime(record, "%Y-%m-%dT%H:%M:%SZ"),
+            "level": record.levelname,
+            "logger": record.name,
+            "pid": record.process,
             "message": record.getMessage(),
         }
         # Correlation ID injected by middleware
@@ -39,8 +49,16 @@ class JsonFormatter(logging.Formatter):
         if record.exc_info:
             doc["exc"] = self.formatException(record.exc_info)
         # Any extra fields attached by callers
-        for key in ("worker", "route", "status", "duration_ms", "rule_id",
-                    "version_id", "alert_id", "scope"):
+        for key in (
+            "worker",
+            "route",
+            "status",
+            "duration_ms",
+            "rule_id",
+            "version_id",
+            "alert_id",
+            "scope",
+        ):
             if hasattr(record, key):
                 doc[key] = getattr(record, key)
         return json.dumps(doc, default=str)
@@ -53,17 +71,19 @@ class LokiHandler(logging.Handler):
     Batches up to 50 log lines or 5 seconds, whichever comes first.
     Falls back silently if Loki is unreachable.
     """
+
     def __init__(self, url: str, labels: dict = None):
         super().__init__()
-        self.url    = url.rstrip("/")
+        self.url = url.rstrip("/")
         self.labels = labels or {"app": "cvis", "env": os.environ.get("ENV", "prod")}
         self._batch: list = []
         self._last_flush = time.monotonic()
         # Lazy import to avoid hard dependency
         try:
             import httpx
+
             self._http = httpx.Client(timeout=5)
-            self._ok   = True
+            self._ok = True
         except ImportError:
             self._ok = False
 
@@ -72,7 +92,7 @@ class LokiHandler(logging.Handler):
             return
         try:
             msg = self.format(record)
-            ts  = str(int(record.created * 1e9))   # nanoseconds
+            ts = str(int(record.created * 1e9))  # nanoseconds
             self._batch.append([ts, msg])
             now = time.monotonic()
             if len(self._batch) >= 50 or (now - self._last_flush) >= 5:
@@ -90,7 +110,7 @@ class LokiHandler(logging.Handler):
         try:
             self._http.post(f"{self.url}/loki/api/v1/push", json=payload)
         except Exception:
-            pass   # Loki unavailable — no crash
+            pass  # Loki unavailable — no crash
 
 
 # ── Setup function ────────────────────────────────────────
@@ -103,19 +123,19 @@ def setup_logging():
 
     # 1. Rotating file (10 MB × 5)
     file_handler = logging.handlers.RotatingFileHandler(
-        filename    = os.path.join(LOG_DIR, "cvis.log"),
-        maxBytes    = 10 * 1024 * 1024,   # 10 MB
-        backupCount = 5,
-        encoding    = "utf-8",
+        filename=os.path.join(LOG_DIR, "cvis.log"),
+        maxBytes=10 * 1024 * 1024,  # 10 MB
+        backupCount=5,
+        encoding="utf-8",
     )
     file_handler.setFormatter(json_fmt)
 
     # Separate file for access logs (request traces)
     access_handler = logging.handlers.RotatingFileHandler(
-        filename    = os.path.join(LOG_DIR, "access.log"),
-        maxBytes    = 20 * 1024 * 1024,
-        backupCount = 3,
-        encoding    = "utf-8",
+        filename=os.path.join(LOG_DIR, "access.log"),
+        maxBytes=20 * 1024 * 1024,
+        backupCount=3,
+        encoding="utf-8",
     )
     access_handler.setFormatter(json_fmt)
 
@@ -152,23 +172,22 @@ def setup_logging():
 
 
 # ── FastAPI middleware: Correlation-ID injection ──────────
-from fastapi import Request, Response
-from starlette.middleware.base import BaseHTTPMiddleware
-
 class CorrelationIDMiddleware(BaseHTTPMiddleware):
     """
     Attaches a UUID correlation ID to every request.
     Reads X-Request-ID from inbound headers (set by nginx/LB), else generates one.
     Injects it into log records via a LogRecord factory and returns it in responses.
     """
+
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         cid = request.headers.get("X-Request-ID", uuid.uuid4().hex[:16])
         request.state.correlation_id = cid
 
         # Inject into all log records for this request
         old_factory = logging.getLogRecordFactory()
+
         def _factory(*args, **kwargs):
-            if getattr(_factory, '_in_call', False):
+            if getattr(_factory, "_in_call", False):
                 return old_factory(*args, **kwargs)
             _factory._in_call = True
             try:
@@ -177,9 +196,10 @@ class CorrelationIDMiddleware(BaseHTTPMiddleware):
                 _factory._in_call = False
             record.correlation_id = cid
             return record
-        if not getattr(logging, '_cvis_factory_set', False):
+
+        if not getattr(logging, "_cvis_factory_set", False):
             logging.setLogRecordFactory(_factory)
-            logging._cvis_factory_set = True
+            setattr(logging, "_cvis_factory_set", True)
 
         try:
             response = await call_next(request)
@@ -200,13 +220,15 @@ class AccessLogMiddleware(BaseHTTPMiddleware):
         duration_ms = round((time.monotonic() - start) * 1000, 2)
         self._access_log.info(
             "%s %s %d",
-            request.method, request.url.path, response.status_code,
+            request.method,
+            request.url.path,
+            response.status_code,
             extra={
-                "route":       request.url.path,
-                "method":      request.method,
-                "status":      response.status_code,
+                "route": request.url.path,
+                "method": request.method,
+                "status": response.status_code,
                 "duration_ms": duration_ms,
-                "ip":          request.client.host if request.client else "unknown",
+                "ip": request.client.host if request.client else "unknown",
             },
         )
         return response
