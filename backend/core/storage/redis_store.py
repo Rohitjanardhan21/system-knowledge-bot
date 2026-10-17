@@ -8,13 +8,17 @@ Centralised Redis layer for:
   5. Pub/Sub broadcast (multi-worker event log sync)
 """
 
-import json, time, os, logging
+import json
+import time
+import os
+import logging
 from typing import Any, Optional
 
 log = logging.getLogger("cvis.redis")
 
 try:
     import redis.asyncio as aioredis
+
     REDIS_OK = True
 except ImportError:
     REDIS_OK = False
@@ -89,6 +93,7 @@ async def is_healthy() -> bool:
 #    ttl: cooldown_seconds
 # ─────────────────────────────────────────────────────────
 
+
 async def alert_check_and_set(
     rule_id: str,
     cooldown_s: int,
@@ -105,16 +110,12 @@ async def alert_check_and_set(
 
     # Remote-device alerts get an independent cooldown.
     # Local backend alerts retain the original rule-level key.
-    cooldown_key = (
-        f"{device_id}:{rule_id}"
-        if device_id
-        else rule_id
-    )
+    cooldown_key = f"{device_id}:{rule_id}" if device_id else rule_id
     key = f"cvis:alert_cooldown:{cooldown_key}"
     try:
         # SET NX EX = set only if key doesn't exist, with TTL
         result = await c.set(key, "1", nx=True, ex=cooldown_s)
-        return result is not None   # True = key was newly set = should fire
+        return result is not None  # True = key was newly set = should fire
     except Exception as e:
         log.debug("alert_check_and_set error: %s", e)
         return True
@@ -128,11 +129,7 @@ async def alert_clear_cooldown(
     if not c:
         return
     try:
-        cooldown_key = (
-            f"{device_id}:{rule_id}"
-            if device_id
-            else rule_id
-        )
+        cooldown_key = f"{device_id}:{rule_id}" if device_id else rule_id
         await c.delete(f"cvis:alert_cooldown:{cooldown_key}")
     except Exception:
         pass
@@ -143,7 +140,10 @@ async def alert_clear_cooldown(
 #    key: cvis:rl:{identifier}:{window_start}
 # ─────────────────────────────────────────────────────────
 
-async def rate_limit_check(identifier: str, limit: int, window_s: int = 60) -> tuple[bool, int]:
+
+async def rate_limit_check(
+    identifier: str, limit: int, window_s: int = 60
+) -> tuple[bool, int]:
     """
     Sliding window rate limiter.
     Returns (allowed: bool, current_count: int).
@@ -153,9 +153,9 @@ async def rate_limit_check(identifier: str, limit: int, window_s: int = 60) -> t
     if not c:
         return True, 0
 
-    now    = int(time.time())
+    now = int(time.time())
     window = now - (now % window_s)
-    key    = f"cvis:rl:{identifier}:{window}"
+    key = f"cvis:rl:{identifier}:{window}"
 
     try:
         pipe = c.pipeline()
@@ -174,6 +174,7 @@ async def rate_limit_check(identifier: str, limit: int, window_s: int = 60) -> t
 #    key: cvis:metrics:latest
 #    ttl: 3s (fresher than poll interval)
 # ─────────────────────────────────────────────────────────
+
 
 async def cache_metrics(metrics: dict, ttl: int = 3):
     c = await get_client()
@@ -199,6 +200,7 @@ async def get_cached_metrics() -> Optional[dict]:
 # ─────────────────────────────────────────────────────────
 # 4. SESSION STORE — refresh token blocklist + API keys
 # ─────────────────────────────────────────────────────────
+
 
 async def blocklist_token(jti: str, ttl: int = 604800):
     """Add JWT JTI to blocklist (survives worker restarts)."""
@@ -267,7 +269,9 @@ async def publish_event(sev: str, msg: str):
     if not c:
         return
     try:
-        await c.publish(EVENTS_CHANNEL, json.dumps({"sev": sev, "msg": msg, "ts": time.time()}))
+        await c.publish(
+            EVENTS_CHANNEL, json.dumps({"sev": sev, "msg": msg, "ts": time.time()})
+        )
     except Exception:
         pass
 
@@ -299,6 +303,7 @@ async def subscribe_events(callback):
 # 6. GENERAL-PURPOSE HELPERS
 # ─────────────────────────────────────────────────────────
 
+
 async def incr_counter(key: str, ttl: int = 0) -> int:
     c = await get_client()
     if not c:
@@ -319,10 +324,10 @@ async def redis_info() -> dict:
     try:
         info = await c.info("server")
         return {
-            "available":    True,
+            "available": True,
             "redis_version": info.get("redis_version"),
-            "uptime_s":     info.get("uptime_in_seconds"),
-            "used_memory":  info.get("used_memory_human"),
+            "uptime_s": info.get("uptime_in_seconds"),
+            "used_memory": info.get("used_memory_human"),
         }
     except Exception:
         return {"available": False}

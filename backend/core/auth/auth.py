@@ -13,18 +13,24 @@ All protected routes use: Depends(require_scope("read"))
 Public routes:           /health, /nginx-health, /docs, /openapi.json
 """
 
-import os, time, uuid, hashlib, secrets, logging
+import os
+import time
+import uuid
+import hashlib
+import secrets
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from fastapi import HTTPException, Security, status
+from fastapi import Header as _Header, HTTPException, Security, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials, APIKeyHeader
 
 log = logging.getLogger("cvis.auth")
 
 # ── Optional deps ─────────────────────────────────────────
 try:
-    import jwt as _jwt   # PyJWT
+    import jwt as _jwt  # PyJWT
+
     JWT_OK = True
 except ImportError:
     JWT_OK = False
@@ -32,15 +38,18 @@ except ImportError:
 
 try:
     import bcrypt as _bcrypt  # noqa: F401
+
     BCRYPT_OK = True
 except ImportError:
     BCRYPT_OK = False
 
 try:
     import redis.asyncio as aioredis
+
     REDIS_OK = True
 except ImportError:
     REDIS_OK = False
+
 
 # ── Config ────────────────────────────────────────────────
 def _read_secret(env_key: str) -> str:
@@ -61,6 +70,7 @@ def _read_secret(env_key: str) -> str:
     # 3. Plain env var (dev / docker-compose with env_file)
     return os.environ.get(env_key, "")
 
+
 _ENV_MODE = os.environ.get("ENV", "").strip().lower()
 _DEVELOPMENT_MODES = {"dev", "development"}
 JWT_SECRET = _read_secret("JWT_SECRET")
@@ -72,13 +82,13 @@ if not JWT_SECRET:
         )
     JWT_SECRET = secrets.token_hex(32)
     log.warning("JWT_SECRET is unset; using a process-local development secret")
-JWT_ALGORITHM   = "HS256"
-ACCESS_TTL_S    = int(os.environ.get("JWT_ACCESS_TTL_S",  "900"))     # 15 min
-REFRESH_TTL_S   = int(os.environ.get("JWT_REFRESH_TTL_S", "604800")) # 7 days
+JWT_ALGORITHM = "HS256"
+ACCESS_TTL_S = int(os.environ.get("JWT_ACCESS_TTL_S", "900"))  # 15 min
+REFRESH_TTL_S = int(os.environ.get("JWT_REFRESH_TTL_S", "604800"))  # 7 days
 
 # Bootstrap admin API key
 BOOTSTRAP_API_KEY = _read_secret("CVIS_API_KEY")
-_api_key_store: dict[str, dict] = {}   # sha256(key) → {name, scope, created_at}
+_api_key_store: dict[str, dict] = {}  # sha256(key) → {name, scope, created_at}
 _redis_backed_api_keys: set[str] = set()  # hashes successfully persisted to Redis
 
 if not BOOTSTRAP_API_KEY:
@@ -91,10 +101,15 @@ if not BOOTSTRAP_API_KEY:
     log.warning("CVIS_API_KEY is unset; using a process-local development key")
 
 _hash = hashlib.sha256(BOOTSTRAP_API_KEY.encode()).hexdigest()
-_api_key_store[_hash] = {"name": "bootstrap", "scope": "admin", "created_at": time.time()}
+_api_key_store[_hash] = {
+    "name": "bootstrap",
+    "scope": "admin",
+    "created_at": time.time(),
+}
 
 # ── Redis connection (for token revocation + key store) ───
 _redis_client = None
+
 
 async def get_redis():
     global _redis_client
@@ -102,7 +117,8 @@ async def get_redis():
         try:
             _redis_client = aioredis.from_url(
                 os.environ.get("REDIS_URL", "redis://redis:6379/0"),
-                decode_responses=True, socket_connect_timeout=3,
+                decode_responses=True,
+                socket_connect_timeout=3,
             )
             await _redis_client.ping()
         except Exception:
@@ -129,16 +145,17 @@ async def close_redis_client():
 
 
 # ── Schemes ───────────────────────────────────────────────
-bearer_scheme  = HTTPBearer(auto_error=False)
+bearer_scheme = HTTPBearer(auto_error=False)
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+
 
 # ── Token structures ──────────────────────────────────────
 class TokenPair:
     def __init__(self, access: str, refresh: str, expires_in: int):
-        self.access_token  = access
+        self.access_token = access
         self.refresh_token = refresh
-        self.token_type    = "bearer"
-        self.expires_in    = expires_in
+        self.token_type = "bearer"
+        self.expires_in = expires_in
 
 
 def _issue_access_token(subject: str, scope: str) -> str:
@@ -173,9 +190,9 @@ def _issue_refresh_token(subject: str, scope: str) -> str:
 
 def issue_token_pair(subject: str, scope: str = "read") -> TokenPair:
     return TokenPair(
-        access  = _issue_access_token(subject, scope),
-        refresh = _issue_refresh_token(subject, scope),
-        expires_in = ACCESS_TTL_S,
+        access=_issue_access_token(subject, scope),
+        refresh=_issue_refresh_token(subject, scope),
+        expires_in=ACCESS_TTL_S,
     )
 
 
@@ -270,6 +287,7 @@ async def _verify_api_key(key: str) -> dict:
 # ── Main dependency: require_scope ────────────────────────
 SCOPE_ORDER = ["read", "write", "admin"]
 
+
 def _scope_gte(have: str, need: str) -> bool:
     try:
         return SCOPE_ORDER.index(have) >= SCOPE_ORDER.index(need)
@@ -282,6 +300,7 @@ def require_scope(needed: str = "read"):
     FastAPI dependency factory.
     Usage:  Depends(require_scope("admin"))
     """
+
     async def _check(
         bearer: Optional[HTTPAuthorizationCredentials] = Security(bearer_scheme),
         api_key: Optional[str] = Security(api_key_header),
@@ -313,7 +332,9 @@ def require_scope(needed: str = "read"):
 
 
 # ── API key management ────────────────────────────────────
-async def create_api_key(name: str, scope: str = "read", device_id: str | None = None) -> str:
+async def create_api_key(
+    name: str, scope: str = "read", device_id: str | None = None
+) -> str:
     key = secrets.token_urlsafe(32)
     h = hashlib.sha256(key.encode()).hexdigest()
     entry = {"name": name, "scope": scope, "created_at": str(time.time())}
@@ -341,7 +362,7 @@ async def create_api_key(name: str, scope: str = "read", device_id: str | None =
 
     # Cache only after persistence succeeds, or in explicit development mode.
     _api_key_store[h] = entry
-    return key   # shown once — caller must store it
+    return key  # shown once — caller must store it
 
 
 async def revoke_api_key(key_hash: str) -> bool:
@@ -407,7 +428,9 @@ async def revoke_jwt(jti: str, ttl: int = REFRESH_TTL_S):
 async def _consume_refresh_jti(jti: str, expires_at: int) -> None:
     """Atomically mark a refresh JTI used; reject replay and storage failure."""
     if not isinstance(jti, str) or not jti:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Refresh token is missing a JTI")
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED, "Refresh token is missing a JTI"
+        )
 
     ttl = int(expires_at - time.time())
     if ttl <= 0:
@@ -446,7 +469,9 @@ async def refresh_access_token(refresh_token: str) -> TokenPair:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Not a refresh token")
     subject = payload.get("sub")
     if not isinstance(subject, str) or not subject:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Refresh token has no subject")
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED, "Refresh token has no subject"
+        )
     expires_at = payload.get("exp")
     if isinstance(expires_at, bool) or not isinstance(expires_at, (int, float)):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Refresh token has no expiry")
@@ -472,7 +497,7 @@ async def refresh_access_token(refresh_token: str) -> TokenPair:
 # These are thin wrappers around require_scope() — the same
 # JWT + API-key logic applies underneath.
 
-read_guard  = require_scope("read")
+read_guard = require_scope("read")
 write_guard = require_scope("write")
 admin_guard = require_scope("admin")
 
@@ -482,8 +507,6 @@ admin_guard = require_scope("admin")
 #
 #   @app.post("/models/save", dependencies=[Depends(require_api_key)])
 #
-from fastapi import Header as _Header
-
 def require_api_key(x_api_key: str = _Header(default=None)):
     """
     Simplest possible guard: checks X-API-Key == CVIS_API_KEY env var.

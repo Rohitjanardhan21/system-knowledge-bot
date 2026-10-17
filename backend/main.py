@@ -5,13 +5,19 @@ PyTorch LSTM + β-VAE + sklearn IF + Versioning + Alerts + Auth + Redis
 Run (dev):  uvicorn backend.main:app --reload
 Run (prod): gunicorn -c gunicorn_conf.py backend.main:app
 """
-import sys, os as _os
+import sys
+import os as _os
 
 BASE_DIR = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
 if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 
-import asyncio, hashlib, json as _json, threading, time, os
+import asyncio
+import hashlib
+import json as _json
+import threading
+import time
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal, Optional
@@ -46,7 +52,7 @@ from backend.core.alerts.alert_engine    import get_alert_engine, AlertRule
 from backend.chat_routes import router as chat_router
 from backend.core.storage.db import (
     save_alert, save_event, load_alerts, load_events, maybe_save_snapshot,
-    load_snapshots, db_info, close_db, save_prediction_outcome,
+    load_snapshots, db_info, close_db,
 )
 
 import logging
@@ -218,7 +224,7 @@ _cpu_usage_state: dict = {"usage_ns": None, "ts": None}
 
 # Rolling observed stability state. This is derived from real collector
 # telemetry; it is not a Digital Twin or counterfactual simulation score.
-_stability_history = deque(maxlen=60)
+_stability_history: deque[dict] = deque(maxlen=60)
 
 
 def _calculate_observed_stability(metrics: dict) -> dict:
@@ -1211,15 +1217,26 @@ async def version_stats():
 
 
 class WebhookRequest(BaseModel):
-    url: str; name: str; secret: str = ""
+    url: str
+    name: str
+    secret: str = ""
 
 class EmailRequest(BaseModel):
-    host: str; port: int = 587; username: str = ""; password: str = ""
-    from_addr: str; to_addrs: list[str]; use_tls: bool = True
+    host: str
+    port: int = 587
+    username: str = ""
+    password: str = ""
+    from_addr: str
+    to_addrs: list[str]
+    use_tls: bool = True
 
 class RuleRequest(BaseModel):
-    name: str; metric: str; operator: str; threshold: float
-    severity: str = "WARNING"; cooldown_s: int = 60
+    name: str
+    metric: str
+    operator: str
+    threshold: float
+    severity: str = "WARNING"
+    cooldown_s: int = 60
     message_tpl: str = "{metric} is {value:.2f} (threshold: {threshold})"
 
 @app.post(
@@ -1328,8 +1345,10 @@ async def patch_rule(
     threshold: Optional[float] = None,
 ):
     kw: dict = {}
-    if enabled   is not None: kw["enabled"]   = enabled
-    if threshold is not None: kw["threshold"] = threshold
+    if enabled is not None:
+        kw["enabled"] = enabled
+    if threshold is not None:
+        kw["threshold"] = threshold
     rule = get_alert_engine().update_rule(rule_id, **kw)
     if not rule:
         raise HTTPException(404, "Not found")
@@ -2822,10 +2841,14 @@ async def weekly_health_report():
     reason   = m.get("reason",   "")
 
     def _grade(s):
-        if s >= 800: return "Excellent"
-        if s >= 600: return "Good"
-        if s >= 400: return "Fair"
-        if s >= 200: return "Poor"
+        if s >= 800:
+            return "Excellent"
+        if s >= 600:
+            return "Good"
+        if s >= 400:
+            return "Fair"
+        if s >= 200:
+            return "Poor"
         return "Critical"
 
     bar = "X" * int(score / 50) + "." * (20 - int(score / 50))
@@ -2970,7 +2993,7 @@ async def list_stress_scenarios():
     try:
         from backend.core.demo.stress_engine import get_scenarios
         return get_scenarios()
-    except Exception as e:
+    except Exception:
         return []
 
 @app.post("/stress/start/{scenario_id}", tags=["Demo"], dependencies=[Depends(require_scope("admin"))])
@@ -3022,7 +3045,11 @@ if _os.path.isdir(_FRONTEND_DIR):
         return _FR(p) if _os.path.exists(p) else _HR("<h1>CVIS backend is running</h1>")
 
     try:
-        app.mount("/assets", _SS(_FRONTEND_DIR, html=False), name="frontend-assets")
+        app.mount(
+            "/assets",
+            _SS(directory=_FRONTEND_DIR, html=False),
+            name="frontend-assets",
+        )
     except Exception:
         pass
 
