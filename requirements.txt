@@ -19,7 +19,7 @@ numpy==1.26.4
 
 # ML — deep learning (optional but recommended)
 # CPU-only wheel (~250 MB). Remove for minimal image; JS fallback activates automatically.
-torch==2.4.1+cpu
+torch==2.4.1
 --extra-index-url https://download.pytorch.org/whl/cpu
 
 # Monitoring
