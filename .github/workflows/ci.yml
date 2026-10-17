@@ -14,7 +14,6 @@ concurrency:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}/cvis-backend
 
 jobs:
   # ── 1. Lint ───────────────────────────────────────────
@@ -75,6 +74,7 @@ jobs:
     outputs:
       digest: ${{ steps.build.outputs.digest }}
       tags:   ${{ steps.meta.outputs.tags }}
+      image:  ${{ steps.image-name.outputs.image }}
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
@@ -83,10 +83,13 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - id: image-name
+        shell: bash
+        run: echo "image=ghcr.io/${GITHUB_REPOSITORY,,}/cvis-backend" >> "$GITHUB_OUTPUT"
       - id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ${{ steps.image-name.outputs.image }}
           tags: |
             type=ref,event=branch,suffix=-${{ github.sha }}
             type=ref,event=pr
@@ -128,7 +131,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build.outputs.digest }}
+          image-ref: ${{ needs.build.outputs.image }}@${{ needs.build.outputs.digest }}
           format: sarif
           output: trivy.sarif
           severity: CRITICAL,HIGH
@@ -141,7 +144,7 @@ jobs:
         if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
         with:
           python-version: "3.12"
-      - run: pip install pip-audit && pip-audit -r requirements.txt --strict
+      - run: pip install pip-audit && pip-audit -r requirements.txt --strict --vulnerability-service osv
         if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
 
   # ── 5. Deploy staging ─────────────────────────────────
@@ -162,7 +165,7 @@ jobs:
             set -e
             cd /opt/cvis
             echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-            IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:develop-${{ github.sha }}"
+            IMAGE="${{ needs.build.outputs.image }}:develop-${{ github.sha }}"
             sed -i "s|^\([[:space:]]*image: \)synapse-backend:.*|\1${IMAGE}|" docker-compose.yml
             docker compose pull backend
             docker compose up -d --no-deps --wait backend
