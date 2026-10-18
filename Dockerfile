@@ -23,6 +23,11 @@ FROM python:3.12-slim AS runtime
 LABEL org.opencontainers.image.title="CVIS v9 AIOps Backend"
 LABEL org.opencontainers.image.version="9.0.0"
 
+# Apply OS security patches and refresh base Python tooling
+RUN apt-get update && apt-get upgrade -y --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/* \
+    && pip install --no-cache-dir --upgrade pip setuptools wheel
+
 # Create non-root user
 RUN useradd --create-home --shell /bin/bash --uid 1001 cvis
 
