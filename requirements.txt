@@ -27,6 +27,8 @@ prometheus-client==0.21.0    # /metrics endpoint (Prometheus text format)
 
 redis
 
+msgpack>=1.2.3
+
 aiosqlite
 
 PyJWT
