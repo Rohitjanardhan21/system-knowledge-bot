@@ -162,7 +162,16 @@ jobs:
           image-ref: ${{ github.event_name == 'pull_request' && 'cvis-backend:pr-scan' || format('{0}@{1}', needs.build.outputs.image, needs.build.outputs.digest) }}
           format: table
           severity: CRITICAL,HIGH
+          ignore-unfixed: true
           exit-code: "0"
+      - uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ github.event_name == 'pull_request' && 'cvis-backend:pr-scan' || format('{0}@{1}', needs.build.outputs.image, needs.build.outputs.digest) }}
+          format: sarif
+          output: trivy.sarif
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
       - uses: github/codeql-action/upload-sarif@v4
         if: ${{ always() && hashFiles('trivy.sarif') != '' }}
         with:
