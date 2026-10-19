@@ -32,6 +32,9 @@ RUN apt-get update && apt-get upgrade -y --no-install-recommends && \
 # Copy installed Python packages
 COPY --from=builder /install /usr/local
 
+# Upgrade runtime pip to address known vulnerabilities
+RUN python -m pip install --no-cache-dir --upgrade pip
+
 # Set working directory
 WORKDIR /app
 

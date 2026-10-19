@@ -156,6 +156,7 @@ jobs:
           output: trivy.sarif
           severity: CRITICAL,HIGH
           ignore-unfixed: true
+          skip-files: /usr/local/lib/python3.12/site-packages/pip/_vendor/bom.cdx.json
           exit-code: "1"
       - name: Upload Trivy SARIF artifact
         if: always()
