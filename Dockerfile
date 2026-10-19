@@ -7,7 +7,8 @@ FROM python:3.12-slim AS builder
 
 WORKDIR /build
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get upgrade -y --no-install-recommends && \
+    apt-get install -y --no-install-recommends \
     gcc g++ libffi-dev \
     && rm -rf /var/lib/apt/lists/*
 
@@ -23,8 +24,10 @@ FROM python:3.12-slim AS runtime
 LABEL org.opencontainers.image.title="CVIS v9 AIOps Backend"
 LABEL org.opencontainers.image.version="9.0.0"
 
-# Create non-root user
-RUN useradd --create-home --shell /bin/bash --uid 1001 cvis
+# Upgrade OS packages and create non-root user
+RUN apt-get update && apt-get upgrade -y --no-install-recommends && \
+    rm -rf /var/lib/apt/lists/* && \
+    useradd --create-home --shell /bin/bash --uid 1001 cvis
 
 # Copy installed Python packages
 COPY --from=builder /install /usr/local
