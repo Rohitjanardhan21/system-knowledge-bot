@@ -7,6 +7,10 @@
 # Allow frontend (FIX)
 !frontend/**
 
+# Allow frontend source used by the Docker build
+!system-ui/
+!system-ui/**
+
 # Allow nginx (VERY IMPORTANT)
 !nginx/**
 
