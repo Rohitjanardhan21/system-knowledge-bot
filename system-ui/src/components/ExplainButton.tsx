@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { API_BASE } from "../services/endpoints";
 
 interface ExplainButtonProps {
   context?: string;              // e.g. "cpu_high", "memory_spike"
@@ -41,7 +42,7 @@ export default function ExplainButton({
 
       const query = buildQuery();
 
-      const res = await fetch("http://localhost:8000/ai/query", {
+      const res = await fetch(`${API_BASE}/ai/query`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json"

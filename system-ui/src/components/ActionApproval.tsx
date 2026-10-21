@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { API_BASE } from "../services/endpoints";
 
 interface Action {
 id: string;
@@ -25,7 +26,7 @@ const approveAction = async (id: string) => {
 setLoadingId(id);
 
 try {
-  const res = await fetch(`http://localhost:8000/actions/approve/${id}`, {
+  const res = await fetch(`${API_BASE}/actions/approve/${id}`, {
     method: "POST"
   });
 
@@ -44,7 +45,7 @@ const rejectAction = async (id: string) => {
 setLoadingId(id);
 
 try {
-  const res = await fetch(`http://localhost:8000/actions/reject/${id}`, {
+  const res = await fetch(`${API_BASE}/actions/reject/${id}`, {
     method: "POST"
   });
 

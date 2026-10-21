@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { API_BASE } from "../services/endpoints";
 
 interface Props {
 isOpen: boolean;
@@ -47,7 +48,7 @@ setInput("");
 setLoading(true);
 
 try {
-  const res = await fetch("http://localhost:8000/ai/stream", {
+  const res = await fetch(`${API_BASE}/ai/stream`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json"

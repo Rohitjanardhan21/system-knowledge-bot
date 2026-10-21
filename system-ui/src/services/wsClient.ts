@@ -1,5 +1,7 @@
+import { WS_BASE } from "./endpoints";
+
 export function connectWebSocket(callback: (data: any) => void) {
-  const ws = new WebSocket("ws://127.0.0.1:8000/ws/system");
+  const ws = new WebSocket(`${WS_BASE}/ws/system`);
 
   // -----------------------------------------
   // CONNECTED

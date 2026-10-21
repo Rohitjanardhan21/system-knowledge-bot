@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { API_BASE } from "../services/endpoints";
 
 export default function AgentChat() {
 
@@ -9,7 +10,7 @@ export default function AgentChat() {
 
     if (!input) return;
 
-    const res = await fetch("http://127.0.0.1:8000/system/chat", {
+    const res = await fetch(`${API_BASE}/system/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ query: input })

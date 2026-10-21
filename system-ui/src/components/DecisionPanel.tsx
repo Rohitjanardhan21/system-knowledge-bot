@@ -1,5 +1,6 @@
 import { useState } from "react";
 import ConfidenceBar from "./ConfidenceBar";
+import { API_BASE } from "../services/endpoints";
 
 /* ─────────────────────────────────────────────
    GlassCard (fallback if not defined globally)
@@ -31,7 +32,7 @@ export default function DecisionPanel({ decision }: any) {
     try {
       setStatus("executing");
 
-      const res = await fetch("http://localhost:8000/execute", {
+      const res = await fetch(`${API_BASE}/execute`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
