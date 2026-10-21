@@ -3047,7 +3047,7 @@ if _os.path.isdir(_FRONTEND_DIR):
     try:
         app.mount(
             "/assets",
-            _SS(directory=_FRONTEND_DIR, html=False),
+            _SS(directory=_os.path.join(_FRONTEND_DIR, "assets"), html=False),
             name="frontend-assets",
         )
     except Exception:
