@@ -6,7 +6,13 @@ export default function ReasoningGraph({ agents }: any) {
 
   const format = (o: any) => {
     if (o.cpu !== undefined) return `CPU ${o.cpu.toFixed(1)}%`;
-    if (o.root_cause) return o.root_cause;
+    if (o.root_cause) {
+      if (typeof o.root_cause === "string") return o.root_cause;
+      if (typeof o.root_cause === "object") {
+        const cause = o.root_cause.type ?? o.root_cause.process;
+        return typeof cause === "string" ? cause : "Root cause detected";
+      }
+    }
     if (o.trend !== undefined) return `Trend ${o.trend.toFixed(2)}`;
     if (o.action) return `${o.action}`;
     if (o.auto_execute !== undefined)
