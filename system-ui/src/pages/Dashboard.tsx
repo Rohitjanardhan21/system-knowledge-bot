@@ -659,7 +659,7 @@ const AIChat = () => {
           `MEM ${result.memory ?? "—"}% · ` +
           `DISK ${result.disk ?? "—"}%\n` +
           `Decision: ${result.decision ?? "None"}\n` +
-          `Root cause: ${result.root_cause ?? "Unknown"}`;
+          `Root cause: ${formatRootCause(result.root_cause) ?? "Unknown"}`;
       } else if (result.mode === "confirm") {
         content = result.message ?? "The backend requires confirmation before execution.";
       } else if (result.mode === "executed") {
@@ -672,7 +672,7 @@ const AIChat = () => {
         const structured = result.structured;
         content =
           `SUMMARY: ${structured.summary ?? "—"}\n\n` +
-          `ROOT CAUSE: ${structured.root_cause ?? "—"}\n\n` +
+          `ROOT CAUSE: ${formatRootCause(structured.root_cause) ?? "—"}\n\n` +
           `EXPLANATION: ${structured.explanation ?? "—"}\n\n` +
           `RECOMMENDED ACTION: ${structured.recommended_action ?? "—"}\n` +
           `CONFIDENCE: ${
@@ -940,9 +940,9 @@ interface PipelineData {
     } | null;
   };
   system_risk?: number;
-  root_cause?: string | null;
+  root_cause?: unknown;
   causal?: {
-    primary_cause?: string | null;
+    primary_cause?: unknown;
   };
   prediction?: {
     type?: string;
@@ -1000,7 +1000,7 @@ interface SystemStatus {
       network?: number;
     };
     fusion?: {
-      cause?: string;
+      cause?: unknown;
     };
   };
   patterns?: Array<{
@@ -1038,6 +1038,18 @@ interface BackendAction {
   description: string;
   safe?: boolean;
   targets?: string[];
+}
+
+function formatRootCause(value: unknown): string | null {
+  if (typeof value === "string") return value;
+  if (!value || typeof value !== "object") return null;
+
+  const cause = value as Record<string, unknown>;
+  for (const field of [cause.type, cause.process]) {
+    if (typeof field === "string" && field.length > 0) return field;
+  }
+
+  return "Root cause detected";
 }
 
 interface BackendActionResult {
@@ -1315,10 +1327,10 @@ export default function Dashboard() {
     ...(pipeline.decision ?? {}),
   };
   const decisionRootCause =
-    pipeline.decision?.root_cause?.type ||
-    pipeline.causal?.primary_cause ||
-    data.intelligence?.fusion?.cause ||
-    null;
+    formatRootCause(pipeline.decision?.root_cause) ||
+    formatRootCause(pipeline.causal?.primary_cause) ||
+    formatRootCause(pipeline.root_cause) ||
+    formatRootCause(data.intelligence?.fusion?.cause);
 
   // ── Forecast-backed risk ──
   // TP-140: live cognitive prediction polling
@@ -1524,14 +1536,19 @@ export default function Dashboard() {
         </div>
 
         {/* MAIN GRID */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 380px", gap: "20px", alignItems: "start" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr) 380px", gap: "20px", alignItems: "start" }}>
 
           {/* LEFT COLUMN */}
           <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
 
             <Section title="Performance Timeline" subtitle="40-point rolling window · 500ms resolution">
-              <div style={{ height: "200px" }}>
-                <ResponsiveContainer width="100%" height="100%">
+              <div style={{ height: "200px", width: "100%", minWidth: 0 }}>
+                <ResponsiveContainer
+                  width="100%"
+                  height="100%"
+                  minWidth={0}
+                  initialDimension={{ width: 400, height: 200 }}
+                >
                   <AreaChart data={history} margin={{ left: 0, right: 8, top: 10, bottom: 0 }}>
                     <defs>
                       <linearGradient id="gCpu" x1="0" y1="0" x2="0" y2="1">
@@ -1842,8 +1859,13 @@ export default function Dashboard() {
 
             {/* Signal Radar */}
             <Section title="System Signal Map" subtitle="Multimodal state radar">
-              <div style={{ height: "210px" }}>
-                <ResponsiveContainer width="100%" height="100%">
+              <div style={{ height: "210px", width: "100%", minWidth: 0 }}>
+                <ResponsiveContainer
+                  width="100%"
+                  height="100%"
+                  minWidth={0}
+                  initialDimension={{ width: 380, height: 210 }}
+                >
                   <RadarChart data={radarData}>
                     <PolarGrid stroke={T.border} />
                     <PolarAngleAxis dataKey="subject" stroke={T.textMuted} fontSize={10} tick={{ fontFamily: "'Share Tech Mono', monospace" }} />
@@ -1924,8 +1946,7 @@ export default function Dashboard() {
                     PRIMARY CAUSE
                   </div>
                   <div style={{ color: decisionRootCause ? T.warning : T.text, fontWeight: 700 }}>
-                    {pipeline.causal?.primary_cause ||
-                      pipeline.decision?.root_cause?.type ||
+                    {decisionRootCause ||
                       "NO CAUSAL RELATIONSHIP IDENTIFIED"}
                   </div>
                 </div>
