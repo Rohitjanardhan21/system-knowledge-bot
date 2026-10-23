@@ -1179,8 +1179,13 @@ export default function Dashboard() {
 
   useEffect(() => {
     let cancelled = false;
+    let telemetryInFlight = false;
 
     const fetchTelemetry = async () => {
+      if (telemetryInFlight) return;
+
+      telemetryInFlight = true;
+
       try {
         const response = await api.get<SystemStatus>("/os/status");
         const json = response.data;
@@ -1220,6 +1225,8 @@ export default function Dashboard() {
 
         // IMPORTANT: no synthetic telemetry fallback.
         // Keep the last verified backend values on screen.
+      } finally {
+        telemetryInFlight = false;
       }
     };
 
