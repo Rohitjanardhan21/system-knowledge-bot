@@ -24,10 +24,14 @@ api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
+    const requestUrl = String(originalRequest?.url ?? "");
 
     if (
       error.response?.status !== 401 ||
-      originalRequest?._retry
+      !originalRequest ||
+      originalRequest._retry ||
+      requestUrl.includes("/auth/refresh") ||
+      requestUrl.includes("/auth/login")
     ) {
       return Promise.reject(error);
     }
@@ -40,6 +44,7 @@ api.interceptors.response.use(
       return Promise.reject(error);
     }
 
+    originalRequest.headers = originalRequest.headers ?? {};
     originalRequest.headers.Authorization = `Bearer ${newToken}`;
 
     return api(originalRequest);

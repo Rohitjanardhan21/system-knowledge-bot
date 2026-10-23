@@ -39,31 +39,49 @@ export function getRefreshToken(): string | null {
   return sessionStorage.getItem(REFRESH_TOKEN_KEY);
 }
 
-export async function refreshAccessToken(): Promise<string | null> {
+let refreshPromise: Promise<string | null> | null = null;
+
+export function refreshAccessToken(): Promise<string | null> {
+  if (refreshPromise) {
+    return refreshPromise;
+  }
+
   const refreshToken = getRefreshToken();
 
   if (!refreshToken) {
-    return null;
+    return Promise.resolve(null);
   }
 
-  try {
-    const response = await axios.post<TokenResponse>(
-      `${API_BASE}/auth/refresh`,
-      {
-        refresh_token: refreshToken,
-      },
-    );
+  refreshPromise = (async (): Promise<string | null> => {
+    try {
+      const response = await axios.post<TokenResponse>(
+        `${API_BASE}/auth/refresh`,
+        { refresh_token: refreshToken },
+      );
 
-    const tokens = response.data;
+      const tokens = response.data;
 
-    sessionStorage.setItem(ACCESS_TOKEN_KEY, tokens.access_token);
-    sessionStorage.setItem(REFRESH_TOKEN_KEY, tokens.refresh_token);
+      // Don't overwrite a session that changed while this request was in flight.
+      if (getRefreshToken() !== refreshToken) {
+        return getAccessToken();
+      }
 
-    return tokens.access_token;
-  } catch {
-    logout();
-    return null;
-  }
+      sessionStorage.setItem(ACCESS_TOKEN_KEY, tokens.access_token);
+      sessionStorage.setItem(REFRESH_TOKEN_KEY, tokens.refresh_token);
+
+      return tokens.access_token;
+    } catch {
+      // Only clear the session if it still uses the token that failed.
+      if (getRefreshToken() === refreshToken) {
+        logout();
+      }
+      return null;
+    } finally {
+      refreshPromise = null;
+    }
+  })();
+
+  return refreshPromise;
 }
 
 export function logout(): void {
