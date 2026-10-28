@@ -1,9 +1,13 @@
 import { useState } from "react";
 import { API_BASE } from "../services/endpoints";
 
-export default function AgentChat() {
+interface ChatMessage {
+  role: "user" | "agent";
+  text: string;
+}
 
-  const [messages, setMessages] = useState<any[]>([]);
+export default function AgentChat() {
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
 
   const sendMessage = async () => {
@@ -21,7 +25,7 @@ export default function AgentChat() {
     setMessages(prev => [
       ...prev,
       { role: "user", text: input },
-      { role: "agent", text: data.response }
+      { role: "agent", text: String(data.response ?? "") }
     ]);
 
     setInput("");

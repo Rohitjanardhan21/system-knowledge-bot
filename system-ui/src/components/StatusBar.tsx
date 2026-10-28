@@ -1,4 +1,4 @@
-export default function StatusBar({ posture }: any) {
+export default function StatusBar({ posture }: { posture: string }) {
   const color =
     posture === "critical"
       ? "#ef4444"

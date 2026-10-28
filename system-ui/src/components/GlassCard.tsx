@@ -1,4 +1,6 @@
-export default function GlassCard({ children }: any) {
+import type { ReactNode } from "react";
+
+export default function GlassCard({ children }: { children: ReactNode }) {
   return (
     <div className="
       bg-white/5

@@ -1,6 +1,7 @@
-import { useEffect, useState, useRef, useCallback, type ReactNode } from "react";
-import { api } from "../services/api";
-import { fetchCognitivePredictions, acknowledgeCognitivePrediction, resolveCognitivePrediction } from "../services/api";
+import { useEffect, useState, useRef, useCallback, type CSSProperties, type ReactNode } from "react";
+import { api, fetchDesktopSettings, fetchCognitivePredictions, acknowledgeCognitivePrediction, resolveCognitivePrediction, quitDesktopApp, type CognitivePrediction } from "../services/api";
+import ErrorLogAnalyzer from "../components/ErrorLogAnalyzer";
+import DesktopSettings from "../components/DesktopSettings";
 import {
   AreaChart, Area, CartesianGrid, ResponsiveContainer, RadarChart,
   PolarGrid, PolarAngleAxis, Radar, XAxis, YAxis, Tooltip
@@ -24,9 +25,26 @@ const T = {
   textDim: "#3a5570",
 };
 
+const headerActionStyle: CSSProperties = {
+  padding: "8px 10px",
+  color: T.accent,
+  background: "rgba(0, 212, 255, 0.07)",
+  border: `1px solid ${T.borderActive}`,
+  borderRadius: 4,
+  fontSize: 11,
+  fontFamily: "'Share Tech Mono', monospace",
+  cursor: "pointer",
+};
+
+const quitActionStyle: CSSProperties = {
+  ...headerActionStyle,
+  color: "#ff9aaa",
+  background: "rgba(255, 51, 102, 0.1)",
+  borderColor: "rgba(255, 51, 102, 0.55)",
+};
+
 /* ── KEYFRAMES ────────────────────────────────────────────── */
 const STYLES = `
-  @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Share+Tech+Mono&display=swap');
   @keyframes float { 0%,100%{transform:translate(0,0) scale(1);} 50%{transform:translate(20px,-20px) scale(1.05);} }
   @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.5;} }
   @keyframes pulseRing { 0%{transform:scale(0.95);box-shadow:0 0 0 0 rgba(0,212,255,0.5);} 70%{transform:scale(1);box-shadow:0 0 0 20px rgba(0,212,255,0);} 100%{transform:scale(0.95);} }
@@ -1107,7 +1125,12 @@ interface HistoryPoint {
 /* ── MAIN DASHBOARD ──────────────────────────────────────── */
 export default function Dashboard() {
 
-  const [cognitivePredictions, setCognitivePredictions] = useState<any[]>([]);
+  const [showLogAnalyzer, setShowLogAnalyzer] = useState(false);
+  const [showDesktopSettings, setShowDesktopSettings] = useState(false);
+  const [desktopSettingsAvailable, setDesktopSettingsAvailable] = useState(false);
+  const [quitPending, setQuitPending] = useState(false);
+  const [quitError, setQuitError] = useState("");
+  const [cognitivePredictions, setCognitivePredictions] = useState<CognitivePrediction[]>([]);
   const [predictionBusy, setPredictionBusy] = useState<string | null>(null);
 
   const [data, setData] = useState<SystemStatus>({});
@@ -1122,6 +1145,33 @@ export default function Dashboard() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionResult, setActionResult] = useState<BackendActionResult | null>(null);
   const prevLevel = useRef("OPTIMAL");
+
+  const quitCvis = useCallback(async () => {
+    if (!window.confirm("Quit CVIS and stop all monitoring and system-data collection?")) {
+      return;
+    }
+    setQuitPending(true);
+    setQuitError("");
+    try {
+      await quitDesktopApp();
+    } catch (error) {
+      console.error("[CVIS] Could not quit the desktop app:", error);
+      setQuitPending(false);
+      setQuitError("Quit failed. Use Quit CVIS from the tray menu.");
+    }
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    fetchDesktopSettings()
+      .then((settings) => {
+        if (active) setDesktopSettingsAvailable(settings.available);
+      })
+      .catch(() => {
+        if (active) setDesktopSettingsAvailable(false);
+      });
+    return () => { active = false; };
+  }, []);
 
   const fetchAvailableActions = useCallback(async () => {
     try {
@@ -1412,7 +1462,9 @@ export default function Dashboard() {
           osc.start(ctx.currentTime + i * 0.18);
           osc.stop(ctx.currentTime + i * 0.18 + 0.14);
         });
-      } catch {}
+      } catch (error) {
+        console.error("[AIOps] Unable to play alert notification:", error);
+      }
     }
 
     prevLevel.current = level;
@@ -1451,6 +1503,8 @@ export default function Dashboard() {
     <>
       <style>{STYLES}</style>
       <CircuitBg isCritical={isCritical} isWarning={isWarning} />
+      {showLogAnalyzer && <ErrorLogAnalyzer onClose={() => setShowLogAnalyzer(false)} />}
+      {showDesktopSettings && <DesktopSettings onClose={() => setShowDesktopSettings(false)} />}
 
       {/* CRT scanline sweep */}
       <div style={{
@@ -1483,6 +1537,24 @@ export default function Dashboard() {
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "20px" }}>
+            <button type="button" onClick={() => setShowLogAnalyzer(true)} style={headerActionStyle}>
+              Analyze Error Logs
+            </button>
+            {desktopSettingsAvailable && (
+              <button type="button" onClick={() => setShowDesktopSettings(true)} style={headerActionStyle}>
+                Settings
+              </button>
+            )}
+            {desktopSettingsAvailable && (
+              <button
+                type="button"
+                onClick={() => void quitCvis()}
+                disabled={quitPending}
+                style={quitActionStyle}
+              >
+                {quitPending ? "Stopping CVIS…" : "Quit CVIS"}
+              </button>
+            )}
             {/* Live indicator */}
             <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "10px", fontFamily: "'Share Tech Mono', monospace", color: T.textDim }}>
               <div style={{ width: "6px", height: "6px", borderRadius: "50%", background: T.success, animation: "pulse 1.5s infinite", boxShadow: `0 0 6px ${T.success}` }} />
@@ -1495,6 +1567,11 @@ export default function Dashboard() {
             <StatusBadge level={level} color={color} />
           </div>
         </div>
+        {quitError && (
+          <div role="alert" style={{ color: T.danger, textAlign: "right", marginBottom: 12 }}>
+            {quitError}
+          </div>
+        )}
 
         {/* TICKER */}
         <TickerBar history={history} color={color} />

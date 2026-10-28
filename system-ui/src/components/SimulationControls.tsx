@@ -1,12 +1,16 @@
 import { useState, useEffect } from "react";
 
-export default function SimulationControls({ onChange }: any) {
+export default function SimulationControls({
+  onChange,
+}: {
+  onChange: (metrics: { cpu: number; memory: number }) => void;
+}) {
   const [cpu, setCpu] = useState(40);
   const [memory, setMemory] = useState(50);
 
   useEffect(() => {
     onChange({ cpu, memory });
-  }, [cpu, memory]);
+  }, [cpu, memory, onChange]);
 
   return (
     <div style={{

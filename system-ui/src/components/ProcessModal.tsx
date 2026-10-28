@@ -1,23 +1,17 @@
-import { useEffect, useState } from "react";
+interface ProcessInfo {
+  name: string;
+  cpu: number;
+  memory: number;
+  nodes?: string[];
+}
 
-export default function ProcessModal({ process, onClose }: any) {
-
-const [, setHistory] = useState<any[]>([]);
-
-useEffect(() => {
-if (!process) return;
-
-// simple simulated trend (can connect backend later)
-setHistory(prev => [
-  ...prev.slice(-20),
-  {
-    cpu: process.cpu,
-    memory: process.memory,
-    time: new Date().toLocaleTimeString()
-  }
-]);
-
-}, [process]);
+export default function ProcessModal({
+  process,
+  onClose,
+}: {
+  process?: ProcessInfo | null;
+  onClose: () => void;
+}) {
 
 if (!process) return null;
 

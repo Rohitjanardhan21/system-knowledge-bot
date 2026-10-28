@@ -12,34 +12,29 @@ alerts: Alert[];
 removeAlert: (id: string) => void;
 };
 
+const getDuration = (level: Alert["level"]) => {
+  switch (level) {
+    case "HIGH": return 6000;
+    case "MEDIUM": return 4000;
+    default: return 3000;
+  }
+};
+
 export default function AlertToast({ alerts, removeAlert }: Props) {
 
 // --------------------------------------------------
 // AUTO DISMISS (SMART)
 // --------------------------------------------------
 useEffect(() => {
-alerts.forEach((alert) => {
-if (alert.level === "CRITICAL") return; // don't auto-dismiss critical
+  const timeouts = alerts
+    .filter((alert) => alert.level !== "CRITICAL")
+    .map((alert) => window.setTimeout(
+      () => removeAlert(alert.id),
+      getDuration(alert.level),
+    ));
 
-  const timeout = setTimeout(() => {
-    removeAlert(alert.id);
-  }, getDuration(alert.level));
-
-  return () => clearTimeout(timeout);
-});
-
-}, [alerts]);
-
-// --------------------------------------------------
-// DURATION BASED ON SEVERITY
-// --------------------------------------------------
-const getDuration = (level: string) => {
-switch (level) {
-case "HIGH": return 6000;
-case "MEDIUM": return 4000;
-default: return 3000;
-}
-};
+  return () => timeouts.forEach((timeout) => window.clearTimeout(timeout));
+}, [alerts, removeAlert]);
 
 // --------------------------------------------------
 // STYLE MAPPING

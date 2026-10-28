@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 export function useWebSocket(url: string) {
-  const [data, setData] = useState<any>(null);
+  const [data, setData] = useState<unknown>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {

@@ -6,9 +6,15 @@ Output: dist/CVIS.exe
 """
 
 import sys
+import os
 from PyInstaller.utils.hooks import collect_submodules, collect_data_files
 
 block_cipher = None
+frontend_dist = os.path.join(SPECPATH, 'system-ui', 'dist')
+app_icon = os.path.join(SPECPATH, 'docs', 'cvis.ico')
+
+if not os.path.isfile(os.path.join(frontend_dist, 'index.html')):
+    raise SystemExit('Frontend bundle is missing. Run build_app.bat to build system-ui first.')
 
 # Collect all hidden imports needed by FastAPI + backend
 hidden_imports = (
@@ -23,6 +29,7 @@ hidden_imports = (
     + collect_submodules('PIL')
     + [
         'backend.main',
+        'backend.core.diagnostics.log_analyzer',
         'backend.core.ml.ml_engine',
         'backend.core.cognitive.failure_dna',
         'backend.core.cognitive.forecaster',
@@ -49,8 +56,7 @@ hidden_imports = (
 )
 
 datas = [
-    ('frontend',    'frontend'),
-    ('.env.example', '.'),
+    (frontend_dist, 'frontend'),
     ('backend',     'backend'),
 ]
 
@@ -91,7 +97,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon='docs/cvis.ico' if sys.platform == 'win32' else None,
+    icon=app_icon if sys.platform == 'win32' and os.path.isfile(app_icon) else None,
     version_file=None,
     uac_admin=False,
 )

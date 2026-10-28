@@ -3,10 +3,10 @@
   "identifier": "com.system.knowledgebot",
 
   "build": {
-    "beforeDevCommand": "python3 -m uvicorn backend.main:app --host 0.0.0.0 --port 8000",
-    "beforeBuildCommand": "",
-    "devUrl": "http://127.0.0.1:8000",
-    "frontendDist": "../backend/static"
+    "beforeDevCommand": "npm --prefix system-ui run dev -- --host 127.0.0.1",
+    "beforeBuildCommand": "npm --prefix system-ui run build",
+    "devUrl": "http://127.0.0.1:5173",
+    "frontendDist": "../system-ui/dist"
   },
 
   "app": {

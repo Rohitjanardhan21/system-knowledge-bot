@@ -3,7 +3,14 @@ from pathlib import Path
 
 root = Path(".")
 needle = "kill_high_cpu"
-excluded_directories = {".venv", "__pycache__", ".git"}
+excluded_directories = {
+    ".git",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    "__pycache__",
+    "node_modules",
+}
 
 
 def python_files():
@@ -20,7 +27,11 @@ def python_files():
         directories[:] = [
             name
             for name in directories
-            if name not in excluded_directories and not name.endswith(".")
+            if (
+                name not in excluded_directories
+                and not name.startswith(".venv")
+                and not name.endswith(".")
+            )
         ]
 
         for filename in filenames:
@@ -35,19 +46,25 @@ print("NO FAILUREDNA.")
 print("NO DATABASE CHANGES.")
 
 matches = []
+found = []
+implementation_markers = (
+    "proc.terminate(",
+    ".terminate()",
+    "Process remediation",
+    "Destructive process termination",
+)
 
 for path in python_files():
     try:
-        text = path.read_text(encoding="utf-8")
+        lines = path.read_text(encoding="utf-8").splitlines()
     except (OSError, UnicodeDecodeError):
         continue
 
-    if needle not in text:
-        continue
-
-    for line_no, line in enumerate(text.splitlines(), 1):
+    for line_no, line in enumerate(lines, 1):
         if needle in line:
             matches.append((str(path), line_no, line.strip()))
+        if any(marker in line for marker in implementation_markers):
+            found.append((str(path), line_no, line.strip()))
 
 print("\n1. ALL PROJECT REFERENCES TO kill_high_cpu")
 print("   matches:", len(matches))
@@ -56,25 +73,6 @@ for path, line_no, line in matches:
     print(f"   {path}:{line_no}: {line}")
 
 print("\n2. LIKELY DESTRUCTIVE IMPLEMENTATIONS")
-
-implementation_markers = (
-    "proc.terminate(",
-    ".terminate()",
-    "Process remediation",
-    "Destructive process termination",
-)
-
-found = []
-
-for path in python_files():
-    try:
-        lines = path.read_text(encoding="utf-8").splitlines()
-    except (OSError, UnicodeDecodeError):
-        continue
-
-    for i, line in enumerate(lines):
-        if any(marker in line for marker in implementation_markers):
-            found.append((str(path), i + 1, line.strip()))
 
 for path, line_no, line in found:
     print(f"   {path}:{line_no}: {line}")

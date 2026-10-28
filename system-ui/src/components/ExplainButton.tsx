@@ -3,8 +3,8 @@ import { API_BASE } from "../services/endpoints";
 
 interface ExplainButtonProps {
   context?: string;              // e.g. "cpu_high", "memory_spike"
-  data?: any;                    // full system data (optional)
-  onExplain?: (response: any) => void; // callback to parent (chat / modal)
+  data?: Record<string, unknown>;
+  onExplain?: (response: unknown) => void;
 }
 
 export default function ExplainButton({
@@ -21,7 +21,7 @@ export default function ExplainButton({
   const buildQuery = () => {
     switch (context) {
       case "cpu":
-        return `Explain why CPU usage is ${data.cpu}% and what it means`;
+        return `Explain why CPU usage is ${String(data.cpu ?? "unknown")}% and what it means`;
       case "memory":
         return `Explain current memory usage and impact`;
       case "prediction":
