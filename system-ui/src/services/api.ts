@@ -11,7 +11,28 @@ export const api = axios.create({
   timeout: 10000,
 });
 
-api.interceptors.request.use((config) => {
+api.interceptors.request.use(async (config) => {
+  const desktopApi = (
+    window as Window & {
+      pywebview?: {
+        api?: {
+          get_api_key: () => Promise<string>;
+        };
+      };
+    }
+  ).pywebview?.api;
+
+  if (desktopApi?.get_api_key) {
+    const apiKey = await desktopApi.get_api_key();
+    if (!apiKey) {
+      throw new Error("The desktop application API key is unavailable.");
+    }
+    config.baseURL = "http://127.0.0.1:8020";
+    config.headers.set("X-API-Key", apiKey);
+    config.headers.delete("Authorization");
+    return config;
+  }
+
   const token = getAccessToken();
 
   if (token) {
