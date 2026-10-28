@@ -1,4 +1,4 @@
-export default function ExplanationPanel({ explanation }: any) {
+export default function ExplanationPanel({ explanation }: { explanation: string }) {
   return (
     <div>
       <h3>🧠 System Insight</h3>

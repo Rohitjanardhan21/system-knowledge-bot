@@ -31,6 +31,21 @@ export async function login(
   return tokens;
 }
 
+export async function registerPersonalAccount(
+  email: string,
+  password: string,
+): Promise<void> {
+  await axios.post(`${API_BASE}/auth/register`, { email, password });
+}
+
+export async function resendVerification(email: string): Promise<void> {
+  await axios.post(`${API_BASE}/auth/resend-verification`, { email });
+}
+
+export async function verifyEmail(token: string): Promise<void> {
+  await axios.post(`${API_BASE}/auth/verify-email`, { token });
+}
+
 export function getAccessToken(): string | null {
   return sessionStorage.getItem(ACCESS_TOKEN_KEY);
 }

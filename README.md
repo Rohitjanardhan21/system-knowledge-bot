@@ -10,11 +10,17 @@
 
 **[Live Demo](https://cvis-os-latest.onrender.com)** | [Docker Hub](https://hub.docker.com/r/rohitjanardhan/cvis-os)
 
-## Quickstart — 30 seconds
+## Quickstart — Docker
 ```bash
-docker run -p 8000:8000 rohitjanardhan/cvis-os:latest
+cp .env.example .env
+# Set ENV, JWT_SECRET, CVIS_API_KEY, CVIS_ADMIN_PASS, and GRAFANA_PASS in .env.
+docker compose up -d --build
 ```
-Open http://localhost:8000
+Open http://localhost. The `system-ui/` React app is the canonical dashboard;
+Docker builds it for both the backend fallback and the Nginx frontend image.
+Do not mount the legacy `frontend/` directory over Nginx's document root.
+If port 80 is already occupied, set `CVIS_HTTP_PORT=18080` in `.env` and open
+http://localhost:18080 instead.
 
 
 ## Architecture
@@ -51,13 +57,90 @@ Redis :6379
 
 ---
 
-## Quickstart (local dev, no Docker)
+## Local UI development
+
+Run the backend on port 8020 to match the Vite development API endpoint, then
+run the React dashboard:
 
 ```bash
-pip install fastapi uvicorn psutil scikit-learn numpy httpx torch PyJWT
-python backend_v9.py          # http://localhost:8000
-open frontend/index.html      # or: python -m http.server 3000 -d frontend
+ENV=dev ALLOWED_ORIGIN=http://127.0.0.1:5173 CVIS_ADMIN_USER=admin CVIS_ADMIN_PASS=change-me-for-local-only python app.py --port 8020 --no-browser
+npm ci --prefix system-ui
+npm run dev --prefix system-ui -- --host 127.0.0.1
 ```
+Vite serves the development UI on port 5173; the API is served by the backend
+on port 8020. Use only a throwaway password for this local development command.
+For a production-like local install, use the Docker quickstart.
+
+## Windows desktop build
+
+Build with Python 3.12 (the version targeted by CI) by running `build_app.bat`
+from the repository. It installs frontend dependencies, builds and verifies
+`system-ui/dist`, then packages the UI and backend with PyInstaller. Desktop
+data is stored under `%LOCALAPPDATA%\CVIS` rather than in PyInstaller's
+temporary extraction directory. The local desktop app opens directly to the
+dashboard without a user account. Its bundled webview receives the local API
+key through the Python bridge; the key is not written to browser storage.
+Hosted/browser deployments continue to require login. Personal cloud accounts
+and enterprise organization accounts are not part of this local-first tier.
+
+The desktop app requires a local Redis service at `localhost:6379`; Redis is
+not bundled. Some dashboard features depend on Redis-backed services; start
+Redis for the full monitoring experience.
+
+### Hosted personal accounts
+
+Hosted CVIS supports optional personal accounts with required email
+verification. Configure `PUBLIC_BASE_URL` to the public HTTPS origin and
+configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, and `SMTP_PASS` for
+verification delivery before enabling registration. `SMTP_FROM` is optional
+and defaults to `SMTP_USER`; port 587 uses STARTTLS and port 465 uses implicit
+TLS. Redis must be
+available for authentication rate limiting and token revocation. Account and
+personal-workspace identity records are stored in the persistent SQLite
+database selected by `DB_PATH` (the Docker Compose `db_data` volume by default).
+Personal accounts currently receive read-only API access; the existing
+administrator login remains separate. This milestone does not sync diagnostic
+logs or enable enterprise organizations.
+
+On first launch, choose **Background monitoring** or **On-demand**. CVIS remembers
+the selection in `%LOCALAPPDATA%\CVIS\settings.json`; change it later in the
+dashboard's **Settings**. Hiding the dashboard keeps the backend and monitoring
+workers active in Background monitoring mode. In On-demand mode, hiding the
+dashboard stops the backend and collection; **Open Dashboard** starts the same
+backend again. The dashboard's **Quit CVIS** button and the tray's **Quit CVIS**
+action stop polling, request backend/collector shutdown, close the window, and
+remove the tray icon. Shutdown closes the UI first to stop its requests, then
+allows the backend up to two seconds for graceful HTTP shutdown; the launcher
+waits up to eight seconds for backend cleanup. To change the mode without opening Settings, right-click
+the CVIS icon in the Windows notification area and choose **Background
+monitoring** or **On-demand (pause when hidden)**. The selected mode is checked
+in the menu.
+
+**Analyze Error Logs** accepts pasted error text or text-based `.log`, `.txt`,
+`.json`, `.xml`, `.sarif`, and `.junit` files up to 5 MB. The text is sent to
+the configured CVIS backend for analysis; in the bundled Windows app, that
+backend runs on the same device. For a remotely hosted backend, the text is
+transmitted to that host. CVIS does not send diagnostic logs to external AI
+services. Findings are heuristic leads with cited text, a confidence estimate,
+and recommended next steps—not a confirmed root cause. Binary Windows `.evtx`
+files are not parsed directly; export relevant events to XML or paste their
+details. This initial analyzer checks common text signatures; it does not
+compare logs against a stored history of previous crashes. When monitoring was
+off before an incident, CVIS has no pre-incident telemetry to compare. Idle CPU
+and memory use have not been measured, so no numerical resource claim is made.
+
+Optional unfamiliar-error reasoning can use a local Ollama model installed on
+the CVIS backend host. Set `CVIS_LOCAL_LLM_MODEL` to an installed model name
+(for example, `qwen2.5:7b`) and restart the backend to expose the opt-in checkbox
+in Analyze Error Logs. The model receives the submitted text over its local
+loopback API; its output is explicitly unverified. Leave the setting blank to
+disable model reasoning and use deterministic rules and parsers only. No cloud
+model provider is used by this analyzer.
+
+The Tauri configuration now builds and packages the canonical `system-ui/dist`
+frontend, but it is not yet an end-to-end desktop distribution: it does not
+bundle or start the Python backend. Use the PyInstaller desktop build until a
+Tauri backend sidecar and its lifecycle are implemented and tested.
 
 ---
 

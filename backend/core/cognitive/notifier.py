@@ -132,13 +132,9 @@ class _LinuxNotifier:
 
 
 class _FallbackNotifier:
-    """Prints to console when OS notifications unavailable."""
+    """Logs alerts when OS notifications are unavailable."""
     def send(self, title: str, message: str, duration: int = 10) -> bool:
-        border = "=" * 55
-        print(f"\n{border}")
-        print(f"  ⚠️  CVIS ALERT: {title}")
-        print(f"  {message}")
-        print(f"{border}\n")
+        log.warning("CVIS ALERT: %s — %s", title, message)
         return True
 
 

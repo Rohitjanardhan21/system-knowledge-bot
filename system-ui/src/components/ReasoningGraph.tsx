@@ -1,19 +1,37 @@
-export default function ReasoningGraph({ agents }: any) {
+interface ReasoningOutput {
+  cpu?: number;
+  root_cause?: string | { type?: string; process?: string };
+  trend?: number;
+  action?: string;
+  auto_execute?: boolean;
+}
+
+interface ReasoningAgent {
+  status: string;
+  output?: ReasoningOutput;
+}
+
+export default function ReasoningGraph({
+  agents,
+}: {
+  agents?: Record<string, ReasoningAgent | undefined> | null;
+}) {
 
   if (!agents) return null;
 
   const order = ["observer", "analyzer", "predictor", "decision", "action"];
 
-  const format = (o: any) => {
-    if (o.cpu !== undefined) return `CPU ${o.cpu.toFixed(1)}%`;
+  const format = (o: ReasoningOutput | undefined) => {
+    if (!o) return "";
+    if (typeof o.cpu === "number") return `CPU ${o.cpu.toFixed(1)}%`;
     if (o.root_cause) {
       if (typeof o.root_cause === "string") return o.root_cause;
-      if (typeof o.root_cause === "object") {
+      if (typeof o.root_cause === "object" && o.root_cause !== null) {
         const cause = o.root_cause.type ?? o.root_cause.process;
         return typeof cause === "string" ? cause : "Root cause detected";
       }
     }
-    if (o.trend !== undefined) return `Trend ${o.trend.toFixed(2)}`;
+    if (typeof o.trend === "number") return `Trend ${o.trend.toFixed(2)}`;
     if (o.action) return `${o.action}`;
     if (o.auto_execute !== undefined)
       return o.auto_execute ? "Executing" : "Pending";

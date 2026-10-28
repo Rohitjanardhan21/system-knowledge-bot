@@ -1,8 +1,13 @@
-export default function AgentPanel({ data }: any) {
+interface AgentMetrics {
+  cpu?: number;
+  memory?: number;
+}
+
+export default function AgentPanel({ data }: { data?: AgentMetrics | null }) {
   if (!data) return null;
 
-  const cpu = data.cpu;
-  const memory = data.memory;
+  const cpu = data.cpu ?? 0;
+  const memory = data.memory ?? 0;
 
   const cpuAgent =
     cpu > 80

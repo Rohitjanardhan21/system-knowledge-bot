@@ -63,6 +63,14 @@ Thumbs.db
 # ── CI artifacts ─────────────────────────────────────────
 trivy.sarif
 
+# ── Local security and audit reports ────────────────────
+npm-audit-report.json
+trivy-action-definition.txt
+trivy-base.json
+trivy-debug.json
+trivy-local-debug.json
+trivy-report.json
+
 # ── Local recovery / intermediate snapshots ───────────────
 *.pre_*
 *.bak*
@@ -150,3 +158,19 @@ test_output_*.txt
 
 # Local safety backups — preserve locally, do not commit
 .safety-backup/
+
+# Local Python virtual environments
+.venv*/
+venv*/
+
+# Node.js dependencies
+node_modules/
+**/node_modules/
+
+# Generated desktop build artifacts
+build-diagnostics/
+dist-diagnostics/
+
+# Frontend browser-test artifacts
+system-ui/test-results/
+system-ui/playwright-report/

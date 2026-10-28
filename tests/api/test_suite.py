@@ -183,6 +183,13 @@ class TestMLEngine:
         assert "lstm" in sd
         assert "vae"  in sd
         assert "metrics" in sd
+        assert "if_q05" in sd
+        assert "if_q50" in sd
+
+        restored = type(self.engine)()
+        restored.load_state_dict(sd)
+        assert restored._if_q05 == self.engine._if_q05
+        assert restored._if_q50 == self.engine._if_q50
 
     def test_feature_buffer_bounded(self):
         feat = np.random.rand(5).astype(np.float32)

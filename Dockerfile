@@ -35,7 +35,7 @@ RUN apt-get update && apt-get upgrade -y --no-install-recommends && \
 
 COPY --from=builder /install /usr/local
 
-RUN python -m pip install --no-cache-dir --upgrade pip
+RUN python -m pip uninstall --yes pip
 
 WORKDIR /app
 

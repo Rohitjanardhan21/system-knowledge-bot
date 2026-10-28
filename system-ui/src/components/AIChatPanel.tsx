@@ -2,94 +2,85 @@ import { useState, useRef, useEffect } from "react";
 import { API_BASE } from "../services/endpoints";
 
 interface Props {
-isOpen: boolean;
-onClose: () => void;
+  isOpen: boolean;
+  onClose: () => void;
+}
+
+interface ChatMessage {
+  role: "user" | "bot";
+  text: string;
 }
 
 export default function AIChatPanel({ isOpen, onClose }: Props) {
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const bottomRef = useRef<HTMLDivElement | null>(null);
+  const streamTextRef = useRef("");
 
-const [messages, setMessages] = useState<any[]>([]);
-const [input, setInput] = useState("");
-const [loading, setLoading] = useState(false);
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
 
-const bottomRef = useRef<HTMLDivElement | null>(null);
+  const suggestions = [
+    "Why is CPU high?",
+    "Any anomalies right now?",
+    "Predict system failure",
+    "What should I fix?",
+    "Is system stable?",
+    "Top risky process?",
+  ];
 
-// --------------------------------------------------
-// AUTO SCROLL
-// --------------------------------------------------
-useEffect(() => {
-bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-}, [messages]);
+  const sendMessage = async (customInput?: string) => {
+    const query = customInput || input;
+    if (!query) return;
 
-// --------------------------------------------------
-// SMART SUGGESTIONS
-// --------------------------------------------------
-const suggestions = [
-"Why is CPU high?",
-"Any anomalies right now?",
-"Predict system failure",
-"What should I fix?",
-"Is system stable?",
-"Top risky process?"
-];
+    setMessages((prev) => [...prev, { role: "user", text: query }]);
+    setInput("");
+    setLoading(true);
+    streamTextRef.current = "";
 
-// --------------------------------------------------
-// SEND MESSAGE (STREAMING)
-// --------------------------------------------------
-const sendMessage = async (customInput?: string) => {
+    try {
+      const res = await fetch(`${API_BASE}/ai/stream`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query }),
+      });
 
-const query = customInput || input;
-if (!query) return;
+      if (!res.ok || !res.body) {
+        throw new Error(`AI stream failed with status ${res.status}`);
+      }
 
-const userMsg = { role: "user", text: query };
-setMessages(prev => [...prev, userMsg]);
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      setMessages((prev) => [...prev, { role: "bot", text: "" }]);
 
-setInput("");
-setLoading(true);
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
 
-try {
-  const res = await fetch(`${API_BASE}/ai/stream`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({ query })
-  });
-
-  const reader = res.body?.getReader();
-  let text = "";
-
-  const botMsg = { role: "bot", text: "" };
-  setMessages(prev => [...prev, botMsg]);
-
-  while (true) {
-    const { done, value } = await reader!.read();
-    if (done) break;
-
-    text += new TextDecoder().decode(value);
-
-    setMessages(prev => {
-      const updated = [...prev];
-      updated[updated.length - 1].text = text;
-      return updated;
-    });
-  }
-
-} catch (err) {
-  setMessages(prev => [
-    ...prev,
-    { role: "bot", text: "⚠️ AI service unavailable" }
-  ]);
-}
-
-setLoading(false);
-
-};
+        streamTextRef.current += decoder.decode(value, { stream: true });
+        const text = streamTextRef.current;
+        setMessages((prev) =>
+          prev.map((message, index) =>
+            index === prev.length - 1 ? { ...message, text } : message,
+          ),
+        );
+      }
+    } catch {
+      setMessages((prev) => [
+        ...prev,
+        { role: "bot", text: "AI service unavailable" },
+      ]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
 // --------------------------------------------------
 // UI
 // --------------------------------------------------
-if (!isOpen) return null;
+  if (!isOpen) return null;
 
 return ( <div className="fixed bottom-0 left-0 w-full h-[65%] bg-black border-t border-zinc-800 flex flex-col z-50">
 
@@ -132,7 +123,7 @@ return ( <div className="fixed bottom-0 left-0 w-full h-[65%] bg-black border-t 
 
     {messages.map((m, i) => (
       <div
-        key={i}
+        key={`${m.role}-${i}`}
         className={`max-w-[75%] p-3 rounded-xl text-sm ${
           m.role === "user"
             ? "bg-blue-600 ml-auto"

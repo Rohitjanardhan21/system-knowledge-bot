@@ -1,6 +1,6 @@
 import { WS_BASE } from "./endpoints";
 
-export function connectWebSocket(callback: (data: any) => void) {
+export function connectWebSocket(callback: (data: unknown) => void) {
   const ws = new WebSocket(`${WS_BASE}/ws/system`);
 
   // -----------------------------------------
