@@ -332,7 +332,7 @@ cvis_alerts_rules_active   cvis_model_versions_total cvis_disk_percent
 ## Backup & restore
 
 ```bash
-# Create a snapshot (model weights + Redis + .env digest)
+# Create a snapshot (model weights + application data + Redis + .env digest)
 bash scripts/backup.sh backup
 
 # List snapshots
@@ -350,6 +350,11 @@ bash scripts/backup.sh cron-install
 # Optional S3 offsite
 BACKUP_S3_BUCKET=s3://mybucket/cvis bash scripts/backup.sh backup
 ```
+
+`backup.sh` reads the named Docker volumes from the backend and Redis
+containers, so run it while the Compose stack is available. The deployment
+update command creates a snapshot before rebuilding; if its smoke tests fail,
+it resets the checkout and rebuilds the previous version automatically.
 
 ---
 
