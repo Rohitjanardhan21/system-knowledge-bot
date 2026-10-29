@@ -328,7 +328,7 @@ GitHub Actions pipeline (`.github/workflows/ci.yml`):
 | `deploy-staging` | `develop` branch | SSH deploy + smoke test |
 | `deploy-production` | GitHub Release tag | SSH deploy + Slack notification |
 
-Required GitHub secrets: `JWT_SECRET`, `Synapse_API_KEY`, `Synapse_ADMIN_PASS`, `STAGING_HOST`, `STAGING_SSH_KEY`, `PROD_HOST`, `PROD_SSH_KEY`, `SLACK_WEBHOOK_URL`.
+Required GitHub secrets: `JWT_SECRET`, `Synapse_API_KEY`, `Synapse_ADMIN_PASS`, `STAGING_HOST`, `STAGING_USER`, `STAGING_SSH_KEY`, `PROD_HOST`, `PROD_SSH_KEY`, `SLACK_WEBHOOK_URL`.
 
 ---
 
