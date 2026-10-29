@@ -300,6 +300,23 @@ def test_password_reset_request_does_not_reveal_unknown_email(
     reset_email.assert_not_called()
 
 
+def test_logout_route_revokes_submitted_tokens(client, monkeypatch):
+    revoked_tokens = []
+
+    async def revoke_token(token):
+        revoked_tokens.append(token)
+
+    monkeypatch.setattr(main, "revoke_token", revoke_token)
+
+    response = client.post(
+        "/auth/logout",
+        json={"refresh_token": "refresh-token", "access_token": "access-token"},
+    )
+
+    assert response.status_code == 200
+    assert revoked_tokens == ["refresh-token", "access-token"]
+
+
 def test_production_requires_postgres_for_personal_account_routes(
     client, account_environment, monkeypatch
 ):
