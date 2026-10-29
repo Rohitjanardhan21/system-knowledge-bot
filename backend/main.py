@@ -137,6 +137,7 @@ async def _restore_registered_devices():
             _devices[device_id] = {
                 "device_id": device_id,
                 "device_name": data.get("device_name", "unknown"),
+                "workspace_id": data.get("workspace_id") or None,
                 "os": data.get("os", "unknown"),
                 "os_version": data.get("os_version", ""),
                 "hostname": data.get("hostname", ""),
@@ -2356,6 +2357,7 @@ class DeviceRegistrationPayload(BaseModel):
     os_version: str = ""
     hostname: str = ""
     capabilities: list[str] = []
+    workspace_id: str | None = None
 
 
 @app.post("/devices/register", tags=["Devices"])
@@ -2376,6 +2378,13 @@ async def register_device(
 
     if not payload.os.strip():
         raise HTTPException(400, "os is required")
+
+    workspace_id = payload.workspace_id.strip() if payload.workspace_id else None
+    principal_workspace_id = principal.get("workspace_id")
+    if principal_workspace_id:
+        if workspace_id and workspace_id != principal_workspace_id:
+            raise HTTPException(403, "Device is not assigned to this workspace")
+        workspace_id = principal_workspace_id
 
     redis = await get_redis()
 
@@ -2410,6 +2419,7 @@ async def register_device(
         "os_version": payload.os_version.strip(),
         "hostname": payload.hostname.strip(),
         "capabilities": list(dict.fromkeys(payload.capabilities)),
+        "workspace_id": workspace_id,
         "registered_at": time.time(),
         "status": "registered",
     }
@@ -2424,6 +2434,7 @@ async def register_device(
                     "os_version": registration["os_version"],
                     "hostname": registration["hostname"],
                     "capabilities": _json.dumps(registration["capabilities"]),
+                    "workspace_id": registration["workspace_id"] or "",
                     "registered_at": str(registration["registered_at"]),
                     "status": registration["status"],
                 },
@@ -2476,6 +2487,7 @@ async def register_device(
         "credential": api_key,
         "credential_scope": "write",
         "credential_device_id": device_id,
+        "workspace_id": workspace_id,
     }
 
 
@@ -3052,9 +3064,10 @@ async def receive_device_metrics(
         "ml": device["ml"],
     }
 
-@app.get("/devices", tags=["Devices"], dependencies=[Depends(require_scope("read"))])
-async def list_devices():
+@app.get("/devices", tags=["Devices"])
+async def list_devices(principal: dict = Depends(require_scope("read"))):
     now = time.time()
+    workspace_id = principal.get("workspace_id")
     return [
         {
             "device_id":   did,
@@ -3067,13 +3080,20 @@ async def list_devices():
             "processes":   d.get("processes", []),
         }
         for did, d in _devices.items()
+        if not workspace_id or d.get("workspace_id") == workspace_id
     ]
 
-@app.get("/devices/{device_id}", tags=["Devices"], dependencies=[Depends(require_scope("read"))])
-async def get_device(device_id: str):
+@app.get("/devices/{device_id}", tags=["Devices"])
+async def get_device(
+    device_id: str,
+    principal: dict = Depends(require_scope("read")),
+):
     if device_id not in _devices:
         raise HTTPException(404, "Device not found")
     dev = _devices[device_id]
+    workspace_id = principal.get("workspace_id")
+    if workspace_id and dev.get("workspace_id") != workspace_id:
+        raise HTTPException(404, "Device not found")
     age = time.time() - dev.get("last_seen", 0)
     return {**dev, "status": "online" if age < 30 else "offline", "last_seen_s": round(age, 1)}
 

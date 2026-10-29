@@ -83,7 +83,7 @@ def test_personal_registration_sends_verification_link_and_stores_only_password_
 
 
 def test_personal_account_requires_single_use_email_verification_before_login(
-    client, account_environment
+    client, account_environment, monkeypatch
 ):
     _, sent_emails = account_environment
     assert client.post("/auth/register", json=_registration_payload()).status_code == 202
@@ -118,6 +118,35 @@ def test_personal_account_requires_single_use_email_verification_before_login(
     assert account.status_code == 200
     assert account.json()["workspace_id"] == claims["workspace_id"]
     assert account.json()["subject"] == claims["sub"]
+
+    monkeypatch.setattr(main, "_devices", {
+        "owned-device": {
+            "device_id": "owned-device",
+            "workspace_id": claims["workspace_id"],
+            "device_name": "Owned",
+            "last_seen": None,
+            "metrics": {},
+            "processes": [],
+        },
+        "other-device": {
+            "device_id": "other-device",
+            "workspace_id": "other-workspace",
+            "device_name": "Other",
+            "last_seen": None,
+            "metrics": {},
+            "processes": [],
+        },
+    })
+    devices = client.get(
+        "/devices",
+        headers={"Authorization": f"Bearer {login.json()['access_token']}"},
+    )
+    assert devices.status_code == 200
+    assert [device["device_id"] for device in devices.json()] == ["owned-device"]
+    assert client.get(
+        "/devices/other-device",
+        headers={"Authorization": f"Bearer {login.json()['access_token']}"},
+    ).status_code == 404
 
     reused_token = client.post("/auth/verify-email", json={"token": token})
     assert reused_token.status_code == 400
