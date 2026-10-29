@@ -1,5 +1,9 @@
 import { expect, test } from "@playwright/test";
 
+declare const process: {
+  env: Record<string, string | undefined>;
+};
+
 test("login loads authenticated telemetry and alerts", async ({ page }) => {
   const username = process.env.CVIS_ADMIN_USER;
   const password = process.env.CVIS_ADMIN_PASS;
