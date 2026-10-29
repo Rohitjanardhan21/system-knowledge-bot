@@ -185,6 +185,22 @@ jobs:
     environment:
       name: staging
     steps:
+      - name: Validate staging SSH secrets
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          missing=()
+          for name in STAGING_HOST STAGING_USER STAGING_SSH_KEY; do
+            if [[ -z "${!name}" ]]; then
+              missing+=("$name")
+            fi
+          done
+          if ((${#missing[@]})); then
+            printf 'Missing required staging environment secret(s): %s\n' "${missing[*]}" >&2
+            exit 1
+          fi
       - uses: appleboy/ssh-action@v1
         with:
           host:     ${{ secrets.STAGING_HOST }}
@@ -201,7 +217,7 @@ jobs:
             curl -sf http://localhost:8020/health | grep '"status"'
             echo "Staging deploy OK"
       - uses: slackapi/slack-github-action@v1.26
-        if: always()
+        if: ${{ always() && env.SLACK_WEBHOOK_URL != '' }}
         with:
           payload: '{"text":"${{ job.status == ''success'' && ''✅'' || ''❌'' }} Staging: *${{ github.ref_name }}* @ `${{ github.sha }}` — ${{ job.status }}"}'
         env:

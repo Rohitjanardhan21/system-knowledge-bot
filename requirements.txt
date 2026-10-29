@@ -36,6 +36,6 @@ requests
 openai
 
 # Keep packages with fixed HIGH Trivy findings at patched versions.
-msgpack==1.2.1
-setuptools==83.0.0
+msgpack==1.2.3
+setuptools==84.1.0
 urllib3==2.8.0
