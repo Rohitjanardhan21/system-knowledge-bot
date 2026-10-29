@@ -131,6 +131,16 @@ def _require_operator(principal: dict) -> None:
         )
 
 
+def _require_workspace_device(principal: dict, device_id: str) -> None:
+    """Enforce workspace ownership for operator-created device work."""
+    workspace_id = principal.get("workspace_id")
+    if workspace_id and (
+        device_id not in _devices
+        or _devices[device_id].get("workspace_id") != workspace_id
+    ):
+        raise HTTPException(404, "Device is not registered")
+
+
 async def _restore_registered_devices():
     """Restore registered device identities from Redis into the in-memory registry."""
     redis = await get_redis()
@@ -2352,7 +2362,10 @@ async def cognitive_premortem():
     tags=["Actions"],
     dependencies=[Depends(require_scope("read"))],
 )
-async def remediation_status():
+async def remediation_status(
+    principal: dict = Depends(require_scope("read")),
+):
+    _require_operator(principal)
     return get_ar_engine().get_status()
 
 @app.get(
@@ -2360,7 +2373,11 @@ async def remediation_status():
     tags=["Actions"],
     dependencies=[Depends(require_scope("read"))],
 )
-async def remediation_log(limit: int = 20):
+async def remediation_log(
+    limit: int = 20,
+    principal: dict = Depends(require_scope("read")),
+):
+    _require_operator(principal)
     return get_ar_engine().get_audit_log(limit=limit)
 
 @app.get(
@@ -2658,6 +2675,7 @@ async def create_process_approval_request(
     principal: dict = Depends(require_scope("admin")),
 ):
     """Create a pending process-termination approval request."""
+    _require_workspace_device(principal, device_id)
     if device_id not in _devices:
         raise HTTPException(404, "Device is not registered")
 
@@ -2820,6 +2838,7 @@ async def create_device_command(
     principal: dict = Depends(require_scope("admin")),
 ):
     """Create and durably enqueue an allowlisted command for a device."""
+    _require_workspace_device(principal, device_id)
     if device_id not in _devices:
         raise HTTPException(404, "Device is not registered")
 
@@ -2904,6 +2923,7 @@ async def get_device_command(
     principal: dict = Depends(require_scope("read")),
 ):
     """Return command state, enforcing device binding for device credentials."""
+    _require_workspace_device(principal, device_id)
     redis = await get_redis()
     if redis is None:
         raise HTTPException(503, "Command persistence unavailable")
@@ -3263,13 +3283,22 @@ except Exception as _ae:
     ACTIONS_OK = False
 
 @app.get("/actions/available", tags=["Actions"])
-async def list_available_actions(failure_type: Optional[str] = None):
+async def list_available_actions(
+    failure_type: Optional[str] = None,
+    principal: dict = Depends(require_scope("read")),
+):
+    if principal.get("workspace_id"):
+        return []
     if not ACTIONS_OK:
         return []
     return _get_actions(failure_type)
 
 @app.post("/actions/execute", tags=["Actions"], dependencies=[Depends(require_scope("admin"))])
-async def run_action(action_id: str):
+async def run_action(
+    action_id: str,
+    principal: dict = Depends(require_scope("admin")),
+):
+    _require_operator(principal)
     if not ACTIONS_OK:
         return {"success": False, "error": "Action executor not available"}
     result = await asyncio.get_event_loop().run_in_executor(None, _execute_action, action_id)
@@ -3281,6 +3310,7 @@ async def resolve_action_escalation(
     action_id: str,
     principal: dict = Depends(require_scope("admin")),
 ):
+    _require_operator(principal)
     from judgment.lifecycle import resolve_escalation
     from judgment.recovery import reconcile_escalation_resolution_audits
 
