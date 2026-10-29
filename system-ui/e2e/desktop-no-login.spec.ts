@@ -18,9 +18,18 @@ test("desktop webview opens dashboard with its local API key and no account logi
   });
 
   const apiRequests: Array<{ path: string; apiKey: string | undefined }> = [];
-  await page.route("http://127.0.0.1:8020/**", async (route) => {
+  await page.route("**/*", async (route) => {
     const request = route.request();
+    const accept = request.headers()["accept"] ?? "";
+
+    // Leave HTML, JavaScript, CSS, images, and other assets untouched.
+    if (!accept.includes("application/json")) {
+      await route.continue();
+      return;
+    }
+
     const path = new URL(request.url()).pathname;
+
     apiRequests.push({
       path,
       apiKey: request.headers()["x-api-key"],
@@ -33,9 +42,13 @@ test("desktop webview opens dashboard with its local API key and no account logi
       "/cognitive/incidents",
       "/cognitive/notifications",
     ]);
-    const body = path === "/desktop/settings"
-      ? { available: true, configured: true, background_monitoring: false }
-      : arrayPaths.has(path) ? [] : {};
+
+    const body =
+      path === "/desktop/settings"
+        ? { available: true, configured: true, background_monitoring: false }
+        : arrayPaths.has(path)
+          ? []
+          : {};
 
     await route.fulfill({
       status: 200,

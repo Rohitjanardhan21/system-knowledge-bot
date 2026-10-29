@@ -259,7 +259,12 @@ jobs:
     name: Deploy to staging
     runs-on: ubuntu-22.04
     needs: [build, security]
-    if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
+    if: >-
+      ${{
+        github.ref == 'refs/heads/develop' &&
+        github.event_name == 'push' &&
+        vars.ENABLE_STAGING_DEPLOY == 'true'
+      }}
     environment:
       name: staging
     steps:
@@ -333,7 +338,7 @@ jobs:
             done
             echo "Staging backend and frontend smoke checks passed"
       - uses: slackapi/slack-github-action@v1.26
-        if: always()
+        if: ${{ always() && vars.ENABLE_SLACK_NOTIFICATIONS == 'true' }}
         with:
           payload: '{"text":"${{ job.status == ''success'' && ''✅'' || ''❌'' }} Staging: *${{ github.ref_name }}* @ `${{ github.sha }}` — ${{ job.status }}"}'
         env:
