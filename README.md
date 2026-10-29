@@ -91,10 +91,9 @@ Redis for the full monitoring experience.
 
 Hosted CVIS supports optional personal accounts with required email
 verification. Configure `PUBLIC_BASE_URL` to the public HTTPS origin and
-configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, and `SMTP_PASS` for
-verification delivery before enabling registration. `SMTP_FROM` is optional
-and defaults to `SMTP_USER`; port 587 uses STARTTLS and port 465 uses implicit
-TLS. Redis must be
+configure `RESEND_API_KEY` and `EMAIL_FROM` for verification delivery before
+enabling registration. `EMAIL_FROM` defaults to
+`CVIS <onboarding@resend.dev>`. Redis must be
 available for authentication rate limiting and token revocation. Account and
 personal-workspace identity records are stored in the persistent SQLite
 database selected by `DB_PATH` (the Docker Compose `db_data` volume by default).

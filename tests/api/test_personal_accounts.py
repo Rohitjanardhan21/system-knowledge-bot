@@ -30,11 +30,8 @@ def account_environment(tmp_path, monkeypatch):
     monkeypatch.setattr(main, "_enforce_auth_rate_limit", AsyncMock())
     monkeypatch.setenv("ENV", "dev")
     monkeypatch.setenv("PUBLIC_BASE_URL", "https://cvis.example.test")
-    monkeypatch.setenv("SMTP_HOST", "smtp.example.test")
-    monkeypatch.setenv("SMTP_PORT", "587")
-    monkeypatch.setenv("SMTP_USER", "mailer@example.test")
-    monkeypatch.setenv("SMTP_PASS", "test-password")
-    monkeypatch.setenv("SMTP_FROM", "CVIS <mailer@example.test>")
+    monkeypatch.setenv("RESEND_API_KEY", "re_test_key")
+    monkeypatch.setenv("EMAIL_FROM", "CVIS <onboarding@resend.dev>")
     monkeypatch.setattr(
         accounts,
         "_send_verification_email",
@@ -175,31 +172,31 @@ def test_personal_account_routes_return_controlled_errors_when_database_is_unava
     assert all("private database details" not in response.text for response in responses)
 
 
-def test_registration_fails_explicitly_when_smtp_is_not_configured(
+def test_registration_fails_explicitly_when_resend_is_not_configured(
     client, account_environment, monkeypatch
 ):
     database_path, _ = account_environment
-    monkeypatch.delenv("SMTP_PASS")
+    monkeypatch.delenv("RESEND_API_KEY")
 
     response = client.post("/auth/register", json=_registration_payload())
 
     assert response.status_code == 503
-    assert "SMTP_HOST" in response.json()["detail"]
+    assert "RESEND_API_KEY" in response.json()["detail"]
     assert not database_path.exists()
 
 
-def test_production_requires_explicit_smtp_configuration(
+def test_production_requires_explicit_resend_configuration(
     client, account_environment, monkeypatch
 ):
     monkeypatch.setenv("ENV", "production")
     monkeypatch.setenv("CVIS_DATABASE_URL", "postgresql://user:pass@db.example.test/accounts")
-    monkeypatch.delenv("SMTP_FROM")
+    monkeypatch.delenv("RESEND_API_KEY", raising=False)
 
-    with pytest.raises(RuntimeError, match="requires SMTP_HOST"):
+    with pytest.raises(RuntimeError, match="RESEND_API_KEY"):
         accounts.ensure_email_delivery_configured()
 
 
-def test_registration_smtp_failure_leaves_account_resendable(
+def test_registration_resend_failure_leaves_account_resendable(
     client, account_environment, monkeypatch
 ):
     database_path, sent_emails = account_environment
@@ -334,37 +331,25 @@ def test_auth_rate_limit_fails_closed_when_redis_errors(monkeypatch):
     assert error.value.status_code == 503
 
 
-@pytest.mark.parametrize(
-    ("port", "transport_name"),
-    [(465, "SMTP_SSL"), (587, "SMTP")],
-)
-def test_verification_email_uses_tls_for_configured_smtp_port(
-    monkeypatch, port, transport_name
-):
-    monkeypatch.setenv("SMTP_HOST", "smtp.example.test")
-    monkeypatch.setenv("SMTP_PORT", str(port))
-    monkeypatch.setenv("SMTP_USER", "mailer@example.test")
-    monkeypatch.setenv("SMTP_PASS", "test-password")
-    mail_client = Mock()
-    mail_client.__enter__ = Mock(return_value=mail_client)
-    mail_client.__exit__ = Mock(return_value=False)
-    transport = Mock(return_value=mail_client)
-    other_transport = Mock()
-    monkeypatch.setattr(accounts.smtplib, transport_name, transport)
-    other_name = "SMTP" if transport_name == "SMTP_SSL" else "SMTP_SSL"
-    monkeypatch.setattr(accounts.smtplib, other_name, other_transport)
-
+def test_verification_email_uses_resend_and_correct_recipient(monkeypatch):
+    monkeypatch.setenv("RESEND_API_KEY", "re_test_key")
+    monkeypatch.setenv("EMAIL_FROM", "CVIS <onboarding@resend.dev>")
+    response = Mock()
+    response.raise_for_status = Mock()
+    post = Mock(return_value=response)
+    monkeypatch.setattr(accounts.httpx, "post", post)
     accounts._send_verification_email(
-        "user@example.test",
+        "new-user@example.test",
         "https://cvis.example.test/#verify-email=token",
     )
-
-    transport.assert_called_once()
-    other_transport.assert_not_called()
-    mail_client.login.assert_called_once_with("mailer@example.test", "test-password")
-    mail_client.send_message.assert_called_once()
-    if port == 587:
-        mail_client.starttls.assert_called_once()
+    post.assert_called_once()
+    args = post.call_args
+    assert args.args[0] == "https://api.resend.com/emails"
+    assert args.kwargs["headers"]["Authorization"] == "Bearer re_test_key"
+    assert args.kwargs["json"]["to"] == ["new-user@example.test"]
+    assert args.kwargs["json"]["from"] == "CVIS <onboarding@resend.dev>"
+    assert "verify-email=token" in args.kwargs["json"]["text"]
+    response.raise_for_status.assert_called_once()
 
 
 def test_registration_is_disabled_for_local_desktop_backend(

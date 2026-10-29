@@ -7,16 +7,14 @@ import hashlib
 import hmac
 import os
 import secrets
-import smtplib
 import sqlite3
-import ssl
 import time
-from email.message import EmailMessage
 from email.utils import parseaddr
 from pathlib import Path
 
 import aiosqlite
 import asyncpg
+import httpx
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from backend.core.storage.db import DB_PATH
@@ -315,80 +313,52 @@ def build_verification_url(base_url: str, token: str) -> str:
 
 
 def ensure_email_delivery_configured() -> None:
-    production = os.environ.get("ENV", "").strip().lower() in {"prod", "production"}
-    smtp_host_value = os.environ.get("SMTP_HOST", "")
-    smtp_port_value = os.environ.get("SMTP_PORT", "")
-    smtp_user = os.environ.get("SMTP_USER", "").strip()
-    smtp_password = os.environ.get("SMTP_PASS", "")
-    sender_value = os.environ.get("SMTP_FROM", "")
-    if production and not all(
-        value.strip() if name != "SMTP_PASS" else value
-        for name, value in (
-            ("SMTP_HOST", smtp_host_value),
-            ("SMTP_PORT", smtp_port_value),
-            ("SMTP_USER", smtp_user),
-            ("SMTP_PASS", smtp_password),
-            ("SMTP_FROM", sender_value),
-        )
-    ):
+    api_key = os.environ.get("RESEND_API_KEY", "").strip()
+    sender = os.environ.get(
+        "EMAIL_FROM", "CVIS <onboarding@resend.dev>"
+    ).strip()
+    if not api_key:
         raise RuntimeError(
-            "Production email verification requires SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, and SMTP_FROM."
+            "Email verification requires the RESEND_API_KEY environment variable."
         )
-    smtp_host = smtp_host_value.strip() or "smtp.gmail.com"
-    try:
-        smtp_port = int(smtp_port_value.strip() or "587")
-    except ValueError as exc:
-        raise RuntimeError("SMTP_PORT must be a valid TCP port.") from exc
-    sender = sender_value.strip() or smtp_user
-    if (
-        not smtp_host
-        or not 1 <= smtp_port <= 65535
-        or not smtp_user
-        or not smtp_password
-        or not sender
-    ):
+    if not sender or "@" not in sender:
         raise RuntimeError(
-            "Email verification is unavailable until SMTP_HOST, SMTP_USER, SMTP_PASS, and SMTP_FROM are configured."
+            "Email verification requires a valid EMAIL_FROM sender address."
         )
 
 
 def _send_verification_email(email: str, verification_url: str) -> None:
     ensure_email_delivery_configured()
-    smtp_host = os.environ.get("SMTP_HOST", "smtp.gmail.com").strip()
-    smtp_port = int(os.environ.get("SMTP_PORT", "587"))
-    smtp_user = os.environ.get("SMTP_USER", "").strip()
-    smtp_password = os.environ.get("SMTP_PASS", "")
-    sender = os.environ.get("SMTP_FROM", smtp_user).strip()
-
-    message = EmailMessage()
-    message["Subject"] = "Verify your CVIS account"
-    message["From"] = sender
-    message["To"] = email
-    message.set_content(
-        "Verify your CVIS personal account by opening this link:\n\n"
-        f"{verification_url}\n\n"
-        "This link expires in one hour. If you did not request this account, "
-        "you can ignore this message."
-    )
+    api_key = os.environ["RESEND_API_KEY"].strip()
+    sender = os.environ.get(
+        "EMAIL_FROM", "CVIS <onboarding@resend.dev>"
+    ).strip()
+    payload = {
+        "from": sender,
+        "to": [email],
+        "subject": "Verify your CVIS account",
+        "text": (
+            "Verify your CVIS personal account by opening this link:\n\n"
+            f"{verification_url}\n\n"
+            "This link expires in one hour. If you did not request this account, "
+            "you can ignore this message."
+        ),
+    }
     try:
-        if smtp_port == 465:
-            with smtplib.SMTP_SSL(
-                smtp_host,
-                smtp_port,
-                timeout=15,
-                context=ssl.create_default_context(),
-            ) as client:
-                client.login(smtp_user, smtp_password)
-                client.send_message(message)
-        else:
-            with smtplib.SMTP(smtp_host, smtp_port, timeout=15) as client:
-                client.ehlo()
-                client.starttls(context=ssl.create_default_context())
-                client.ehlo()
-                client.login(smtp_user, smtp_password)
-                client.send_message(message)
-    except (OSError, smtplib.SMTPException) as exc:
-        raise RuntimeError("Could not deliver the verification email. Check SMTP settings.") from exc
+        response = httpx.post(
+            "https://api.resend.com/emails",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+            timeout=15.0,
+        )
+        response.raise_for_status()
+    except httpx.HTTPError as exc:
+        raise RuntimeError(
+            "Could not deliver the verification email through Resend."
+        ) from exc
 
 
 async def create_pending_account(

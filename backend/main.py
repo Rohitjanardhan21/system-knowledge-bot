@@ -1175,7 +1175,7 @@ async def register_personal_account(
         log.exception("Personal account registration could not complete")
         raise HTTPException(
             503,
-            "Account registration could not complete. Check the database and SMTP_HOST, SMTP_PORT, SMTP_USER, and SMTP_PASS settings. SMTP_FROM defaults to SMTP_USER.",
+            "Account registration could not complete. Check the database, RESEND_API_KEY, and EMAIL_FROM settings.",
         ) from exc
     return {
         "message": "Account created. Check your email for a verification link; it expires in one hour."
