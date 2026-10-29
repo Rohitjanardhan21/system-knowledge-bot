@@ -201,6 +201,7 @@ def test_personal_account_requires_single_use_email_verification_before_login(
         "/cognitive/incidents",
         "/cognitive/notifications",
         "/alerts/rules",
+        "/models/versions",
     ):
         scoped_response = client.get(
             path,
@@ -208,6 +209,18 @@ def test_personal_account_requires_single_use_email_verification_before_login(
         )
         assert scoped_response.status_code == 200
         assert scoped_response.json() == []
+
+    model_stats = client.get(
+        "/models/stats",
+        headers={"Authorization": f"Bearer {login.json()['access_token']}"},
+    )
+    assert model_stats.status_code == 200
+    assert model_stats.json() == {}
+    settings = client.get(
+        "/settings",
+        headers={"Authorization": f"Bearer {login.json()['access_token']}"},
+    )
+    assert settings.status_code == 403
 
     reused_token = client.post("/auth/verify-email", json={"token": token})
     assert reused_token.status_code == 400

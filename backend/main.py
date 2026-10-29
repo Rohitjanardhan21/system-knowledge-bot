@@ -1484,6 +1484,7 @@ async def save_version(
     req: SaveVersionRequest,
     principal: dict = Depends(require_scope("write")),
 ):
+    _require_operator(principal)
     engine = get_engine()
     m      = engine.metrics
     entry  = get_registry().save_version(
@@ -1496,11 +1497,21 @@ async def save_version(
     return {"version_id": entry.version_id, "saved": True}
 
 @app.get("/models/versions", tags=["Versioning"], dependencies=[Depends(require_scope("read"))])
-async def list_versions(model_name: Optional[str] = None):
+async def list_versions(
+    model_name: Optional[str] = None,
+    principal: dict = Depends(require_scope("read")),
+):
+    if principal.get("workspace_id"):
+        return []
     return get_registry().list_versions(model_name)
 
 @app.post("/models/activate/{model_name}/{version_id}", tags=["Versioning"], dependencies=[Depends(require_scope("admin"))])
-async def activate_version(model_name: str, version_id: str):
+async def activate_version(
+    model_name: str,
+    version_id: str,
+    principal: dict = Depends(require_scope("admin")),
+):
+    _require_operator(principal)
     state = get_registry().activate(model_name, version_id)
     if not state:
         raise HTTPException(404, "Version not found")
@@ -1508,7 +1519,11 @@ async def activate_version(model_name: str, version_id: str):
     return {"activated": version_id}
 
 @app.post("/models/rollback/{model_name}", tags=["Versioning"], dependencies=[Depends(require_scope("admin"))])
-async def rollback(model_name: str):
+async def rollback(
+    model_name: str,
+    principal: dict = Depends(require_scope("admin")),
+):
+    _require_operator(principal)
     result = get_registry().rollback(model_name)
     if not result:
         raise HTTPException(404, "No previous version")
@@ -1517,7 +1532,11 @@ async def rollback(model_name: str):
     return {"rolled_back_to": vid}
 
 @app.post("/models/rollback_best/{model_name}", tags=["Versioning"], dependencies=[Depends(require_scope("admin"))])
-async def rollback_best(model_name: str):
+async def rollback_best(
+    model_name: str,
+    principal: dict = Depends(require_scope("admin")),
+):
+    _require_operator(principal)
     result = get_registry().rollback_to_best(model_name)
     if not result:
         raise HTTPException(404, "No best version recorded")
@@ -1526,13 +1545,20 @@ async def rollback_best(model_name: str):
     return {"rolled_back_to_best": vid}
 
 @app.delete("/models/{model_name}/{version_id}", tags=["Versioning"], dependencies=[Depends(require_scope("admin"))])
-async def delete_version(model_name: str, version_id: str):
+async def delete_version(
+    model_name: str,
+    version_id: str,
+    principal: dict = Depends(require_scope("admin")),
+):
+    _require_operator(principal)
     if not get_registry().delete_version(model_name, version_id):
         raise HTTPException(404, "Version not found or is active")
     return {"deleted": version_id}
 
 @app.get("/models/stats", tags=["Versioning"], dependencies=[Depends(require_scope("read"))])
-async def version_stats():
+async def version_stats(principal: dict = Depends(require_scope("read"))):
+    if principal.get("workspace_id"):
+        return {}
     return get_registry().stats()
 
 
@@ -3378,7 +3404,10 @@ from backend.core.settings import settings_manager as _sm
     tags=["Settings"],
     dependencies=[Depends(require_scope("admin"))],
 )
-async def get_settings():
+async def get_settings(
+    principal: dict = Depends(require_scope("admin")),
+):
+    _require_operator(principal)
     return _sm.get_all()
 
 @app.post(
@@ -3386,7 +3415,11 @@ async def get_settings():
     tags=["Settings"],
     dependencies=[Depends(require_scope("admin"))],
 )
-async def save_settings(request: Request):
+async def save_settings(
+    request: Request,
+    principal: dict = Depends(require_scope("admin")),
+):
+    _require_operator(principal)
     body = await request.json()
     result = _sm.save(body)
     # Apply thresholds to live alert engine immediately
@@ -3401,7 +3434,10 @@ async def save_settings(request: Request):
     tags=["Settings"],
     dependencies=[Depends(require_scope("admin"))],
 )
-async def reset_settings():
+async def reset_settings(
+    principal: dict = Depends(require_scope("admin")),
+):
+    _require_operator(principal)
     return _sm.reset()
 
 @app.post(
@@ -3409,7 +3445,10 @@ async def reset_settings():
     tags=["Settings"],
     dependencies=[Depends(require_scope("admin"))],
 )
-async def settings_test_email():
+async def settings_test_email(
+    principal: dict = Depends(require_scope("admin")),
+):
+    _require_operator(principal)
     try:
         from backend.core.reports.weekly_report import send_alert_email
         send_alert_email(
@@ -3432,7 +3471,10 @@ async def settings_test_email():
     tags=["Settings"],
     dependencies=[Depends(require_scope("admin"))],
 )
-async def settings_send_report():
+async def settings_send_report(
+    principal: dict = Depends(require_scope("admin")),
+):
+    _require_operator(principal)
     try:
         from backend.core.reports.weekly_report import send_weekly_report_email
         to = _sm.get("alert_email") or os.environ.get("ALERT_EMAIL", "")
