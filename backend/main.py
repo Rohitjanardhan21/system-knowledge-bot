@@ -1315,9 +1315,24 @@ async def login(req: LoginRequest, request: Request):
                 identity=req.username,
             )
             raise HTTPException(401, "Invalid credentials")
-        pair = issue_token_pair(personal_user["user_id"], scope="read")
+        pair = issue_token_pair(
+            personal_user["user_id"],
+            scope="read",
+            workspace_id=personal_user["workspace_id"],
+        )
     return {"access_token": pair.access_token, "refresh_token": pair.refresh_token,
             "token_type": "bearer", "expires_in": pair.expires_in}
+
+
+@app.get("/auth/me", tags=["Auth"])
+async def current_account(principal: dict = Depends(require_scope("read"))):
+    return {
+        "subject": principal.get("sub") or principal.get("name"),
+        "scope": principal.get("scope", "read"),
+        "workspace_id": principal.get("workspace_id"),
+        "auth_source": principal.get("_source"),
+    }
+
 
 @app.post("/auth/refresh", tags=["Auth"])
 async def refresh(req: RefreshRequest):

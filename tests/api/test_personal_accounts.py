@@ -109,6 +109,15 @@ def test_personal_account_requires_single_use_email_verification_before_login(
     )
     assert claims["scope"] == "read"
     assert claims["type"] == "access"
+    assert claims["workspace_id"]
+
+    account = client.get(
+        "/auth/me",
+        headers={"Authorization": f"Bearer {login.json()['access_token']}"},
+    )
+    assert account.status_code == 200
+    assert account.json()["workspace_id"] == claims["workspace_id"]
+    assert account.json()["subject"] == claims["sub"]
 
     reused_token = client.post("/auth/verify-email", json={"token": token})
     assert reused_token.status_code == 400

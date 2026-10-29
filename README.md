@@ -214,6 +214,10 @@ NEW=$(curl -s -X POST http://localhost:8000/auth/refresh \
 | `admin` | POST/DELETE /models/*, /alerts/rules, /auth/api-keys | Operators |
 | *(public)* | GET /health, GET /metrics | Load balancers, Prometheus |
 
+Hosted personal-account JWTs also carry the account's `workspace_id`; use
+`GET /auth/me` to discover the current workspace before workspace-scoped
+features are enabled.
+
 ```bash
 # Create a read-only key for your monitoring service
 curl -X POST -H "X-API-Key: $Synapse_API_KEY" http://localhost:8000/auth/api-keys \
