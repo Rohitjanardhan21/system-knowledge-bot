@@ -196,6 +196,19 @@ def test_personal_account_requires_single_use_email_verification_before_login(
     assert report.status_code == 200
     assert report.json()["workspace_id"] == claims["workspace_id"]
 
+    for path in (
+        "/cognitive/predictions",
+        "/cognitive/incidents",
+        "/cognitive/notifications",
+        "/alerts/rules",
+    ):
+        scoped_response = client.get(
+            path,
+            headers={"Authorization": f"Bearer {login.json()['access_token']}"},
+        )
+        assert scoped_response.status_code == 200
+        assert scoped_response.json() == []
+
     reused_token = client.post("/auth/verify-email", json={"token": token})
     assert reused_token.status_code == 400
 

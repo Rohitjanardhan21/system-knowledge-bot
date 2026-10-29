@@ -122,6 +122,15 @@ def _workspace_device_ids(principal: dict) -> set[str] | None:
     }
 
 
+def _require_operator(principal: dict) -> None:
+    """Reject host-global operations for workspace-scoped principals."""
+    if principal.get("workspace_id"):
+        raise HTTPException(
+            status_code=403,
+            detail="This operation is only available to host operators",
+        )
+
+
 async def _restore_registered_devices():
     """Restore registered device identities from Redis into the in-memory registry."""
     redis = await get_redis()
@@ -1657,7 +1666,9 @@ async def alert_stats(principal: dict = Depends(require_scope("read"))):
     tags=["Alerts"],
     dependencies=[Depends(require_scope("read"))],
 )
-async def list_rules():
+async def list_rules(principal: dict = Depends(require_scope("read"))):
+    if principal.get("workspace_id"):
+        return []
     return [vars(r) for r in get_alert_engine().rules.values()]
 
 @app.post(
@@ -1665,7 +1676,11 @@ async def list_rules():
     tags=["Alerts"],
     dependencies=[Depends(require_scope("admin"))],
 )
-async def add_rule(req: RuleRequest):
+async def add_rule(
+    req: RuleRequest,
+    principal: dict = Depends(require_scope("admin")),
+):
+    _require_operator(principal)
     import uuid as _u
     rule = AlertRule(rule_id=_u.uuid4().hex[:8], **req.dict())
     get_alert_engine().add_rule(rule)
@@ -1676,7 +1691,11 @@ async def add_rule(req: RuleRequest):
     tags=["Alerts"],
     dependencies=[Depends(require_scope("admin"))],
 )
-async def delete_rule(rule_id: str):
+async def delete_rule(
+    rule_id: str,
+    principal: dict = Depends(require_scope("admin")),
+):
+    _require_operator(principal)
     if not get_alert_engine().delete_rule(rule_id):
         raise HTTPException(404, "Not found")
     return {"deleted": rule_id}
@@ -1690,7 +1709,9 @@ async def patch_rule(
     rule_id:   str,
     enabled:   Optional[bool]  = None,
     threshold: Optional[float] = None,
+    principal: dict = Depends(require_scope("admin")),
 ):
+    _require_operator(principal)
     kw: dict = {}
     if enabled is not None:
         kw["enabled"] = enabled
@@ -1911,7 +1932,11 @@ async def cognitive_forecast():
     tags=["Cognitive"],
     dependencies=[Depends(require_scope("read"))],
 )
-async def cognitive_predictions():
+async def cognitive_predictions(
+    principal: dict = Depends(require_scope("read")),
+):
+    if principal.get("workspace_id"):
+        return []
     if not COGNITIVE_OK:
         return []
     dna     = get_dna_engine()
@@ -2045,7 +2070,11 @@ async def cognitive_debug_matcher():
     tags=["Cognitive"],
     dependencies=[Depends(require_scope("write"))],
 )
-async def acknowledge_prediction(pred_id: str):
+async def acknowledge_prediction(
+    pred_id: str,
+    principal: dict = Depends(require_scope("write")),
+):
+    _require_operator(principal)
     if not COGNITIVE_OK:
         raise HTTPException(
             status_code=503,
@@ -2100,7 +2129,12 @@ async def acknowledge_prediction(pred_id: str):
     tags=["Cognitive"],
     dependencies=[Depends(require_scope("write"))],
 )
-async def resolve_prediction(pred_id: str, was_correct: bool):
+async def resolve_prediction(
+    pred_id: str,
+    was_correct: bool,
+    principal: dict = Depends(require_scope("write")),
+):
+    _require_operator(principal)
     if not COGNITIVE_OK:
         raise HTTPException(status_code=503, detail="Cognitive layer unavailable")
 
@@ -2319,7 +2353,12 @@ async def cognitive_blackbox():
     tags=["Cognitive"],
     dependencies=[Depends(require_scope("write"))],
 )
-async def mark_incident(incident_type: str, description: str = ""):
+async def mark_incident(
+    incident_type: str,
+    description: str = "",
+    principal: dict = Depends(require_scope("write")),
+):
+    _require_operator(principal)
     if not COGNITIVE_OK:
         return {"error": "Cognitive layer not available"}
     bb          = get_black_box()
@@ -2333,7 +2372,11 @@ async def mark_incident(incident_type: str, description: str = ""):
     tags=["Cognitive"],
     dependencies=[Depends(require_scope("read"))],
 )
-async def list_incidents():
+async def list_incidents(
+    principal: dict = Depends(require_scope("read")),
+):
+    if principal.get("workspace_id"):
+        return []
     if not COGNITIVE_OK:
         return []
     return get_black_box().get_incidents()
@@ -2343,7 +2386,12 @@ async def list_incidents():
     tags=["Cognitive"],
     dependencies=[Depends(require_scope("read"))],
 )
-async def get_incident(incident_id: str):
+async def get_incident(
+    incident_id: str,
+    principal: dict = Depends(require_scope("read")),
+):
+    if principal.get("workspace_id"):
+        raise HTTPException(404, "Incident not found")
     if not COGNITIVE_OK:
         return {"error": "not available"}
     incident = get_black_box().get_incident(incident_id)
@@ -2357,7 +2405,12 @@ async def get_incident(incident_id: str):
     tags=["Cognitive"],
     dependencies=[Depends(require_scope("read"))],
 )
-async def get_postmortem(event_id: str):
+async def get_postmortem(
+    event_id: str,
+    principal: dict = Depends(require_scope("read")),
+):
+    if principal.get("workspace_id"):
+        raise HTTPException(404, "Postmortem not found")
     if not COGNITIVE_OK:
         return {"error": "not available"}
     bb       = get_black_box()
@@ -2372,7 +2425,11 @@ async def get_postmortem(event_id: str):
     tags=["Cognitive"],
     dependencies=[Depends(require_scope("read"))],
 )
-async def notification_history():
+async def notification_history(
+    principal: dict = Depends(require_scope("read")),
+):
+    if principal.get("workspace_id"):
+        return []
     if not COGNITIVE_OK:
         return []
     return get_notifier().get_history()
@@ -2382,7 +2439,12 @@ async def notification_history():
     tags=["Cognitive"],
     dependencies=[Depends(require_scope("admin"))],
 )
-async def configure_notifications(enabled: bool = True, min_severity: str = "MEDIUM"):
+async def configure_notifications(
+    enabled: bool = True,
+    min_severity: str = "MEDIUM",
+    principal: dict = Depends(require_scope("admin")),
+):
+    _require_operator(principal)
     if COGNITIVE_OK:
         n = get_notifier()
         n.set_enabled(enabled)
