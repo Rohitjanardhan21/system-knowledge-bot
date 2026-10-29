@@ -42,7 +42,7 @@ from backend.core.logging.logging_config import (
 from backend.core.auth.auth import (
     require_scope, create_api_key, revoke_api_key,
     issue_token_pair, refresh_access_token, get_redis, close_redis_client,
-    _read_secret,
+    revoke_token, _read_secret,
 )
 from backend.core.auth import accounts as personal_accounts
 from backend.core.storage.redis_store import (
@@ -1066,6 +1066,17 @@ class EmailVerificationRequest(BaseModel):
 class VerificationResendRequest(BaseModel):
     email: str = Field(min_length=3, max_length=254)
 
+class PasswordResetRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=254)
+
+class PasswordResetCompletionRequest(BaseModel):
+    token: str = Field(min_length=1, max_length=256)
+    password: str = Field(min_length=12, max_length=128)
+
+class LogoutRequest(BaseModel):
+    refresh_token: str = Field(min_length=1, max_length=4096)
+    access_token: str | None = Field(default=None, max_length=4096)
+
 class ApiKeyRequest(BaseModel):
     name:  str
     scope: Literal["read", "write", "admin"] = "read"
@@ -1208,11 +1219,56 @@ async def resend_personal_verification(
         log.exception("Personal account verification email could not be resent")
         raise HTTPException(
             503,
-            "Verification email could not be sent. Check the SMTP configuration.",
+            "Verification email could not be sent. Check the Resend configuration.",
         ) from exc
     return {
         "message": "If an unverified account exists for that email, a verification link has been sent."
     }
+
+
+@app.post("/auth/password-reset/request", status_code=202, tags=["Auth"])
+async def request_password_reset(
+    req: PasswordResetRequest,
+    request: Request,
+):
+    if settings_path():
+        raise HTTPException(404, "Personal account recovery is available in hosted CVIS only.")
+    try:
+        email = personal_accounts.normalize_email(req.email)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    await _enforce_auth_rate_limit(
+        request,
+        "password-reset",
+        limit=5,
+        window_seconds=60 * 60,
+        identity=email,
+    )
+    base_url = _verification_base_url(request)
+    try:
+        personal_accounts.ensure_email_delivery_configured()
+        await personal_accounts.issue_password_reset(email, base_url)
+    except (OSError, RuntimeError, sqlite3.Error, asyncpg.PostgresError, asyncpg.PostgresConnectionError) as exc:
+        log.exception("Password reset email could not be sent")
+        raise HTTPException(
+            503,
+            "Password reset is temporarily unavailable.",
+        ) from exc
+    return {
+        "message": "If an account exists for that email, a password reset link has been sent."
+    }
+
+
+@app.post("/auth/password-reset/complete", tags=["Auth"])
+async def complete_password_reset(req: PasswordResetCompletionRequest):
+    try:
+        await personal_accounts.reset_password(req.token, req.password)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except (OSError, RuntimeError, sqlite3.Error, asyncpg.PostgresError, asyncpg.PostgresConnectionError) as exc:
+        log.exception("Password reset could not be completed")
+        raise HTTPException(503, "Password reset is temporarily unavailable.") from exc
+    return {"message": "Your password was reset. You can now sign in."}
 
 
 @app.post("/auth/verify-email", tags=["Auth"])
@@ -1268,6 +1324,15 @@ async def refresh(req: RefreshRequest):
     pair = await refresh_access_token(req.refresh_token)
     return {"access_token": pair.access_token, "refresh_token": pair.refresh_token,
             "token_type": "bearer", "expires_in": pair.expires_in}
+
+
+@app.post("/auth/logout", tags=["Auth"])
+async def logout(req: LogoutRequest):
+    await revoke_token(req.refresh_token)
+    if req.access_token:
+        await revoke_token(req.access_token)
+    return {"message": "Signed out."}
+
 
 @app.post("/auth/api-keys", tags=["Auth"])
 async def create_key(req: ApiKeyRequest, principal: dict = Depends(require_scope("admin"))):

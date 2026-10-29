@@ -3,18 +3,24 @@ import axios from "axios";
 import {
   login,
   registerPersonalAccount,
+  requestPasswordReset,
   resendVerification,
+  resetPassword,
 } from "../services/auth";
 
 interface LoginProps {
   onSuccess: () => void;
+  resetToken?: string;
+  onResetComplete?: () => void;
 }
 
-function Login({ onSuccess }: LoginProps) {
+type LoginMode = "login" | "register" | "reset-request" | "reset";
+
+function Login({ onSuccess, resetToken, onResetComplete }: LoginProps) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [passwordConfirmation, setPasswordConfirmation] = useState("");
-  const [mode, setMode] = useState<"login" | "register">("login");
+  const [mode, setMode] = useState<LoginMode>(resetToken ? "reset" : "login");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [loading, setLoading] = useState(false);
@@ -26,7 +32,25 @@ function Login({ onSuccess }: LoginProps) {
     setLoading(true);
 
     try {
-      if (mode === "register") {
+      if (mode === "reset-request") {
+        await requestPasswordReset(username);
+        setMode("login");
+        setNotice("If an account exists for that email, a password reset link has been sent.");
+      } else if (mode === "reset") {
+        if (!resetToken) {
+          setError("This password reset link is invalid or expired.");
+          return;
+        }
+        if (password !== passwordConfirmation) {
+          setError("Passwords do not match.");
+          return;
+        }
+        await resetPassword(resetToken, password);
+        setPassword("");
+        setNotice("Your password was reset. You can now sign in.");
+        onResetComplete?.();
+        setMode("login");
+      } else if (mode === "register") {
         if (password !== passwordConfirmation) {
           setError("Passwords do not match.");
           return;
@@ -49,7 +73,9 @@ function Login({ onSuccess }: LoginProps) {
           ? responseMessage
           : mode === "register"
             ? "Account registration failed. Check the email settings and try again."
-            : "Invalid username/email or password.",
+            : mode === "reset-request" || mode === "reset"
+              ? "Password reset could not be completed. Try again later."
+              : "Invalid username/email or password.",
       );
     } finally {
       setLoading(false);
@@ -118,48 +144,59 @@ function Login({ onSuccess }: LoginProps) {
       >
         <h1 style={{ marginTop: 0 }}>CVIS System UI</h1>
         <p style={{ color: "#8fa5b5" }}>
-          {mode === "register" ? "Create a personal account. Email verification is required." : "Sign in with your account"}
+          {mode === "register"
+            ? "Create a personal account. Email verification is required."
+            : mode === "reset-request"
+              ? "Enter your email to receive a password reset link."
+              : mode === "reset"
+                ? "Choose a new password for your account."
+                : "Sign in with your account"}
         </p>
 
-        <label>
-          {mode === "register" ? "Email" : "Email or admin username"}
-          <input
-            className="cvis-login-input"
-            type={mode === "register" ? "email" : "text"}
-            value={username}
-            onChange={(event) => {
-              setUsername(event.target.value);
-              setError("");
-              setNotice("");
-            }}
-            autoComplete={mode === "register" ? "email" : "username"}
-            required
-            style={{
-              display: "block",
-              width: "100%",
-              marginTop: "8px",
-              marginBottom: "16px",
-              padding: "10px",
-              boxSizing: "border-box",
-              color: "#111827",
-              backgroundColor: "#fff",
-              WebkitTextFillColor: "#111827",
-              caretColor: "#111827",
-              colorScheme: "light",
-            }}
-          />
-        </label>
+        {mode !== "reset" && (
+          <label>
+            {mode === "register" || mode === "reset-request" ? "Email" : "Email or admin username"}
+            <input
+              className="cvis-login-input"
+              type={mode === "register" || mode === "reset-request" ? "email" : "text"}
+              value={username}
+              onChange={(event) => {
+                setUsername(event.target.value);
+                setError("");
+                setNotice("");
+              }}
+              autoComplete={mode === "register" || mode === "reset-request" ? "email" : "username"}
+              required
+              style={{
+                display: "block",
+                width: "100%",
+                marginTop: "8px",
+                marginBottom: "16px",
+                padding: "10px",
+                boxSizing: "border-box",
+                color: "#111827",
+                backgroundColor: "#fff",
+                WebkitTextFillColor: "#111827",
+                caretColor: "#111827",
+                colorScheme: "light",
+              }}
+            />
+          </label>
+        )}
 
-        <label>
-          {mode === "register" ? "Password (at least 12 characters)" : "Password"}
-          <input
+        {mode !== "reset-request" && (
+          <label>
+            {mode === "register" || mode === "reset"
+              ? "New password (at least 12 characters)"
+              : "Password"}
+            <input
             className="cvis-login-input"
             type="password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
-            minLength={mode === "register" ? 12 : undefined}
+            minLength={mode === "register" || mode === "reset" ? 12 : undefined}
             maxLength={128}
-            autoComplete={mode === "register" ? "new-password" : "current-password"}
+            autoComplete={mode === "register" || mode === "reset" ? "new-password" : "current-password"}
             required
             style={{
               display: "block",
@@ -174,10 +211,11 @@ function Login({ onSuccess }: LoginProps) {
               caretColor: "#111827",
               colorScheme: "light",
             }}
-          />
-        </label>
+            />
+          </label>
+        )}
 
-        {mode === "register" && (
+        {(mode === "register" || mode === "reset") && (
           <label>
             Confirm password
             <input
@@ -226,23 +264,66 @@ function Login({ onSuccess }: LoginProps) {
           }}
         >
           {loading
-            ? mode === "register" ? "CREATING ACCOUNT..." : "AUTHENTICATING..."
-            : mode === "register" ? "CREATE ACCOUNT" : "LOGIN"}
+            ? mode === "register"
+              ? "CREATING ACCOUNT..."
+              : mode === "reset-request"
+                ? "SENDING LINK..."
+                : mode === "reset"
+                  ? "RESETTING PASSWORD..."
+                  : "AUTHENTICATING..."
+            : mode === "register"
+              ? "CREATE ACCOUNT"
+              : mode === "reset-request"
+                ? "SEND RESET LINK"
+                : mode === "reset"
+                  ? "RESET PASSWORD"
+                  : "LOGIN"}
         </button>
         <div style={{ display: "grid", gap: 8, marginTop: 14 }}>
-          <button
-            type="button"
-            disabled={loading}
-            onClick={() => {
-              setMode(mode === "login" ? "register" : "login");
-              setPassword("");
-              setPasswordConfirmation("");
-              setError("");
-              setNotice("");
-            }}
-          >
-            {mode === "login" ? "Create personal account" : "Back to sign in"}
-          </button>
+          {mode === "login" && (
+            <>
+              <button
+                type="button"
+                disabled={loading}
+                onClick={() => {
+                  setMode("register");
+                  setPassword("");
+                  setPasswordConfirmation("");
+                  setError("");
+                  setNotice("");
+                }}
+              >
+                Create personal account
+              </button>
+              <button
+                type="button"
+                disabled={loading || !username.trim()}
+                onClick={() => {
+                  setMode("reset-request");
+                  setPassword("");
+                  setError("");
+                  setNotice("");
+                }}
+              >
+                Forgot password?
+              </button>
+            </>
+          )}
+          {(mode === "register" || mode === "reset-request" || mode === "reset") && (
+            <button
+              type="button"
+              disabled={loading}
+              onClick={() => {
+                setMode("login");
+                setPassword("");
+                setPasswordConfirmation("");
+                setError("");
+                setNotice("");
+              }}
+            >
+              Back to sign in
+            </button>
+          )}
           {mode === "login" && (
             <button type="button" disabled={loading || !username.trim()} onClick={() => void handleResendVerification()}>
               Resend verification email

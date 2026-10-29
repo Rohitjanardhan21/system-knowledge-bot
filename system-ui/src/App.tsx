@@ -7,6 +7,9 @@ function App() {
   const [verificationToken, setVerificationToken] = useState(
     () => new URLSearchParams(window.location.hash.slice(1)).get("verify-email"),
   );
+  const [passwordResetToken, setPasswordResetToken] = useState(
+    () => new URLSearchParams(window.location.hash.slice(1)).get("reset-password"),
+  );
   const [verificationState, setVerificationState] = useState<
     "checking" | "success" | "error" | null
   >(() => verificationToken ? "checking" : null);
@@ -72,6 +75,19 @@ function App() {
     );
   }
 
+  if (passwordResetToken) {
+    return (
+      <Login
+        resetToken={passwordResetToken}
+        onResetComplete={() => {
+          window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+          setPasswordResetToken(null);
+        }}
+        onSuccess={() => setAccess("authenticated")}
+      />
+    );
+  }
+
   if (access === "checking") {
     return <div role="status" aria-live="polite">Starting CVIS…</div>;
   }
@@ -84,8 +100,7 @@ function App() {
     <Dashboard
       onLogout={access === "authenticated"
         ? () => {
-            logout();
-            setAccess("login");
+            void logout().finally(() => setAccess("login"));
           }
         : undefined}
     />

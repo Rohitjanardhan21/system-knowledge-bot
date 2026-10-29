@@ -17,17 +17,17 @@ class RedisStub:
         self.fail_set = fail_set
         self.used = set()
 
-    async def get(self, _key):
+    async def get(self, key):
         if self.fail_get:
             raise ConnectionError("Redis unavailable")
-        return self.revoked
+        return "1" if key in self.used else self.revoked
 
-    async def set(self, key, value, *, ex, nx):
+    async def set(self, key, value, *, ex, nx=None):
         if self.fail_set:
             raise ConnectionError("Redis unavailable")
         assert value == "1"
         assert ex > 0
-        assert nx is True
+        assert nx in (None, True)
         if key in self.used:
             return None
         self.used.add(key)
@@ -119,6 +119,23 @@ def test_refresh_token_can_be_consumed_only_once(monkeypatch):
         asyncio.run(auth.refresh_access_token(pair.refresh_token))
 
     assert exc.value.status_code == 401
+
+
+def test_logout_revokes_access_and_refresh_tokens(monkeypatch):
+    redis = RedisStub()
+    monkeypatch.setattr(auth, "get_redis", _async_return(redis))
+    pair = auth.issue_token_pair("test-user", "read")
+
+    asyncio.run(auth.revoke_token(pair.access_token))
+    asyncio.run(auth.revoke_token(pair.refresh_token))
+
+    with pytest.raises(HTTPException) as access_error:
+        asyncio.run(auth._verify_jwt(pair.access_token))
+    assert access_error.value.status_code == 401
+
+    with pytest.raises(HTTPException) as refresh_error:
+        asyncio.run(auth.refresh_access_token(pair.refresh_token))
+    assert refresh_error.value.status_code == 401
 
 
 @pytest.mark.parametrize(

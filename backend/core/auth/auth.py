@@ -425,6 +425,25 @@ async def revoke_jwt(jti: str, ttl: int = REFRESH_TTL_S):
         ) from exc
 
 
+async def revoke_token(token: str) -> None:
+    if not JWT_OK:
+        raise HTTPException(501, "JWT not available")
+    try:
+        payload = _jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+    except _jwt.InvalidTokenError as exc:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid token") from exc
+    jti = payload.get("jti")
+    expires_at = payload.get("exp")
+    if (
+        not isinstance(jti, str)
+        or not jti
+        or isinstance(expires_at, bool)
+        or not isinstance(expires_at, (int, float))
+    ):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid token")
+    await revoke_jwt(jti, max(1, int(expires_at - time.time())))
+
+
 async def _consume_refresh_jti(jti: str, expires_at: int) -> None:
     """Atomically mark a refresh JTI used; reject replay and storage failure."""
     if not isinstance(jti, str) or not jti:
