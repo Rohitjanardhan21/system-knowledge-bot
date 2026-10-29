@@ -48,6 +48,10 @@ def _token_from_email(sent_emails, index=0):
     return parse_qs(urlsplit(sent_emails[index][1]).fragment)["verify-email"][0]
 
 
+def _reset_token_from_email(sent_emails, index=0):
+    return parse_qs(urlsplit(sent_emails[index][1]).fragment)["reset-password"][0]
+
+
 def test_personal_registration_sends_verification_link_and_stores_only_password_hash(
     client, account_environment
 ):
@@ -227,6 +231,73 @@ def test_registration_resend_failure_leaves_account_resendable(
 
     assert resend.status_code == 200
     assert sent_emails[0][0] == "user@example.test"
+
+
+def test_password_reset_changes_password_and_consumes_token(
+    client, account_environment, monkeypatch
+):
+    _, sent_emails = account_environment
+    reset_emails = []
+    monkeypatch.setattr(
+        accounts,
+        "_send_password_reset_email",
+        lambda email, url: reset_emails.append((email, url)),
+    )
+    assert client.post("/auth/register", json=_registration_payload()).status_code == 202
+    verification_token = _token_from_email(sent_emails)
+    assert client.post(
+        "/auth/verify-email",
+        json={"token": verification_token},
+    ).status_code == 200
+
+    requested = client.post(
+        "/auth/password-reset/request",
+        json={"email": "user@example.test"},
+    )
+    assert requested.status_code == 202
+    assert reset_emails[0][0] == "user@example.test"
+
+    reset_token = _reset_token_from_email(reset_emails)
+    completed = client.post(
+        "/auth/password-reset/complete",
+        json={"token": reset_token, "password": "new-correct-password"},
+    )
+    assert completed.status_code == 200
+    assert client.post(
+        "/auth/login",
+        json={
+            "username": "user@example.test",
+            "password": "correct-horse-battery",
+        },
+    ).status_code == 401
+    assert client.post(
+        "/auth/login",
+        json={
+            "username": "user@example.test",
+            "password": "new-correct-password",
+        },
+    ).status_code == 200
+    reused = client.post(
+        "/auth/password-reset/complete",
+        json={"token": reset_token, "password": "another-password"},
+    )
+    assert reused.status_code == 400
+
+
+def test_password_reset_request_does_not_reveal_unknown_email(
+    client, account_environment, monkeypatch
+):
+    reset_email = Mock()
+    monkeypatch.setattr(accounts, "_send_password_reset_email", reset_email)
+
+    response = client.post(
+        "/auth/password-reset/request",
+        json={"email": "unknown@example.test"},
+    )
+
+    assert response.status_code == 202
+    assert "If an account exists" in response.json()["message"]
+    reset_email.assert_not_called()
 
 
 def test_production_requires_postgres_for_personal_account_routes(

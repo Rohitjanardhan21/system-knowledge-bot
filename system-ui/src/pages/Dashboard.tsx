@@ -1124,7 +1124,7 @@ interface HistoryPoint {
 
 /* ── MAIN DASHBOARD ──────────────────────────────────────── */
 interface DashboardProps {
-  onLogout?: () => void;
+  onLogout?: () => void | Promise<void>;
 }
 
 export default function Dashboard({ onLogout }: DashboardProps) {
@@ -1560,7 +1560,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
               </button>
             )}
             {onLogout && (
-              <button type="button" onClick={onLogout} style={headerActionStyle}>
+              <button type="button" onClick={() => void onLogout()} style={headerActionStyle}>
                 Log out
               </button>
             )}

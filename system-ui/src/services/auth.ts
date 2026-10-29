@@ -42,6 +42,20 @@ export async function resendVerification(email: string): Promise<void> {
   await axios.post(`${API_BASE}/auth/resend-verification`, { email });
 }
 
+export async function requestPasswordReset(email: string): Promise<void> {
+  await axios.post(`${API_BASE}/auth/password-reset/request`, { email });
+}
+
+export async function resetPassword(
+  token: string,
+  password: string,
+): Promise<void> {
+  await axios.post(`${API_BASE}/auth/password-reset/complete`, {
+    token,
+    password,
+  });
+}
+
 export async function verifyEmail(token: string): Promise<void> {
   await axios.post(`${API_BASE}/auth/verify-email`, { token });
 }
@@ -88,7 +102,7 @@ export function refreshAccessToken(): Promise<string | null> {
     } catch {
       // Only clear the session if it still uses the token that failed.
       if (getRefreshToken() === refreshToken) {
-        logout();
+        clearSession();
       }
       return null;
     } finally {
@@ -99,9 +113,24 @@ export function refreshAccessToken(): Promise<string | null> {
   return refreshPromise;
 }
 
-export function logout(): void {
+export function clearSession(): void {
   sessionStorage.removeItem(ACCESS_TOKEN_KEY);
   sessionStorage.removeItem(REFRESH_TOKEN_KEY);
+}
+
+export async function logout(): Promise<void> {
+  const refreshToken = getRefreshToken();
+  const accessToken = getAccessToken();
+  try {
+    if (refreshToken) {
+      await axios.post(`${API_BASE}/auth/logout`, {
+        refresh_token: refreshToken,
+        access_token: accessToken,
+      });
+    }
+  } finally {
+    clearSession();
+  }
 }
 
 export function isAuthenticated(): boolean {
