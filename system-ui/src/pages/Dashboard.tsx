@@ -1,6 +1,7 @@
-import { useEffect, useState, useRef, useCallback, type ReactNode } from "react";
-import { api } from "../services/api";
-import { fetchCognitivePredictions, acknowledgeCognitivePrediction, resolveCognitivePrediction } from "../services/api";
+import { useEffect, useState, useRef, useCallback, type CSSProperties, type ReactNode } from "react";
+import { api, fetchDesktopSettings, fetchCognitivePredictions, acknowledgeCognitivePrediction, resolveCognitivePrediction, quitDesktopApp, type CognitivePrediction } from "../services/api";
+import ErrorLogAnalyzer from "../components/ErrorLogAnalyzer";
+import DesktopSettings from "../components/DesktopSettings";
 import {
   AreaChart, Area, CartesianGrid, ResponsiveContainer, RadarChart,
   PolarGrid, PolarAngleAxis, Radar, XAxis, YAxis, Tooltip
@@ -24,9 +25,26 @@ const T = {
   textDim: "#3a5570",
 };
 
+const headerActionStyle: CSSProperties = {
+  padding: "8px 10px",
+  color: T.accent,
+  background: "rgba(0, 212, 255, 0.07)",
+  border: `1px solid ${T.borderActive}`,
+  borderRadius: 4,
+  fontSize: 11,
+  fontFamily: "'Share Tech Mono', monospace",
+  cursor: "pointer",
+};
+
+const quitActionStyle: CSSProperties = {
+  ...headerActionStyle,
+  color: "#ff9aaa",
+  background: "rgba(255, 51, 102, 0.1)",
+  borderColor: "rgba(255, 51, 102, 0.55)",
+};
+
 /* ── KEYFRAMES ────────────────────────────────────────────── */
 const STYLES = `
-  @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Share+Tech+Mono&display=swap');
   @keyframes float { 0%,100%{transform:translate(0,0) scale(1);} 50%{transform:translate(20px,-20px) scale(1.05);} }
   @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.5;} }
   @keyframes pulseRing { 0%{transform:scale(0.95);box-shadow:0 0 0 0 rgba(0,212,255,0.5);} 70%{transform:scale(1);box-shadow:0 0 0 20px rgba(0,212,255,0);} 100%{transform:scale(0.95);} }
@@ -659,7 +677,7 @@ const AIChat = () => {
           `MEM ${result.memory ?? "—"}% · ` +
           `DISK ${result.disk ?? "—"}%\n` +
           `Decision: ${result.decision ?? "None"}\n` +
-          `Root cause: ${result.root_cause ?? "Unknown"}`;
+          `Root cause: ${formatRootCause(result.root_cause) ?? "Unknown"}`;
       } else if (result.mode === "confirm") {
         content = result.message ?? "The backend requires confirmation before execution.";
       } else if (result.mode === "executed") {
@@ -672,7 +690,7 @@ const AIChat = () => {
         const structured = result.structured;
         content =
           `SUMMARY: ${structured.summary ?? "—"}\n\n` +
-          `ROOT CAUSE: ${structured.root_cause ?? "—"}\n\n` +
+          `ROOT CAUSE: ${formatRootCause(structured.root_cause) ?? "—"}\n\n` +
           `EXPLANATION: ${structured.explanation ?? "—"}\n\n` +
           `RECOMMENDED ACTION: ${structured.recommended_action ?? "—"}\n` +
           `CONFIDENCE: ${
@@ -940,9 +958,9 @@ interface PipelineData {
     } | null;
   };
   system_risk?: number;
-  root_cause?: string | null;
+  root_cause?: unknown;
   causal?: {
-    primary_cause?: string | null;
+    primary_cause?: unknown;
   };
   prediction?: {
     type?: string;
@@ -1000,7 +1018,7 @@ interface SystemStatus {
       network?: number;
     };
     fusion?: {
-      cause?: string;
+      cause?: unknown;
     };
   };
   patterns?: Array<{
@@ -1038,6 +1056,18 @@ interface BackendAction {
   description: string;
   safe?: boolean;
   targets?: string[];
+}
+
+function formatRootCause(value: unknown): string | null {
+  if (typeof value === "string") return value;
+  if (!value || typeof value !== "object") return null;
+
+  const cause = value as Record<string, unknown>;
+  for (const field of [cause.type, cause.process]) {
+    if (typeof field === "string" && field.length > 0) return field;
+  }
+
+  return "Root cause detected";
 }
 
 interface BackendActionResult {
@@ -1093,9 +1123,18 @@ interface HistoryPoint {
 }
 
 /* ── MAIN DASHBOARD ──────────────────────────────────────── */
-export default function Dashboard() {
+interface DashboardProps {
+  onLogout?: () => void;
+}
 
-  const [cognitivePredictions, setCognitivePredictions] = useState<any[]>([]);
+export default function Dashboard({ onLogout }: DashboardProps) {
+
+  const [showLogAnalyzer, setShowLogAnalyzer] = useState(false);
+  const [showDesktopSettings, setShowDesktopSettings] = useState(false);
+  const [desktopSettingsAvailable, setDesktopSettingsAvailable] = useState(false);
+  const [quitPending, setQuitPending] = useState(false);
+  const [quitError, setQuitError] = useState("");
+  const [cognitivePredictions, setCognitivePredictions] = useState<CognitivePrediction[]>([]);
   const [predictionBusy, setPredictionBusy] = useState<string | null>(null);
 
   const [data, setData] = useState<SystemStatus>({});
@@ -1110,6 +1149,33 @@ export default function Dashboard() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionResult, setActionResult] = useState<BackendActionResult | null>(null);
   const prevLevel = useRef("OPTIMAL");
+
+  const quitCvis = useCallback(async () => {
+    if (!window.confirm("Quit CVIS and stop all monitoring and system-data collection?")) {
+      return;
+    }
+    setQuitPending(true);
+    setQuitError("");
+    try {
+      await quitDesktopApp();
+    } catch (error) {
+      console.error("[CVIS] Could not quit the desktop app:", error);
+      setQuitPending(false);
+      setQuitError("Quit failed. Use Quit CVIS from the tray menu.");
+    }
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    fetchDesktopSettings()
+      .then((settings) => {
+        if (active) setDesktopSettingsAvailable(settings.available);
+      })
+      .catch(() => {
+        if (active) setDesktopSettingsAvailable(false);
+      });
+    return () => { active = false; };
+  }, []);
 
   const fetchAvailableActions = useCallback(async () => {
     try {
@@ -1167,8 +1233,13 @@ export default function Dashboard() {
 
   useEffect(() => {
     let cancelled = false;
+    let telemetryInFlight = false;
 
     const fetchTelemetry = async () => {
+      if (telemetryInFlight) return;
+
+      telemetryInFlight = true;
+
       try {
         const response = await api.get<SystemStatus>("/os/status");
         const json = response.data;
@@ -1208,6 +1279,8 @@ export default function Dashboard() {
 
         // IMPORTANT: no synthetic telemetry fallback.
         // Keep the last verified backend values on screen.
+      } finally {
+        telemetryInFlight = false;
       }
     };
 
@@ -1315,10 +1388,10 @@ export default function Dashboard() {
     ...(pipeline.decision ?? {}),
   };
   const decisionRootCause =
-    pipeline.decision?.root_cause?.type ||
-    pipeline.causal?.primary_cause ||
-    data.intelligence?.fusion?.cause ||
-    null;
+    formatRootCause(pipeline.decision?.root_cause) ||
+    formatRootCause(pipeline.causal?.primary_cause) ||
+    formatRootCause(pipeline.root_cause) ||
+    formatRootCause(data.intelligence?.fusion?.cause);
 
   // ── Forecast-backed risk ──
   // TP-140: live cognitive prediction polling
@@ -1393,7 +1466,9 @@ export default function Dashboard() {
           osc.start(ctx.currentTime + i * 0.18);
           osc.stop(ctx.currentTime + i * 0.18 + 0.14);
         });
-      } catch {}
+      } catch (error) {
+        console.error("[AIOps] Unable to play alert notification:", error);
+      }
     }
 
     prevLevel.current = level;
@@ -1432,6 +1507,8 @@ export default function Dashboard() {
     <>
       <style>{STYLES}</style>
       <CircuitBg isCritical={isCritical} isWarning={isWarning} />
+      {showLogAnalyzer && <ErrorLogAnalyzer onClose={() => setShowLogAnalyzer(false)} />}
+      {showDesktopSettings && <DesktopSettings onClose={() => setShowDesktopSettings(false)} />}
 
       {/* CRT scanline sweep */}
       <div style={{
@@ -1464,6 +1541,29 @@ export default function Dashboard() {
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "20px" }}>
+            <button type="button" onClick={() => setShowLogAnalyzer(true)} style={headerActionStyle}>
+              Analyze Error Logs
+            </button>
+            {desktopSettingsAvailable && (
+              <button type="button" onClick={() => setShowDesktopSettings(true)} style={headerActionStyle}>
+                Settings
+              </button>
+            )}
+            {desktopSettingsAvailable && (
+              <button
+                type="button"
+                onClick={() => void quitCvis()}
+                disabled={quitPending}
+                style={quitActionStyle}
+              >
+                {quitPending ? "Stopping CVIS…" : "Quit CVIS"}
+              </button>
+            )}
+            {onLogout && (
+              <button type="button" onClick={onLogout} style={headerActionStyle}>
+                Log out
+              </button>
+            )}
             {/* Live indicator */}
             <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "10px", fontFamily: "'Share Tech Mono', monospace", color: T.textDim }}>
               <div style={{ width: "6px", height: "6px", borderRadius: "50%", background: T.success, animation: "pulse 1.5s infinite", boxShadow: `0 0 6px ${T.success}` }} />
@@ -1476,6 +1576,11 @@ export default function Dashboard() {
             <StatusBadge level={level} color={color} />
           </div>
         </div>
+        {quitError && (
+          <div role="alert" style={{ color: T.danger, textAlign: "right", marginBottom: 12 }}>
+            {quitError}
+          </div>
+        )}
 
         {/* TICKER */}
         <TickerBar history={history} color={color} />
@@ -1524,14 +1629,19 @@ export default function Dashboard() {
         </div>
 
         {/* MAIN GRID */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 380px", gap: "20px", alignItems: "start" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr) 380px", gap: "20px", alignItems: "start" }}>
 
           {/* LEFT COLUMN */}
           <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
 
             <Section title="Performance Timeline" subtitle="40-point rolling window · 500ms resolution">
-              <div style={{ height: "200px" }}>
-                <ResponsiveContainer width="100%" height="100%">
+              <div style={{ height: "200px", width: "100%", minWidth: 0 }}>
+                <ResponsiveContainer
+                  width="100%"
+                  height="100%"
+                  minWidth={0}
+                  initialDimension={{ width: 400, height: 200 }}
+                >
                   <AreaChart data={history} margin={{ left: 0, right: 8, top: 10, bottom: 0 }}>
                     <defs>
                       <linearGradient id="gCpu" x1="0" y1="0" x2="0" y2="1">
@@ -1842,8 +1952,13 @@ export default function Dashboard() {
 
             {/* Signal Radar */}
             <Section title="System Signal Map" subtitle="Multimodal state radar">
-              <div style={{ height: "210px" }}>
-                <ResponsiveContainer width="100%" height="100%">
+              <div style={{ height: "210px", width: "100%", minWidth: 0 }}>
+                <ResponsiveContainer
+                  width="100%"
+                  height="100%"
+                  minWidth={0}
+                  initialDimension={{ width: 380, height: 210 }}
+                >
                   <RadarChart data={radarData}>
                     <PolarGrid stroke={T.border} />
                     <PolarAngleAxis dataKey="subject" stroke={T.textMuted} fontSize={10} tick={{ fontFamily: "'Share Tech Mono', monospace" }} />
@@ -1924,8 +2039,7 @@ export default function Dashboard() {
                     PRIMARY CAUSE
                   </div>
                   <div style={{ color: decisionRootCause ? T.warning : T.text, fontWeight: 700 }}>
-                    {pipeline.causal?.primary_cause ||
-                      pipeline.decision?.root_cause?.type ||
+                    {decisionRootCause ||
                       "NO CAUSAL RELATIONSHIP IDENTIFIED"}
                   </div>
                 </div>

@@ -1,16 +1,30 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import ConfidenceBar from "./ConfidenceBar";
+import { API_BASE } from "../services/endpoints";
+
+interface Decision {
+  action?: string;
+  confidence?: number;
+  reason?: string;
+  explanation?: string;
+  impact?: string[];
+  alternatives?: Array<{ action: string }>;
+  risk?: "high" | "medium" | "low" | string;
+  executable?: boolean;
+}
 
 /* ─────────────────────────────────────────────
    GlassCard (fallback if not defined globally)
 ───────────────────────────────────────────── */
-const GlassCard = ({ children }: any) => (
+const GlassCard = ({ children }: { children: ReactNode }) => (
   <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-5 shadow-lg">
     {children}
   </div>
 );
 
-export default function DecisionPanel({ decision }: any) {
+export default function DecisionPanel({ decision }: { decision?: Decision | null }) {
+  const [confirm, setConfirm] = useState(false);
+  const [status, setStatus] = useState<"idle" | "executing" | "success" | "error">("idle");
   if (!decision) return null;
 
   const {
@@ -24,14 +38,11 @@ export default function DecisionPanel({ decision }: any) {
     executable = false,
   } = decision;
 
-  const [confirm, setConfirm] = useState(false);
-  const [status, setStatus] = useState<"idle" | "executing" | "success" | "error">("idle");
-
   const handleExecute = async () => {
     try {
       setStatus("executing");
 
-      const res = await fetch("http://localhost:8000/execute", {
+      const res = await fetch(`${API_BASE}/execute`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -115,7 +126,7 @@ export default function DecisionPanel({ decision }: any) {
         <div className="mb-3">
           <div className="text-xs text-gray-500 mb-1">Alternatives</div>
           <div className="flex flex-wrap gap-2">
-            {alternatives.map((alt: any, i: number) => (
+            {alternatives.map((alt, i) => (
               <button
                 key={i}
                 className="text-xs px-2 py-1 bg-white/5 rounded-lg hover:bg-white/10 transition"

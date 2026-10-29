@@ -1,72 +1,64 @@
-# ─────────────────────────────────────────
-# CVIS v9 — Multi-stage Dockerfile (FINAL)
-# ─────────────────────────────────────────
+# ── Stage 1: Build frontend ─────────────────
+FROM node:22-alpine AS frontend-builder
 
-# ── Stage 1: builder ──────────────────────
+WORKDIR /build/system-ui
+
+COPY system-ui/package.json system-ui/package-lock.json ./
+RUN npm ci
+
+COPY system-ui/ ./
+RUN npm run build
+
+# ── Stage 2: Build Python dependencies ─────
 FROM python:3.12-slim AS builder
 
 WORKDIR /build
 
 RUN apt-get update && apt-get upgrade -y --no-install-recommends && \
-    apt-get install -y --no-install-recommends \
-    gcc g++ libffi-dev \
-    && rm -rf /var/lib/apt/lists/*
+    apt-get install -y --no-install-recommends gcc g++ libffi-dev && \
+    rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
 
-RUN pip install --upgrade pip && \
+RUN python -m pip install --upgrade pip && \
     pip install --prefix=/install --no-cache-dir -r requirements.txt
 
-
-# ── Stage 2: runtime ──────────────────────
+# ── Stage 3: Runtime ────────────────────────
 FROM python:3.12-slim AS runtime
 
 LABEL org.opencontainers.image.title="CVIS v9 AIOps Backend"
 LABEL org.opencontainers.image.version="9.0.0"
 
-# Upgrade OS packages and create non-root user
 RUN apt-get update && apt-get upgrade -y --no-install-recommends && \
     rm -rf /var/lib/apt/lists/* && \
     useradd --create-home --shell /bin/bash --uid 1001 cvis
 
-# Copy installed Python packages
 COPY --from=builder /install /usr/local
 
-# Upgrade runtime pip to address known vulnerabilities
-RUN python -m pip install --no-cache-dir --upgrade pip
+RUN python -m pip uninstall --yes pip
 
-# Set working directory
 WORKDIR /app
 
-RUN mkdir -p /app/data && chown -R cvis:cvis /app/data
-
 COPY --chown=cvis:cvis backend/ ./backend/
 COPY --chown=cvis:cvis frontend/ ./frontend/
+COPY --from=frontend-builder --chown=cvis:cvis /build/system-ui/dist/ ./frontend/
 
-# 🔥 Copy FULL backend (includes gunicorn_conf.py, main.py, etc.)
-COPY --chown=cvis:cvis backend/ ./backend/
-COPY --chown=cvis:cvis frontend/ ./frontend/
 COPY --chown=cvis:cvis cvis_temp.py ./cvis_temp.py
 COPY --chown=cvis:cvis agent/ ./agent/
 COPY --chown=cvis:cvis preflight/ ./preflight/
 COPY --chown=cvis:cvis timeline/ ./timeline/
 COPY --chown=cvis:cvis judgment/ ./judgment/
 
-# Ensure Python can resolve modules
 ENV PYTHONPATH=/app
 
-# Create writable directories
-RUN mkdir -p model_versions logs && chown -R cvis:cvis /app
+RUN mkdir -p /app/data /app/model_versions /app/logs && \
+    chown -R cvis:cvis /app
 
-# Switch to non-root user
 USER cvis
 
-# Healthcheck
 HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" || exit 1
 
-# Expose API port
 EXPOSE 8000
 
-# 🔥 FINAL ENTRYPOINT (correct path)
 CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]

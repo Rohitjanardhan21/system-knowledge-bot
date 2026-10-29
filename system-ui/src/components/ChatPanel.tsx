@@ -1,11 +1,12 @@
 import { useState } from "react";
+import { API_BASE } from "../services/endpoints";
 
 export default function ChatPanel() {
   const [msg, setMsg] = useState("");
   const [response, setResponse] = useState("");
 
   const send = async () => {
-    const res = await fetch("http://127.0.0.1:8000/chat", {
+    const res = await fetch(`${API_BASE}/chat`, {
       method: "POST",
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify({ message: msg }),

@@ -1,14 +1,19 @@
 import { useEffect, useState } from "react";
 import { LineChart, Line, XAxis, YAxis, Tooltip } from "recharts";
 
+interface CpuPoint {
+  time: number;
+  cpu: number;
+}
+
 export default function CpuChart({ cpu }: { cpu: number }) {
-  const [data, setData] = useState<any[]>([]);
+  const [data, setData] = useState<CpuPoint[]>([]);
 
   useEffect(() => {
-    setData((prev) => [
-      ...prev.slice(-20),
-      { time: Date.now(), cpu }
-    ]);
+    const timeout = window.setTimeout(() => {
+      setData((prev) => [...prev.slice(-20), { time: Date.now(), cpu }]);
+    }, 0);
+    return () => window.clearTimeout(timeout);
   }, [cpu]);
 
   return (

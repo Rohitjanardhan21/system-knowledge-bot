@@ -1,4 +1,9 @@
-export default function RLPanel({ decision }: any) {
+interface ReinforcementDecision {
+  action: string;
+  confidence: number;
+}
+
+export default function RLPanel({ decision }: { decision?: ReinforcementDecision | null }) {
   if (!decision) return null;
 
   return (

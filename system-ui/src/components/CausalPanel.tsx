@@ -1,4 +1,10 @@
-export default function CausalPanel({ causal }: any) {
+interface CausalAnalysis {
+  type: string;
+  reason: string;
+  confidence: number;
+}
+
+export default function CausalPanel({ causal }: { causal: CausalAnalysis }) {
   return (
     <div>
       <h3>🔍 Root Cause Analysis</h3>

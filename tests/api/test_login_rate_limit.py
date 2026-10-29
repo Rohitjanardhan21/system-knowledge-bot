@@ -8,7 +8,7 @@ import backend.main as main
 
 class RedisCounterStub:
     def __init__(self, fail=False):
-        self.count = 0
+        self.counts = {}
         self.fail = fail
         self.keys = []
 
@@ -18,8 +18,8 @@ class RedisCounterStub:
         assert numkeys == 1
         assert window_s == 60
         self.keys.append(key)
-        self.count += 1
-        return self.count
+        self.counts[key] = self.counts.get(key, 0) + 1
+        return self.counts[key]
 
 
 def async_return(value):
@@ -55,8 +55,9 @@ def test_five_failed_logins_return_401(login_client, monkeypatch):
         )
         assert response.status_code == 401
 
-    assert redis.count == 5
-    assert len(set(redis.keys)) == 1
+    assert sorted(redis.counts.values()) == [5, 5]
+    assert len(redis.keys) == 10
+    assert len(set(redis.keys)) == 2
 
 
 def test_sixth_failed_login_returns_429(login_client, monkeypatch):

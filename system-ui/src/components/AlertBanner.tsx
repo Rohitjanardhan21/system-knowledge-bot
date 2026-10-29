@@ -1,4 +1,9 @@
-export default function AlertBanner({ decision }: any) {
+interface AlertDecision {
+  urgency?: string;
+  reason?: string;
+}
+
+export default function AlertBanner({ decision }: { decision?: AlertDecision | null }) {
   if (!decision || decision.urgency === "low") return null;
 
   const color =
@@ -18,7 +23,7 @@ export default function AlertBanner({ decision }: any) {
       animation: "slideDown 0.4s ease",
       fontWeight: "bold"
     }}>
-      ⚠️ {decision.reason}
+      ⚠️ {decision.reason ?? "System requires attention."}
 
       <style>
         {`

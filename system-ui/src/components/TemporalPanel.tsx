@@ -1,5 +1,17 @@
-export default function TemporalPanel({ temporal }: any) {
-  const renderMetric = (name: string, metric: any) => {
+interface TemporalMetric {
+  pattern: string;
+  slope: number;
+  confidence: number;
+}
+
+interface TemporalData {
+  cpu: TemporalMetric;
+  memory: TemporalMetric;
+  disk: TemporalMetric;
+}
+
+export default function TemporalPanel({ temporal }: { temporal: TemporalData }) {
+  const renderMetric = (name: string, metric: TemporalMetric) => {
     return (
       <div style={{ marginBottom: 10 }}>
         <strong>{name.toUpperCase()}</strong>

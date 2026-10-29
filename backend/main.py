@@ -15,6 +15,8 @@ if BASE_DIR not in sys.path:
 import asyncio
 import hashlib
 import json as _json
+import sqlite3
+import asyncpg
 import threading
 import time
 import os
@@ -22,6 +24,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal, Optional
 from collections import deque
+from urllib.parse import urlsplit
 
 import numpy as np
 from fastapi import FastAPI, HTTPException, Request, Depends
@@ -41,6 +44,7 @@ from backend.core.auth.auth import (
     issue_token_pair, refresh_access_token, get_redis, close_redis_client,
     _read_secret,
 )
+from backend.core.auth import accounts as personal_accounts
 from backend.core.storage.redis_store import (
     alert_check_and_set, cache_metrics, get_cached_metrics,
     redis_info, publish_event, incr_counter, close_client as close_redis_store,
@@ -53,6 +57,12 @@ from backend.chat_routes import router as chat_router
 from backend.core.storage.db import (
     save_alert, save_event, load_alerts, load_events, maybe_save_snapshot,
     load_snapshots, db_info, close_db,
+)
+from backend.desktop_settings import read_settings, settings_path, write_settings
+from backend.core.diagnostics.log_analyzer import (
+    MAX_INPUT_CHARS,
+    analyze_log,
+    analyze_with_local_model,
 )
 
 import logging
@@ -900,6 +910,76 @@ app = FastAPI(
     redoc_url=None,
 )
 
+class DesktopSettingsRequest(BaseModel):
+    background_monitoring: bool
+
+
+class DiagnosticAnalysisRequest(BaseModel):
+    content: str = Field(min_length=1, max_length=MAX_INPUT_CHARS)
+    filename: str = Field(default="pasted text", max_length=260)
+    use_local_model: bool = False
+
+
+@app.get(
+    "/diagnostics/local-model",
+    tags=["Diagnostics"],
+    dependencies=[Depends(require_scope("read"))],
+)
+async def local_diagnostic_model_status():
+    return {
+        "available": bool(os.environ.get("CVIS_LOCAL_LLM_MODEL", "").strip()),
+        "provider": "Ollama on the CVIS backend host",
+    }
+
+
+@app.post(
+    "/diagnostics/analyze",
+    tags=["Diagnostics"],
+    dependencies=[Depends(require_scope("read"))],
+)
+async def analyze_diagnostic_logs(request: DiagnosticAnalysisRequest):
+    report = analyze_log(request.content, request.filename)
+    if request.use_local_model:
+        model = os.environ.get("CVIS_LOCAL_LLM_MODEL", "").strip()
+        if not model:
+            raise HTTPException(
+                400,
+                "No local model is configured. Set CVIS_LOCAL_LLM_MODEL to a model installed in Ollama.",
+            )
+        try:
+            report["local_model_hypotheses"] = await asyncio.to_thread(
+                analyze_with_local_model, request.content, model
+            )
+            report["local_model_hypotheses"]["notice"] = (
+                "Unverified local-model hypotheses. Treat as suggestions, not facts."
+            )
+        except (RuntimeError, ValueError) as exc:
+            raise HTTPException(503, f"Local model analysis failed: {exc}") from exc
+    return report
+
+
+@app.get(
+    "/desktop/settings",
+    tags=["Desktop"],
+    dependencies=[Depends(require_scope("read"))],
+)
+async def get_desktop_settings():
+    if not settings_path():
+        return {"available": False}
+    return {"available": True, **read_settings()}
+
+
+@app.put(
+    "/desktop/settings",
+    tags=["Desktop"],
+    dependencies=[Depends(require_scope("write"))],
+)
+async def update_desktop_settings(request: DesktopSettingsRequest):
+    if not settings_path():
+        raise HTTPException(404, "Desktop preferences are unavailable")
+    return {"available": True, **write_settings(request.background_monitoring)}
+
+
 app.include_router(
     chat_router,
     dependencies=[Depends(require_scope("read"))],
@@ -976,6 +1056,16 @@ class LoginRequest(BaseModel):
     username: str
     password: str
 
+class PersonalRegistrationRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=254)
+    password: str = Field(min_length=12, max_length=128)
+
+class EmailVerificationRequest(BaseModel):
+    token: str = Field(min_length=1, max_length=256)
+
+class VerificationResendRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=254)
+
 class ApiKeyRequest(BaseModel):
     name:  str
     scope: Literal["read", "write", "admin"] = "read"
@@ -993,6 +1083,149 @@ _USERS = (
     if _ADMIN_USER and _ADMIN_PASS
     else {}
 )
+
+
+async def _enforce_auth_rate_limit(
+    request: Request,
+    operation: str,
+    *,
+    limit: int,
+    window_seconds: int,
+    identity: str = "",
+) -> None:
+    redis = await get_redis()
+    if redis is None:
+        raise HTTPException(503, "Authentication rate limiting is temporarily unavailable")
+
+    client_host = request.client.host if request.client else "unknown"
+    buckets = [("ip", client_host)]
+    if identity:
+        buckets.append(("identity", identity.casefold()))
+    script = """
+local count = redis.call('INCR', KEYS[1])
+if count == 1 then
+    redis.call('EXPIRE', KEYS[1], ARGV[1])
+end
+return count
+"""
+    for scope, value in buckets:
+        bucket = hashlib.sha256(value.encode("utf-8")).hexdigest()
+        key = f"cvis:auth:{operation}:{scope}:{bucket}"
+        try:
+            count = await redis.eval(script, 1, key, window_seconds)
+        except Exception as exc:
+            log.warning("Authentication rate-limit check failed for %s", operation)
+            raise HTTPException(503, "Authentication rate limiting is temporarily unavailable") from exc
+        if isinstance(count, bool) or not isinstance(count, int):
+            log.error("Authentication rate limiter returned an invalid counter for %s", operation)
+            raise HTTPException(503, "Authentication rate limiting is temporarily unavailable")
+        if count > limit:
+            raise HTTPException(429, "Too many requests. Please try again later.")
+
+
+def _verification_base_url(request: Request) -> str:
+    configured = os.environ.get("PUBLIC_BASE_URL", "").strip()
+    if not configured:
+        if os.environ.get("ENV", "").strip().lower() in {"prod", "production"}:
+            raise HTTPException(503, "Email verification is unavailable: PUBLIC_BASE_URL is not configured.")
+        configured = str(request.base_url).rstrip("/")
+    parsed = urlsplit(configured)
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.netloc
+        or parsed.username
+        or parsed.password
+        or parsed.path not in {"", "/"}
+        or parsed.query
+        or parsed.fragment
+        or (
+            os.environ.get("ENV", "").strip().lower() in {"prod", "production"}
+            and parsed.scheme != "https"
+        )
+    ):
+        raise HTTPException(503, "PUBLIC_BASE_URL must be a valid public HTTP URL (HTTPS in production).")
+    return configured.rstrip("/")
+
+
+@app.post("/auth/register", status_code=202, tags=["Auth"])
+async def register_personal_account(
+    req: PersonalRegistrationRequest,
+    request: Request,
+):
+    if settings_path():
+        raise HTTPException(404, "Personal account registration is available in hosted CVIS only.")
+    try:
+        email = personal_accounts.normalize_email(req.email)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    await _enforce_auth_rate_limit(
+        request,
+        "register",
+        limit=5,
+        window_seconds=60 * 60,
+        identity=email,
+    )
+    base_url = _verification_base_url(request)
+    try:
+        personal_accounts.ensure_email_delivery_configured()
+        await personal_accounts.create_pending_account(email, req.password, base_url)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except (OSError, RuntimeError, sqlite3.Error, asyncpg.PostgresError, asyncpg.PostgresConnectionError) as exc:
+        log.exception("Personal account registration could not complete")
+        raise HTTPException(
+            503,
+            "Account registration could not complete. Check the database, RESEND_API_KEY, and EMAIL_FROM settings.",
+        ) from exc
+    return {
+        "message": "Account created. Check your email for a verification link; it expires in one hour."
+    }
+
+
+@app.post("/auth/resend-verification", tags=["Auth"])
+async def resend_personal_verification(
+    req: VerificationResendRequest,
+    request: Request,
+):
+    if settings_path():
+        raise HTTPException(404, "Personal account registration is available in hosted CVIS only.")
+    try:
+        email = personal_accounts.normalize_email(req.email)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    await _enforce_auth_rate_limit(
+        request,
+        "verification",
+        limit=10,
+        window_seconds=60 * 60,
+        identity=email,
+    )
+    base_url = _verification_base_url(request)
+    try:
+        personal_accounts.ensure_email_delivery_configured()
+        await personal_accounts.issue_verification_for_pending_email(email, base_url)
+    except (OSError, RuntimeError, sqlite3.Error, asyncpg.PostgresError, asyncpg.PostgresConnectionError) as exc:
+        log.exception("Personal account verification email could not be resent")
+        raise HTTPException(
+            503,
+            "Verification email could not be sent. Check the SMTP configuration.",
+        ) from exc
+    return {
+        "message": "If an unverified account exists for that email, a verification link has been sent."
+    }
+
+
+@app.post("/auth/verify-email", tags=["Auth"])
+async def verify_personal_account_email(req: EmailVerificationRequest):
+    try:
+        await personal_accounts.verify_email_token(req.token)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except (OSError, RuntimeError, sqlite3.Error, asyncpg.PostgresError, asyncpg.PostgresConnectionError) as exc:
+        log.exception("Personal account email verification failed")
+        raise HTTPException(503, "Email verification is temporarily unavailable.") from exc
+    return {"message": "Your email is verified. You can now sign in to CVIS."}
+
 if (
     os.environ.get("ENV", "").strip().lower() in {"prod", "production"}
     and not _USERS
@@ -1003,46 +1236,30 @@ if (
 
 @app.post("/auth/login", tags=["Auth"])
 async def login(req: LoginRequest, request: Request):
-    if _USERS.get(req.username) != req.password:
-        redis = await get_redis()
-        if redis is None:
-            raise HTTPException(
-                503, "Login rate limiting is temporarily unavailable"
-            )
-
-        client_host = request.client.host if request.client else "unknown"
-        client_hash = hashlib.sha256(client_host.encode()).hexdigest()
-        key = f"cvis:auth:login-fail:{client_hash}"
-        script = """
-local count = redis.call('INCR', KEYS[1])
-if count == 1 then
-    redis.call('EXPIRE', KEYS[1], ARGV[1])
-end
-return count
-"""
+    if _USERS.get(req.username) == req.password:
+        pair = issue_token_pair(req.username, scope="admin")
+    else:
         try:
-            failure_count = await redis.eval(
-                script, 1, key, LOGIN_FAILURE_WINDOW_S
+            personal_user = await personal_accounts.authenticate_personal_user(
+                req.username,
+                req.password,
             )
-        except Exception as exc:
-            log.warning("Login rate-limit check failed: %s", exc)
-            raise HTTPException(
-                503, "Login rate limiting is temporarily unavailable"
-            ) from exc
+        except PermissionError as exc:
+            raise HTTPException(403, str(exc)) from exc
+        except (OSError, RuntimeError, sqlite3.Error, asyncpg.PostgresError, asyncpg.PostgresConnectionError) as exc:
+            log.exception("Personal account authentication could not access the database")
+            raise HTTPException(503, "Personal account sign-in is temporarily unavailable.") from exc
 
-        if (
-            isinstance(failure_count, bool)
-            or not isinstance(failure_count, int)
-        ):
-            log.error("Login rate limiter returned an invalid counter value")
-            raise HTTPException(
-                503, "Login rate limiting is temporarily unavailable"
+        if personal_user is None:
+            await _enforce_auth_rate_limit(
+                request,
+                "login-fail",
+                limit=LOGIN_FAILURE_LIMIT,
+                window_seconds=LOGIN_FAILURE_WINDOW_S,
+                identity=req.username,
             )
-        if failure_count > LOGIN_FAILURE_LIMIT:
-            raise HTTPException(429, "Too many failed login attempts")
-
-        raise HTTPException(401, "Invalid credentials")
-    pair = issue_token_pair(req.username, scope="admin")
+            raise HTTPException(401, "Invalid credentials")
+        pair = issue_token_pair(personal_user["user_id"], scope="read")
     return {"access_token": pair.access_token, "refresh_token": pair.refresh_token,
             "token_type": "bearer", "expires_in": pair.expires_in}
 
@@ -3047,7 +3264,7 @@ if _os.path.isdir(_FRONTEND_DIR):
     try:
         app.mount(
             "/assets",
-            _SS(directory=_FRONTEND_DIR, html=False),
+            _SS(directory=_os.path.join(_FRONTEND_DIR, "assets"), html=False),
             name="frontend-assets",
         )
     except Exception:

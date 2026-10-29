@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import secrets
+import time
 from judgment.audit import record_execution
 from judgment.state_lock import state_lock
 
@@ -99,7 +100,15 @@ def _persist_action(action):
         json.dump(state, f, indent=2, default=str)
         f.flush()
         os.fsync(f.fileno())
-    os.replace(temp_path, STATE_PATH)
+
+    for attempt in range(6):
+        try:
+            os.replace(temp_path, STATE_PATH)
+            break
+        except PermissionError:
+            if os.name != "nt" or attempt == 5 or not temp_path.exists():
+                raise
+            time.sleep(min(0.01 * (2**attempt), 0.1))
 
 
 def begin_execution(action):

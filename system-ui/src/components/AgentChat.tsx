@@ -1,15 +1,20 @@
 import { useState } from "react";
+import { API_BASE } from "../services/endpoints";
+
+interface ChatMessage {
+  role: "user" | "agent";
+  text: string;
+}
 
 export default function AgentChat() {
-
-  const [messages, setMessages] = useState<any[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
 
   const sendMessage = async () => {
 
     if (!input) return;
 
-    const res = await fetch("http://127.0.0.1:8000/system/chat", {
+    const res = await fetch(`${API_BASE}/system/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ query: input })
@@ -20,7 +25,7 @@ export default function AgentChat() {
     setMessages(prev => [
       ...prev,
       { role: "user", text: input },
-      { role: "agent", text: data.response }
+      { role: "agent", text: String(data.response ?? "") }
     ]);
 
     setInput("");

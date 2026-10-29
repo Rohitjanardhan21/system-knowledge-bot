@@ -1,7 +1,12 @@
-export default function SystemStoryPanel({ data }: any) {
+interface SystemStoryData {
+  posture: string;
+  explanation: string;
+}
+
+export default function SystemStoryPanel({ data }: { data: SystemStoryData }) {
   const { posture } = data;
 
-  let color =
+  const color =
     posture === "critical"
       ? "#ef4444"
       : posture === "stressed"

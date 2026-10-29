@@ -19,23 +19,20 @@ services:
       - MKL_NUM_THREADS=1
       - OPENBLAS_NUM_THREADS=1
       - JWT_SECRET=${JWT_SECRET}
-      - "ALLOWED_ORIGIN=${ALLOWED_ORIGIN:-http://localhost:8020,http://127.0.0.1:8020,http://localhost,http://127.0.0.1}"
-    # expose directly for Swagger UI, curl testing
+      - "ALLOWED_ORIGIN=${ALLOWED_ORIGIN:-http://localhost:8020,http://127.0.0.1:8020,http://localhost:5173,http://127.0.0.1:5173,http://localhost,http://127.0.0.1}"
+    # Mount backend source without masking the frontend bundle baked into
+    # the image.
     volumes:
-      # Mount source code live — uvicorn --reload picks up changes
-      - .:/app
+      - ./backend:/app/backend
     # Remove healthcheck delay for faster iteration
     healthcheck:
       start_period: 5s
       interval: 10s
 
   frontend:
-    # Point nginx at the local frontend folder for live edits
-    volumes:
-      - ./frontend:/usr/share/nginx/html:ro
     ports:
-      - "80:80"
-      - "4430:4430"     # self-signed HTTPS on 4430 (cert auto-generated)
+      - "${CVIS_HTTP_PORT:-80}:80"
+      - "4430:443"      # self-signed HTTPS on 4430 (cert auto-generated)
     environment:
       - DOMAIN=localhost
     # No Let's Encrypt in dev

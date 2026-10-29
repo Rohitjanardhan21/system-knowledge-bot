@@ -255,6 +255,9 @@ class MLEngine:
             self.lstm_net = _NumpyLSTMFallback()
             self.vae_net  = _NumpyVAEFallback()
 
+        self._if_q05 = None
+        self._if_q50 = None
+
         # sklearn IF
         if SK_OK:
             self.if_model  = _IF(
@@ -264,10 +267,6 @@ class MLEngine:
             )
             self.if_scaler = RobustScaler()
             self._if_fitted = False
-
-            # Calibration boundaries learned from the normal training distribution.
-            self._if_q05 = None
-            self._if_q50 = None
         else:
             self._if_fitted = False
 
@@ -501,7 +500,13 @@ class MLEngine:
                 "if_q05": self._if_q05,
                 "if_q50": self._if_q50,
             }
-        return {"lstm": self.lstm_net.state_dict(), "vae": self.vae_net.state_dict(), "metrics": asdict(self.metrics)}
+        return {
+            "lstm": self.lstm_net.state_dict(),
+            "vae": self.vae_net.state_dict(),
+            "metrics": asdict(self.metrics),
+            "if_q05": self._if_q05,
+            "if_q50": self._if_q50,
+        }
 
     @_synchronized
     def load_state_dict(self, state: dict):

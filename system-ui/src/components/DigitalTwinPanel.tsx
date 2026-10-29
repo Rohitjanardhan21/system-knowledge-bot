@@ -1,15 +1,24 @@
-export default function DigitalTwinPanel({ data }: any) {
+interface DigitalTwinData {
+  temporal?: {
+    cpu?: { pattern?: string };
+  };
+  forecast?: { risk_score?: number };
+  cpu?: number;
+}
+
+export default function DigitalTwinPanel({ data }: { data: DigitalTwinData }) {
   const { temporal, forecast, cpu } = data;
 
   const cpuTrend = temporal?.cpu?.pattern;
-  const risk = forecast?.risk_score || 0;
+  const risk = forecast?.risk_score ?? 0;
+  const cpuUsage = cpu ?? 0;
 
   let simulation = "";
 
   // 🔥 Simulation override logic (highest priority)
-  if (cpu > 85) {
+  if (cpuUsage > 85) {
     simulation = "Simulated load indicates the system will soon enter a critical state due to high CPU usage.";
-  } else if (cpu > 70) {
+  } else if (cpuUsage > 70) {
     simulation = "System is under increasing load and performance degradation is likely.";
   } else {
     // 🔮 Default predictive logic
