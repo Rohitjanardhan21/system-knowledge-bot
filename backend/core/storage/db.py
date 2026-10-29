@@ -387,16 +387,29 @@ async def load_active_alerts() -> list[dict]:
         return []
 
 
-async def load_alerts(limit: int = 200, severity: str = None) -> list[dict]:
+async def load_alerts(
+    limit: int = 200,
+    severity: str = None,
+    device_ids: set[str] | None = None,
+) -> list[dict]:
     db = await get_db()
     if not db:
+        return []
+    if device_ids is not None and not device_ids:
         return []
     try:
         q = "SELECT * FROM alerts"
         params = []
+        filters = []
         if severity:
-            q += " WHERE severity = ?"
+            filters.append("severity = ?")
             params.append(severity)
+        if device_ids is not None:
+            placeholders = ",".join("?" for _ in device_ids)
+            filters.append(f"device_id IN ({placeholders})")
+            params.extend(sorted(device_ids))
+        if filters:
+            q += " WHERE " + " AND ".join(filters)
         q += f" ORDER BY fired_at DESC LIMIT {int(limit)}"
         async with db.execute(q, params) as cur:
             rows = await cur.fetchall()

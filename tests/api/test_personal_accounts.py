@@ -148,6 +148,30 @@ def test_personal_account_requires_single_use_email_verification_before_login(
         headers={"Authorization": f"Bearer {login.json()['access_token']}"},
     ).status_code == 404
 
+    async def scoped_alerts(**kwargs):
+        assert kwargs["device_ids"] == {"owned-device"}
+        return [
+            {
+                "device_id": "owned-device",
+                "severity": "WARNING",
+                "resolved_at": None,
+            }
+        ]
+
+    monkeypatch.setattr(main, "load_alerts", scoped_alerts)
+    alerts = client.get(
+        "/alerts/history",
+        headers={"Authorization": f"Bearer {login.json()['access_token']}"},
+    )
+    assert alerts.status_code == 200
+    assert alerts.json()[0]["device_id"] == "owned-device"
+    stats = client.get(
+        "/alerts/stats",
+        headers={"Authorization": f"Bearer {login.json()['access_token']}"},
+    )
+    assert stats.status_code == 200
+    assert stats.json()["total_alerts"] == 1
+
     reused_token = client.post("/auth/verify-email", json={"token": token})
     assert reused_token.status_code == 400
 

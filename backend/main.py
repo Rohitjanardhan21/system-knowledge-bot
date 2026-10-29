@@ -109,6 +109,19 @@ _collector_stop = threading.Event()
 _collector_thread = None
 _devices: dict = {}
 
+
+def _workspace_device_ids(principal: dict) -> set[str] | None:
+    """Return the devices visible to a hosted workspace, or None for operators."""
+    workspace_id = principal.get("workspace_id")
+    if not workspace_id:
+        return None
+    return {
+        device_id
+        for device_id, device in _devices.items()
+        if device.get("workspace_id") == workspace_id
+    }
+
+
 async def _restore_registered_devices():
     """Restore registered device identities from Redis into the in-memory registry."""
     redis = await get_redis()
@@ -1578,19 +1591,55 @@ async def configure_email(req: EmailRequest):
     tags=["Alerts"],
     dependencies=[Depends(require_scope("read"))],
 )
-async def alert_history(limit: int = 50, severity: Optional[str] = None):
+async def alert_history(
+    limit: int = 50,
+    severity: Optional[str] = None,
+    principal: dict = Depends(require_scope("read")),
+):
     import re
     if severity and not re.match(r'^[A-Z_]+$', severity):
         raise HTTPException(status_code=422, detail="Invalid severity value")
-    db_rows = await load_alerts(limit=limit, severity=severity)
-    return db_rows if db_rows else get_alert_engine().get_history(limit, severity)
+    device_ids = _workspace_device_ids(principal)
+    db_rows = await load_alerts(
+        limit=limit,
+        severity=severity,
+        device_ids=device_ids,
+    )
+    if db_rows or device_ids is not None:
+        return db_rows
+    return get_alert_engine().get_history(limit, severity)
 
 @app.get(
     "/alerts/stats",
     tags=["Alerts"],
     dependencies=[Depends(require_scope("read"))],
 )
-async def alert_stats():
+async def alert_stats(principal: dict = Depends(require_scope("read"))):
+    device_ids = _workspace_device_ids(principal)
+    if device_ids is not None:
+        scoped_alerts = await load_alerts(limit=10000, device_ids=device_ids)
+        return {
+            "total_alerts": len(scoped_alerts),
+            "active_alerts": sum(
+                1 for alert in scoped_alerts if alert.get("resolved_at") is None
+            ),
+            "critical": sum(
+                1 for alert in scoped_alerts if alert.get("severity") == "CRITICAL"
+            ),
+            "warning": sum(
+                1
+                for alert in scoped_alerts
+                if alert.get("severity") in ("WARNING", "HIGH")
+            ),
+            "info": sum(
+                1 for alert in scoped_alerts if alert.get("severity") == "INFO"
+            ),
+            "redis_total": len(scoped_alerts),
+            "webhooks_configured": 0,
+            "email_configured": False,
+            "alert_email": False,
+            "rules_active": 0,
+        }
     total = 0
     from backend.core.storage.redis_store import get_client
     c = await get_client()
