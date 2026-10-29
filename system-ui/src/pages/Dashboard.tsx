@@ -1123,7 +1123,11 @@ interface HistoryPoint {
 }
 
 /* ── MAIN DASHBOARD ──────────────────────────────────────── */
-export default function Dashboard() {
+interface DashboardProps {
+  onLogout?: () => void;
+}
+
+export default function Dashboard({ onLogout }: DashboardProps) {
 
   const [showLogAnalyzer, setShowLogAnalyzer] = useState(false);
   const [showDesktopSettings, setShowDesktopSettings] = useState(false);
@@ -1553,6 +1557,11 @@ export default function Dashboard() {
                 style={quitActionStyle}
               >
                 {quitPending ? "Stopping CVIS…" : "Quit CVIS"}
+              </button>
+            )}
+            {onLogout && (
+              <button type="button" onClick={onLogout} style={headerActionStyle}>
+                Log out
               </button>
             )}
             {/* Live indicator */}

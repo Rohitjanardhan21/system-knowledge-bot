@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import Dashboard from "./pages/Dashboard";
 import Login from "./pages/Login";
-import { isAuthenticated, verifyEmail } from "./services/auth";
+import { isAuthenticated, logout, verifyEmail } from "./services/auth";
 
 function App() {
   const [verificationToken, setVerificationToken] = useState(
@@ -80,7 +80,16 @@ function App() {
     return <Login onSuccess={() => setAccess("authenticated")} />;
   }
 
-  return <Dashboard />;
+  return (
+    <Dashboard
+      onLogout={access === "authenticated"
+        ? () => {
+            logout();
+            setAccess("login");
+          }
+        : undefined}
+    />
+  );
 }
 
 const styles = {
