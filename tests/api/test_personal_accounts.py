@@ -172,6 +172,30 @@ def test_personal_account_requires_single_use_email_verification_before_login(
     assert stats.status_code == 200
     assert stats.json()["total_alerts"] == 1
 
+    async def scoped_snapshots(**kwargs):
+        assert kwargs["device_ids"] == {"owned-device"}
+        return [{"device_id": "owned-device", "health": 88}]
+
+    monkeypatch.setattr(main, "load_snapshots", scoped_snapshots)
+    snapshots = client.get(
+        "/db/snapshots",
+        headers={"Authorization": f"Bearer {login.json()['access_token']}"},
+    )
+    assert snapshots.status_code == 200
+    assert snapshots.json()[0]["device_id"] == "owned-device"
+    events = client.get(
+        "/db/events",
+        headers={"Authorization": f"Bearer {login.json()['access_token']}"},
+    )
+    assert events.status_code == 200
+    assert events.json() == []
+    report = client.get(
+        "/report/weekly",
+        headers={"Authorization": f"Bearer {login.json()['access_token']}"},
+    )
+    assert report.status_code == 200
+    assert report.json()["workspace_id"] == claims["workspace_id"]
+
     reused_token = client.post("/auth/verify-email", json={"token": token})
     assert reused_token.status_code == 400
 

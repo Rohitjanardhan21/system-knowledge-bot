@@ -77,6 +77,7 @@ CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts DESC);
 
 CREATE TABLE IF NOT EXISTS metric_snapshots (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_id   TEXT,
     cpu         REAL,
     mem         REAL,
     disk        REAL,
@@ -222,6 +223,15 @@ async def get_db():
                 log.info("Added alerts.device_name column")
 
             await _conn.commit()
+
+            async with _conn.execute("PRAGMA table_info(metric_snapshots)") as cur:
+                snapshot_columns = {row["name"] for row in await cur.fetchall()}
+            if "device_id" not in snapshot_columns:
+                await _conn.execute(
+                    "ALTER TABLE metric_snapshots ADD COLUMN device_id TEXT"
+                )
+                log.info("Added metric_snapshots.device_id column")
+                await _conn.commit()
 
             await _conn.execute("PRAGMA journal_mode=WAL")
             await _conn.execute("PRAGMA synchronous=NORMAL")
@@ -505,25 +515,40 @@ async def load_events(limit: int = 60) -> list[dict]:
 #  METRIC SNAPSHOTS
 # ─────────────────────────────────────────────────────────
 _last_snapshot_ts = 0.0
+_last_device_snapshot_ts: dict[str, float] = {}
 _startup_ts = __import__("time").time()
 STARTUP_GRACE_S = 300
 
-async def maybe_save_snapshot(metrics: dict, interval_s: int = 10) -> bool:
+async def maybe_save_snapshot(
+    metrics: dict,
+    interval_s: int = 10,
+    device_id: str | None = None,
+) -> bool:
     global _last_snapshot_ts
     now = time.time()
-    if now - _startup_ts < STARTUP_GRACE_S:
+    if device_id is None and now - _startup_ts < STARTUP_GRACE_S:
         return False
-    if now - _last_snapshot_ts < interval_s:
+    last_snapshot_ts = (
+        _last_snapshot_ts
+        if device_id is None
+        else _last_device_snapshot_ts.get(device_id, 0.0)
+    )
+    if now - last_snapshot_ts < interval_s:
         return False
-    _last_snapshot_ts = now
+    if device_id is None:
+        _last_snapshot_ts = now
+    else:
+        _last_device_snapshot_ts[device_id] = now
     db = await get_db()
     if not db:
         return False
     try:
         await db.execute(
-            "INSERT INTO metric_snapshots (cpu,mem,disk,net,anomaly,health,ensemble,ts) "
-            "VALUES (?,?,?,?,?,?,?,?)",
+            "INSERT INTO metric_snapshots "
+            "(device_id,cpu,mem,disk,net,anomaly,health,ensemble,ts) "
+            "VALUES (?,?,?,?,?,?,?,?,?)",
             (
+                device_id,
                 metrics.get("cpu_percent",    0),
                 metrics.get("memory",         0),
                 metrics.get("disk_percent",   0),
@@ -544,15 +569,25 @@ async def maybe_save_snapshot(metrics: dict, interval_s: int = 10) -> bool:
         log.error("save_snapshot: %s", e)
         return False
 
-async def load_snapshots(hours: float = 1.0) -> list[dict]:
+async def load_snapshots(
+    hours: float = 1.0,
+    device_ids: set[str] | None = None,
+) -> list[dict]:
     db = await get_db()
     if not db:
         return []
+    if device_ids is not None and not device_ids:
+        return []
     try:
         since = time.time() - hours * 3600
-        async with db.execute(
-            "SELECT * FROM metric_snapshots WHERE ts > ? ORDER BY ts ASC", (since,)
-        ) as cur:
+        query = "SELECT * FROM metric_snapshots WHERE ts > ?"
+        params: list[object] = [since]
+        if device_ids is not None:
+            placeholders = ",".join("?" for _ in device_ids)
+            query += f" AND device_id IN ({placeholders})"
+            params.extend(sorted(device_ids))
+        query += " ORDER BY ts ASC"
+        async with db.execute(query, params) as cur:
             return [dict(r) for r in await cur.fetchall()]
     except Exception:
         return []

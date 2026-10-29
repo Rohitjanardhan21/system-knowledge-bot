@@ -1779,15 +1779,26 @@ async def health_full():
     tags=["System"],
     dependencies=[Depends(require_scope("read"))],
 )
-async def get_snapshots(hours: float = 1.0):
-    return await load_snapshots(hours=min(hours, 24.0))
+async def get_snapshots(
+    hours: float = 1.0,
+    principal: dict = Depends(require_scope("read")),
+):
+    return await load_snapshots(
+        hours=min(hours, 24.0),
+        device_ids=_workspace_device_ids(principal),
+    )
 
 @app.get(
     "/db/events",
     tags=["System"],
     dependencies=[Depends(require_scope("read"))],
 )
-async def get_events(limit: int = 60):
+async def get_events(
+    limit: int = 60,
+    principal: dict = Depends(require_scope("read")),
+):
+    if principal.get("workspace_id"):
+        return []
     return await load_events(limit=limit) or []
 
 
@@ -3055,6 +3066,12 @@ async def receive_device_metrics(
     if not await _accept_telemetry_timestamp(device_id, payload.timestamp):
         raise HTTPException(409, "Telemetry timestamp is out of order or replayed")
 
+    await maybe_save_snapshot(
+        payload.metrics,
+        interval_s=10,
+        device_id=device_id,
+    )
+
     # Store the complete remote-device telemetry payload.
     device = {
         **payload.dict(),
@@ -3192,9 +3209,49 @@ async def resolve_action_escalation(
     return result
 
 
-@app.get("/report/weekly", tags=["Reports"], dependencies=[Depends(require_scope("read"))])
-async def weekly_health_report():
+@app.get("/report/weekly", tags=["Reports"])
+async def weekly_health_report(
+    principal: dict = Depends(require_scope("read")),
+):
     from datetime import datetime
+    workspace_device_ids = _workspace_device_ids(principal)
+    if workspace_device_ids is not None:
+        snapshots = await load_snapshots(
+            hours=24 * 7,
+            device_ids=workspace_device_ids,
+        )
+        alerts = await load_alerts(
+            limit=10000,
+            device_ids=workspace_device_ids,
+        )
+        latest = snapshots[-1] if snapshots else {}
+        score = round(
+            sum(float(item.get("health", 0) or 0) for item in snapshots)
+            / len(snapshots)
+        ) if snapshots else 0
+        critical = sum(
+            1 for alert in alerts if alert.get("severity") == "CRITICAL"
+        )
+        warning = sum(
+            1
+            for alert in alerts
+            if alert.get("severity") in ("WARNING", "HIGH")
+        )
+        return {
+            "report": (
+                f"Workspace weekly report\n"
+                f"Devices monitored: {len(workspace_device_ids)}\n"
+                f"Telemetry samples: {len(snapshots)}\n"
+                f"Average health: {score}/100\n"
+                f"Critical alerts: {critical}\n"
+                f"Warning alerts: {warning}"
+            ),
+            "generated_at": time.time(),
+            "format": "plain_text",
+            "workspace_id": principal.get("workspace_id"),
+            "devices_monitored": len(workspace_device_ids),
+            "latest_metrics": latest,
+        }
     m     = dict(_last_metrics)
     score = m.get("health_credit_score") or 0
     if score == 0 and COGNITIVE_OK:
