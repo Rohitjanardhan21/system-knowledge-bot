@@ -161,6 +161,29 @@ export async function fetchCognitiveIncidents() {
   return data ?? [];
 }
 
+export async function acknowledgeAlert(alertId: string) {
+  const { data } = await api.post(
+    `/alerts/${encodeURIComponent(alertId)}/acknowledge`
+  );
+  return data;
+}
+
+export async function snoozeAlert(alertId: string, minutes = 30) {
+  const { data } = await api.post(
+    `/alerts/${encodeURIComponent(alertId)}/snooze`,
+    { minutes }
+  );
+  return data;
+}
+
+export async function suppressAlertProcess(processName: string, minutes = 60) {
+  const { data } = await api.post("/alerts/process-suppressions", {
+    process_name: processName,
+    minutes,
+  });
+  return data;
+}
+
 export interface CognitiveIncidentTimelineEntry {
   t_minus_mins?: number;
   time_str?: string;

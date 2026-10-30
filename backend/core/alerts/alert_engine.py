@@ -131,6 +131,7 @@ class AlertEngine:
         # One email per severity level per cooldown window
         self._email_cooldowns: dict[str, float] = {}
         self._email_cooldown_s = int(os.environ.get("ALERT_EMAIL_COOLDOWN_S", "300"))  # 5 min default
+        self._suppressed_processes: dict[str, float] = {}
 
     # ── Evaluation ───────────────────────────────────────
 
@@ -163,6 +164,14 @@ class AlertEngine:
                 rule.operator,
                 rule.threshold,
             )
+            process_name = metrics.get("memory_forecast_process")
+            if (
+                condition_met
+                and rule.rule_id.startswith("r_mem_forecast")
+                and isinstance(process_name, str)
+                and self.is_process_suppressed(process_name)
+            ):
+                condition_met = False
 
             active = self._active_alerts.get(rule.rule_id)
 
@@ -361,6 +370,19 @@ class AlertEngine:
             "gte": value >= threshold,
             "lte": value <= threshold,
         }.get(op, False)
+
+    def set_process_suppression(self, process_name: str, suppressed_until: float) -> None:
+        self._suppressed_processes[process_name] = suppressed_until
+
+    def restore_process_suppressions(self, suppressions: dict[str, float]) -> None:
+        self._suppressed_processes = dict(suppressions)
+
+    def is_process_suppressed(self, process_name: str) -> bool:
+        suppressed_until = self._suppressed_processes.get(process_name, 0)
+        if suppressed_until <= time.time():
+            self._suppressed_processes.pop(process_name, None)
+            return False
+        return True
 
     # ── Dispatch ─────────────────────────────────────────
 

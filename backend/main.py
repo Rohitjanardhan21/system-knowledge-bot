@@ -59,6 +59,8 @@ from backend.core.storage.db import (
     save_alert, save_event, load_alerts, load_events, maybe_save_snapshot,
     load_snapshots, load_snapshot_rollups, db_info, close_db,
     snapshot_retention_days, save_incident, load_prediction_accuracy,
+    acknowledge_alert, snooze_alert, save_process_suppression,
+    load_process_suppressions,
 )
 from backend.desktop_settings import read_settings, settings_path, write_settings
 from backend.core.diagnostics.log_analyzer import (
@@ -1189,6 +1191,9 @@ async def lifespan(app: FastAPI):
     async def _alert_loop():
         ae = get_alert_engine()
         await ae.restore_active_alerts()
+        ae.restore_process_suppressions(
+            await load_process_suppressions(time.time())
+        )
 
         # Preserve the real notification dispatcher before adding
         # Redis-based notification throttling.
@@ -1961,6 +1966,13 @@ class RuleRequest(BaseModel):
     cooldown_s: int = 60
     message_tpl: str = "{metric} is {value:.2f} (threshold: {threshold})"
 
+class AlertSnoozeRequest(BaseModel):
+    minutes: int = Field(default=30, ge=1, le=1440)
+
+class ProcessSuppressionRequest(BaseModel):
+    process_name: str = Field(..., min_length=1, max_length=160)
+    minutes: int = Field(default=60, ge=1, le=10080)
+
 @app.post(
     "/alerts/webhooks",
     tags=["Alerts"],
@@ -2019,6 +2031,59 @@ async def alert_history(
     if db_rows or device_ids is not None:
         return db_rows
     return get_alert_engine().get_history(limit, severity)
+
+@app.post(
+    "/alerts/{alert_id}/acknowledge",
+    tags=["Alerts"],
+    dependencies=[Depends(require_scope("write"))],
+)
+async def acknowledge_alert_route(
+    alert_id: str,
+    principal: dict = Depends(require_scope("write")),
+):
+    _require_operator(principal)
+    acknowledged_at = time.time()
+    if not await acknowledge_alert(alert_id, acknowledged_at):
+        raise HTTPException(404, "Alert not found")
+    return {"alert_id": alert_id, "acknowledged_at": acknowledged_at}
+
+@app.post(
+    "/alerts/{alert_id}/snooze",
+    tags=["Alerts"],
+    dependencies=[Depends(require_scope("write"))],
+)
+async def snooze_alert_route(
+    alert_id: str,
+    request: AlertSnoozeRequest,
+    principal: dict = Depends(require_scope("write")),
+):
+    _require_operator(principal)
+    snoozed_until = time.time() + request.minutes * 60
+    if not await snooze_alert(alert_id, snoozed_until):
+        raise HTTPException(404, "Alert not found")
+    return {"alert_id": alert_id, "snoozed_until": snoozed_until}
+
+@app.post(
+    "/alerts/process-suppressions",
+    tags=["Alerts"],
+    dependencies=[Depends(require_scope("write"))],
+)
+async def suppress_alert_process(
+    request: ProcessSuppressionRequest,
+    principal: dict = Depends(require_scope("write")),
+):
+    _require_operator(principal)
+    suppressed_until = time.time() + request.minutes * 60
+    if not await save_process_suppression(request.process_name, suppressed_until):
+        raise HTTPException(503, "Alert suppression persistence is unavailable")
+    get_alert_engine().set_process_suppression(
+        request.process_name,
+        suppressed_until,
+    )
+    return {
+        "process_name": request.process_name,
+        "suppressed_until": suppressed_until,
+    }
 
 @app.get(
     "/alerts/stats",

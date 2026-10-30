@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback, type CSSProperties, type ReactNode } from "react";
-import { api, fetchDesktopSettings, fetchCognitivePredictions, fetchPredictionAccuracy, fetchCognitiveIncidents, acknowledgeCognitivePrediction, resolveCognitivePrediction, quitDesktopApp, type CognitivePrediction, type PredictionAccuracy, type CognitiveIncident } from "../services/api";
+import { api, fetchDesktopSettings, fetchCognitivePredictions, fetchPredictionAccuracy, fetchCognitiveIncidents, acknowledgeCognitivePrediction, resolveCognitivePrediction, acknowledgeAlert as acknowledgeHostedAlert, snoozeAlert as snoozeHostedAlert, suppressAlertProcess, quitDesktopApp, type CognitivePrediction, type PredictionAccuracy, type CognitiveIncident } from "../services/api";
 import ErrorLogAnalyzer from "../components/ErrorLogAnalyzer";
 import DesktopSettings from "../components/DesktopSettings";
 import {
@@ -841,6 +841,8 @@ interface SystemEvent {
   time?: string | number;
   fired_at?: number;
   resolved_at?: number | null;
+  acknowledged_at?: number | null;
+  snoozed_until?: number | null;
   metrics?: Record<string, unknown>;
   sent_to?: string[];
   [key: string]: unknown;
@@ -910,9 +912,10 @@ interface AlertDetailsProps {
   acknowledged: boolean;
   snoozedUntil?: number;
   suppressedProcess?: string;
-  onAcknowledge: () => void;
-  onSnooze: () => void;
-  onSuppressProcess: () => void;
+  onAcknowledge: () => void | Promise<void>;
+  onSnooze: () => void | Promise<void>;
+  onSuppressProcess: () => void | Promise<void>;
+  controlError?: string | null;
 }
 
 const AlertDetails = ({
@@ -923,6 +926,7 @@ const AlertDetails = ({
   onAcknowledge,
   onSnooze,
   onSuppressProcess,
+  controlError,
 }: AlertDetailsProps) => {
   const metrics = event.metrics ?? {};
   const process = metrics.memory_forecast_process;
@@ -954,18 +958,19 @@ const AlertDetails = ({
         Recommended next step: {alertRecommendation(event)}
       </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 10 }}>
-        <button type="button" onClick={onAcknowledge} disabled={acknowledged} style={{ border: `1px solid ${T.border}`, borderRadius: 3, background: acknowledged ? "rgba(0,255,157,0.08)" : "transparent", color: acknowledged ? T.success : T.textMuted, cursor: acknowledged ? "default" : "pointer", padding: "5px 8px", fontSize: 9, fontFamily: "'Share Tech Mono', monospace" }}>
+        <button type="button" onClick={() => void onAcknowledge()} disabled={acknowledged} style={{ border: `1px solid ${T.border}`, borderRadius: 3, background: acknowledged ? "rgba(0,255,157,0.08)" : "transparent", color: acknowledged ? T.success : T.textMuted, cursor: acknowledged ? "default" : "pointer", padding: "5px 8px", fontSize: 9, fontFamily: "'Share Tech Mono', monospace" }}>
           {acknowledged ? "ACKNOWLEDGED" : "ACKNOWLEDGE"}
         </button>
-        <button type="button" onClick={onSnooze} style={{ border: `1px solid ${T.border}`, borderRadius: 3, background: "transparent", color: T.textMuted, cursor: "pointer", padding: "5px 8px", fontSize: 9, fontFamily: "'Share Tech Mono', monospace" }}>
+        <button type="button" onClick={() => void onSnooze()} style={{ border: `1px solid ${T.border}`, borderRadius: 3, background: "transparent", color: T.textMuted, cursor: "pointer", padding: "5px 8px", fontSize: 9, fontFamily: "'Share Tech Mono', monospace" }}>
           {snoozedUntil ? "SNOOZED 30M" : "SNOOZE 30M"}
         </button>
         {typeof process === "string" && (
-          <button type="button" onClick={onSuppressProcess} style={{ border: `1px solid ${T.border}`, borderRadius: 3, background: suppressedProcess === process ? "rgba(255,176,32,0.08)" : "transparent", color: suppressedProcess === process ? T.warning : T.textMuted, cursor: "pointer", padding: "5px 8px", fontSize: 9, fontFamily: "'Share Tech Mono', monospace" }}>
+          <button type="button" onClick={() => void onSuppressProcess()} style={{ border: `1px solid ${T.border}`, borderRadius: 3, background: suppressedProcess === process ? "rgba(255,176,32,0.08)" : "transparent", color: suppressedProcess === process ? T.warning : T.textMuted, cursor: "pointer", padding: "5px 8px", fontSize: 9, fontFamily: "'Share Tech Mono', monospace" }}>
             {suppressedProcess === process ? `SUPPRESSED: ${process}` : `SUPPRESS ${process}`}
           </button>
         )}
       </div>
+      {controlError && <div style={{ color: T.danger, fontSize: 9, marginTop: 7 }}>{controlError}</div>}
       <div style={{ color: T.textDim, fontSize: 8, marginTop: 7 }}>
         Controls apply to this browser view only. They do not stop or terminate the process.
       </div>
@@ -1315,6 +1320,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   const [acknowledgedAlerts, setAcknowledgedAlerts] = useState<Record<string, boolean>>({});
   const [snoozedAlerts, setSnoozedAlerts] = useState<Record<string, number>>({});
   const [suppressedProcesses, setSuppressedProcesses] = useState<Record<string, boolean>>({});
+  const [alertControlError, setAlertControlError] = useState<string | null>(null);
   const [eventsLoaded, setEventsLoaded] = useState(false);
   const [dna, setDna] = useState<DnaData>({});
   const [pipeline, setPipeline] = useState<PipelineData>({});
@@ -1338,7 +1344,15 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     }
   }, []);
 
-  const acknowledgeAlert = useCallback((alertId: string) => {
+  const acknowledgeAlert = useCallback(async (alertId: string) => {
+    setAlertControlError(null);
+    try {
+      await acknowledgeHostedAlert(alertId);
+    } catch (error) {
+      console.error("Could not persist alert acknowledgement:", error);
+      setAlertControlError("Could not save acknowledgement. Check operator access and try again.");
+      return;
+    }
     setAcknowledgedAlerts((current) => {
       const next = { ...current, [alertId]: true };
       window.localStorage.setItem("cvis:acknowledged-alerts", JSON.stringify(next));
@@ -1346,7 +1360,15 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     });
   }, []);
 
-  const snoozeAlert = useCallback((alertId: string) => {
+  const snoozeAlert = useCallback(async (alertId: string) => {
+    setAlertControlError(null);
+    try {
+      await snoozeHostedAlert(alertId, 30);
+    } catch (error) {
+      console.error("Could not persist alert snooze:", error);
+      setAlertControlError("Could not save snooze. Check operator access and try again.");
+      return;
+    }
     setSnoozedAlerts((current) => {
       const next = { ...current, [alertId]: Date.now() + 30 * 60 * 1000 };
       window.localStorage.setItem("cvis:snoozed-alerts", JSON.stringify(next));
@@ -1354,7 +1376,15 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     });
   }, []);
 
-  const suppressProcess = useCallback((processName: string) => {
+  const suppressProcess = useCallback(async (processName: string) => {
+    setAlertControlError(null);
+    try {
+      await suppressAlertProcess(processName, 60);
+    } catch (error) {
+      console.error("Could not persist process suppression:", error);
+      setAlertControlError("Could not save process suppression. Check operator access and try again.");
+      return;
+    }
     setSuppressedProcesses((current) => {
       const next = { ...current, [processName]: true };
       window.localStorage.setItem("cvis:suppressed-processes", JSON.stringify(next));
@@ -1543,6 +1573,22 @@ export default function Dashboard({ onLogout }: DashboardProps) {
             severity: alert.severity ?? "INFO",
           }));
         setAlertEvents(alerts);
+        setAcknowledgedAlerts((current) => ({
+          ...Object.fromEntries(
+            alerts
+              .filter((alert) => alert.id && alert.acknowledged_at)
+              .map((alert) => [alert.id as string, true])
+          ),
+          ...current,
+        }));
+        setSnoozedAlerts((current) => ({
+          ...Object.fromEntries(
+            alerts
+              .filter((alert) => alert.id && alert.snoozed_until)
+              .map((alert) => [alert.id as string, alert.snoozed_until as number])
+          ),
+          ...current,
+        }));
         setSelectedAlert((current) => (
           current?.id
             ? alerts.find((event) => event.id === current.id) ?? current
@@ -2921,6 +2967,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                     const processName = selectedAlert.metrics?.memory_forecast_process;
                     if (typeof processName === "string") suppressProcess(processName);
                   }}
+                  controlError={alertControlError}
                 />
               )}
             </Section>

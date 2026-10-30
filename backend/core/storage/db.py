@@ -52,7 +52,9 @@ CREATE TABLE IF NOT EXISTS alerts (
     sent_to           TEXT,
     lifecycle_version INTEGER NOT NULL DEFAULT 1,
     device_id         TEXT,
-    device_name       TEXT
+    device_name       TEXT,
+    acknowledged_at   REAL,
+    snoozed_until     REAL
 );
 CREATE INDEX IF NOT EXISTS idx_alerts_fired_at ON alerts(fired_at DESC);
 CREATE INDEX IF NOT EXISTS idx_alerts_severity  ON alerts(severity);
@@ -238,6 +240,27 @@ async def get_db():
                 )
                 log.info("Added alerts.device_name column")
 
+            if "acknowledged_at" not in columns:
+                await _conn.execute(
+                    "ALTER TABLE alerts ADD COLUMN acknowledged_at REAL"
+                )
+                log.info("Added alerts.acknowledged_at column")
+
+            if "snoozed_until" not in columns:
+                await _conn.execute(
+                    "ALTER TABLE alerts ADD COLUMN snoozed_until REAL"
+                )
+                log.info("Added alerts.snoozed_until column")
+
+            await _conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS alert_process_suppressions (
+                    process_name TEXT PRIMARY KEY,
+                    suppressed_until REAL NOT NULL
+                )
+                """
+            )
+
             await _conn.commit()
 
             async with _conn.execute("PRAGMA table_info(metric_snapshots)") as cur:
@@ -310,9 +333,11 @@ async def save_alert(alert) -> bool:
                 sent_to,
                 lifecycle_version,
                 device_id,
-                device_name
+                device_name,
+                acknowledged_at,
+                snoozed_until
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 alert.alert_id,
@@ -326,6 +351,8 @@ async def save_alert(alert) -> bool:
                 2,
                 getattr(alert, "device_id", None),
                 getattr(alert, "device_name", None),
+                getattr(alert, "acknowledged_at", None),
+                getattr(alert, "snoozed_until", None),
             ),
         )
 
@@ -349,6 +376,80 @@ async def save_alert(alert) -> bool:
     except Exception as e:
         log.error("save_alert: %s", e)
         return False
+
+
+async def acknowledge_alert(alert_id: str, acknowledged_at: float) -> bool:
+    db = await get_db()
+    if not db:
+        return False
+    try:
+        cursor = await db.execute(
+            "UPDATE alerts SET acknowledged_at = ? WHERE id = ?",
+            (acknowledged_at, alert_id),
+        )
+        await db.commit()
+        return cursor.rowcount > 0
+    except Exception as e:
+        log.error("acknowledge_alert: %s", e)
+        return False
+
+
+async def snooze_alert(alert_id: str, snoozed_until: float) -> bool:
+    db = await get_db()
+    if not db:
+        return False
+    try:
+        cursor = await db.execute(
+            "UPDATE alerts SET snoozed_until = ? WHERE id = ?",
+            (snoozed_until, alert_id),
+        )
+        await db.commit()
+        return cursor.rowcount > 0
+    except Exception as e:
+        log.error("snooze_alert: %s", e)
+        return False
+
+
+async def save_process_suppression(process_name: str, suppressed_until: float) -> bool:
+    db = await get_db()
+    if not db:
+        return False
+    try:
+        await db.execute(
+            """
+            INSERT INTO alert_process_suppressions (process_name, suppressed_until)
+            VALUES (?, ?)
+            ON CONFLICT(process_name) DO UPDATE SET suppressed_until = excluded.suppressed_until
+            """,
+            (process_name, suppressed_until),
+        )
+        await db.commit()
+        return True
+    except Exception as e:
+        log.error("save_process_suppression: %s", e)
+        return False
+
+
+async def load_process_suppressions(now: float) -> dict[str, float]:
+    db = await get_db()
+    if not db:
+        return {}
+    try:
+        await db.execute(
+            "DELETE FROM alert_process_suppressions WHERE suppressed_until <= ?",
+            (now,),
+        )
+        await db.commit()
+        async with db.execute(
+            "SELECT process_name, suppressed_until FROM alert_process_suppressions"
+        ) as cur:
+            return {
+                row["process_name"]: float(row["suppressed_until"])
+                for row in await cur.fetchall()
+            }
+    except Exception as e:
+        log.error("load_process_suppressions: %s", e)
+        return {}
 
 
 
