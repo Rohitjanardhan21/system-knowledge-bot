@@ -775,7 +775,7 @@ const AIChat = () => {
 
       {/* Quick actions */}
       <div style={{ padding: "8px 16px", borderTop: `1px solid ${T.border}`, display: "flex", gap: "6px", flexWrap: "wrap" }}>
-        {["status", "anomaly", "predict", "recommend"].map(cmd => (
+        {["status", "why memory", "explain alerts", "what changed", "recommend"].map(cmd => (
           <button
             key={cmd}
             onClick={() => { setInput(cmd); }}
@@ -1197,6 +1197,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
 
   const [showLogAnalyzer, setShowLogAnalyzer] = useState(false);
   const [showDesktopSettings, setShowDesktopSettings] = useState(false);
+  const [showMemoryDetails, setShowMemoryDetails] = useState(false);
   const [desktopSettingsAvailable, setDesktopSettingsAvailable] = useState(false);
   const [quitPending, setQuitPending] = useState(false);
   const [quitError, setQuitError] = useState("");
@@ -2383,8 +2384,17 @@ export default function Dashboard({ onLogout }: DashboardProps) {
             <Section title="Process Contributors" subtitle="Top live CPU and memory consumers">
               {data.memory_pressure_forecast && data.memory_pressure_forecast.status !== "warming_up" && (
                 <div style={{ marginBottom: 14, padding: "10px 12px", borderRadius: 4, border: `1px solid ${data.memory_pressure_forecast.status === "critical" ? T.danger : data.memory_pressure_forecast.status === "elevated" ? T.warning : T.border}`, background: data.memory_pressure_forecast.status === "critical" ? "rgba(255,51,102,0.10)" : "rgba(255,176,32,0.06)" }}>
-                  <div style={{ color: data.memory_pressure_forecast.status === "critical" ? T.danger : data.memory_pressure_forecast.status === "elevated" ? T.warning : T.success, fontSize: 9, letterSpacing: "0.12em", fontFamily: "'Share Tech Mono', monospace", marginBottom: 5 }}>
-                    MEMORY FORECAST · {(data.memory_pressure_forecast.status ?? "unknown").toUpperCase()}
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                    <div style={{ color: data.memory_pressure_forecast.status === "critical" ? T.danger : data.memory_pressure_forecast.status === "elevated" ? T.warning : T.success, fontSize: 9, letterSpacing: "0.12em", fontFamily: "'Share Tech Mono', monospace" }}>
+                      MEMORY FORECAST · {(data.memory_pressure_forecast.status ?? "unknown").toUpperCase()}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowMemoryDetails(value => !value)}
+                      style={{ background: "transparent", border: `1px solid ${T.border}`, borderRadius: 3, color: T.textMuted, cursor: "pointer", fontSize: 9, padding: "3px 7px", fontFamily: "'Share Tech Mono', monospace" }}
+                    >
+                      {showMemoryDetails ? "HIDE DETAILS" : "WHY?"}
+                    </button>
                   </div>
                   <div style={{ color: T.text, fontSize: 10, fontFamily: "'Share Tech Mono', monospace" }}>
                     {data.memory_pressure_forecast.explanation}
@@ -2392,6 +2402,14 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                   {data.memory_pressure_forecast.minutes_to_90_percent != null && (
                     <div style={{ color: T.textMuted, fontSize: 10, marginTop: 5, fontFamily: "'Share Tech Mono', monospace" }}>
                       Estimated time to 90% host memory: {data.memory_pressure_forecast.minutes_to_90_percent.toFixed(1)} minutes
+                    </div>
+                  )}
+                  {showMemoryDetails && (
+                    <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${T.border}`, color: T.textMuted, fontSize: 9, lineHeight: 1.6, fontFamily: "'Share Tech Mono', monospace" }}>
+                      <div>Current host memory: {data.memory_pressure_forecast.current_percent?.toFixed(1) ?? "—"}%</div>
+                      <div>Observed rate: {data.memory_pressure_forecast.rate_percent_per_minute?.toFixed(2) ?? "—"} percentage points/min</div>
+                      <div>Suspected process: {data.memory_pressure_forecast.likely_process?.name ?? "No single process identified"}</div>
+                      <div style={{ color: T.textDim, marginTop: 4 }}>This is evidence for investigation, not proof that the process caused or will cause a crash.</div>
                     </div>
                   )}
                 </div>
