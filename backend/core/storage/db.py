@@ -410,6 +410,22 @@ async def snooze_alert(alert_id: str, snoozed_until: float) -> bool:
         return False
 
 
+async def unsnooze_alert(alert_id: str) -> bool:
+    db = await get_db()
+    if not db:
+        return False
+    try:
+        cursor = await db.execute(
+            "UPDATE alerts SET snoozed_until = NULL WHERE id = ?",
+            (alert_id,),
+        )
+        await db.commit()
+        return cursor.rowcount > 0
+    except Exception as e:
+        log.error("unsnooze_alert: %s", e)
+        return False
+
+
 async def save_process_suppression(process_name: str, suppressed_until: float) -> bool:
     db = await get_db()
     if not db:
@@ -427,6 +443,22 @@ async def save_process_suppression(process_name: str, suppressed_until: float) -
         return True
     except Exception as e:
         log.error("save_process_suppression: %s", e)
+        return False
+
+
+async def remove_process_suppression(process_name: str) -> bool:
+    db = await get_db()
+    if not db:
+        return False
+    try:
+        cursor = await db.execute(
+            "DELETE FROM alert_process_suppressions WHERE process_name = ?",
+            (process_name,),
+        )
+        await db.commit()
+        return cursor.rowcount > 0
+    except Exception as e:
+        log.error("remove_process_suppression: %s", e)
         return False
 
 

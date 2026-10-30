@@ -176,11 +176,25 @@ export async function snoozeAlert(alertId: string, minutes = 30) {
   return data;
 }
 
+export async function unsnoozeAlert(alertId: string) {
+  const { data } = await api.delete(
+    `/alerts/${encodeURIComponent(alertId)}/snooze`
+  );
+  return data;
+}
+
 export async function suppressAlertProcess(processName: string, minutes = 60) {
   const { data } = await api.post("/alerts/process-suppressions", {
     process_name: processName,
     minutes,
   });
+  return data;
+}
+
+export async function unsuppressAlertProcess(processName: string) {
+  const { data } = await api.delete(
+    `/alerts/process-suppressions/${encodeURIComponent(processName)}`
+  );
   return data;
 }
 

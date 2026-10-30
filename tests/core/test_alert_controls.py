@@ -44,6 +44,17 @@ def test_alert_acknowledge_and_snooze_persist(tmp_path: Path, monkeypatch):
         row = _run(read_control_state())
         assert row["acknowledged_at"] == 200.0
         assert row["snoozed_until"] == 500.0
+        assert _run(db.unsnooze_alert("alert-1")) is True
+
+        async def read_unsnoozed_state():
+            connection = await db.get_db()
+            async with connection.execute(
+                "SELECT snoozed_until FROM alerts WHERE id = ?",
+                ("alert-1",),
+            ) as cursor:
+                return await cursor.fetchone()
+
+        assert _run(read_unsnoozed_state())["snoozed_until"] is None
     finally:
         _run(db.close_db())
 
@@ -63,6 +74,8 @@ def test_process_suppression_persists_and_expired_entries_are_removed(
         suppressions = _run(db.load_process_suppressions(100.0))
 
         assert suppressions == {"memory-leak.exe": 200.0}
+        assert _run(db.remove_process_suppression("memory-leak.exe")) is True
+        assert _run(db.load_process_suppressions(100.0)) == {}
     finally:
         _run(db.close_db())
 

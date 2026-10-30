@@ -59,7 +59,8 @@ from backend.core.storage.db import (
     save_alert, save_event, load_alerts, load_events, maybe_save_snapshot,
     load_snapshots, load_snapshot_rollups, db_info, close_db,
     snapshot_retention_days, save_incident, load_prediction_accuracy,
-    acknowledge_alert, snooze_alert, save_process_suppression,
+    acknowledge_alert, snooze_alert, unsnooze_alert,
+    save_process_suppression, remove_process_suppression,
     load_process_suppressions,
 )
 from backend.desktop_settings import read_settings, settings_path, write_settings
@@ -2063,6 +2064,20 @@ async def snooze_alert_route(
         raise HTTPException(404, "Alert not found")
     return {"alert_id": alert_id, "snoozed_until": snoozed_until}
 
+@app.delete(
+    "/alerts/{alert_id}/snooze",
+    tags=["Alerts"],
+    dependencies=[Depends(require_scope("write"))],
+)
+async def unsnooze_alert_route(
+    alert_id: str,
+    principal: dict = Depends(require_scope("write")),
+):
+    _require_operator(principal)
+    if not await unsnooze_alert(alert_id):
+        raise HTTPException(404, "Alert not found")
+    return {"alert_id": alert_id, "snoozed_until": None}
+
 @app.post(
     "/alerts/process-suppressions",
     tags=["Alerts"],
@@ -2084,6 +2099,21 @@ async def suppress_alert_process(
         "process_name": request.process_name,
         "suppressed_until": suppressed_until,
     }
+
+@app.delete(
+    "/alerts/process-suppressions/{process_name}",
+    tags=["Alerts"],
+    dependencies=[Depends(require_scope("write"))],
+)
+async def unsuppress_alert_process(
+    process_name: str,
+    principal: dict = Depends(require_scope("write")),
+):
+    _require_operator(principal)
+    if not await remove_process_suppression(process_name):
+        raise HTTPException(404, "Process suppression not found")
+    get_alert_engine().remove_process_suppression(process_name)
+    return {"process_name": process_name, "suppressed": False}
 
 @app.get(
     "/alerts/process-suppressions",

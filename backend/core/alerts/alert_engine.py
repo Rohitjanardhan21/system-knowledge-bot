@@ -374,6 +374,9 @@ class AlertEngine:
     def set_process_suppression(self, process_name: str, suppressed_until: float) -> None:
         self._suppressed_processes[process_name] = suppressed_until
 
+    def remove_process_suppression(self, process_name: str) -> None:
+        self._suppressed_processes.pop(process_name, None)
+
     def restore_process_suppressions(self, suppressions: dict[str, float]) -> None:
         self._suppressed_processes = dict(suppressions)
 
