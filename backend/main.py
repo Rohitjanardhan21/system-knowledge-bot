@@ -20,6 +20,7 @@ import asyncpg
 import threading
 import time
 import os
+import platform
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal, Optional
@@ -115,6 +116,11 @@ _last_collector_error = ""
 _collector_iterations = 0
 _collector_gap_count = 0
 _COLLECTOR_WARMUP_S = 30.0
+_network_io_state = {
+    "timestamp": 0.0,
+    "bytes_sent": 0,
+    "bytes_recv": 0,
+}
 
 
 def _workspace_device_ids(principal: dict) -> set[str] | None:
@@ -184,6 +190,16 @@ def _collection_status() -> dict:
         "synthetic_metrics": not PS_OK,
         "last_error": _last_collector_error or None,
         "snapshot_retention_days": snapshot_retention_days(),
+    }
+
+
+def _system_identity() -> dict:
+    """Return non-sensitive host context used to qualify telemetry."""
+    return {
+        "platform": platform.system() or "unknown",
+        "platform_release": platform.release() or "unknown",
+        "architecture": platform.machine() or "unknown",
+        "logical_cpu_count": os.cpu_count() or 0,
     }
 
 
@@ -527,7 +543,10 @@ def _container_cpu_percent() -> float:
 
 
 def _build_feature_vector():
+    global _network_io_state
     import math
+    network_sent_rate = 0.0
+    network_recv_rate = 0.0
     if not PS_OK:
         t    = time.time()
         cpu  = 30 + 20 * abs(math.sin(t / 60))
@@ -544,6 +563,23 @@ def _build_feature_vector():
         try:
             n   = psutil.net_io_counters()
             net = min(100, (n.bytes_sent + n.bytes_recv) / 1e8 * 10)
+            now = time.monotonic()
+            previous = _network_io_state
+            elapsed = now - previous["timestamp"] if previous["timestamp"] else 0.0
+            if elapsed >= 0.1:
+                network_sent_rate = max(
+                    0.0,
+                    (n.bytes_sent - previous["bytes_sent"]) / elapsed,
+                )
+                network_recv_rate = max(
+                    0.0,
+                    (n.bytes_recv - previous["bytes_recv"]) / elapsed,
+                )
+            _network_io_state = {
+                "timestamp": now,
+                "bytes_sent": n.bytes_sent,
+                "bytes_recv": n.bytes_recv,
+            }
         except Exception:
             net = 0.0
 
@@ -553,6 +589,8 @@ def _build_feature_vector():
         "memory":          round(float(mem),    2),
         "disk_percent":    round(float(disk),   2),
         "network_percent": round(float(net),    2),
+        "network_sent_bytes_per_sec": round(network_sent_rate, 1),
+        "network_recv_bytes_per_sec": round(network_recv_rate, 1),
         "health_score":    round(float(health), 2),
         "collected_at":    time.time(),
     }
@@ -1464,6 +1502,7 @@ async def os_status(
     payload = dict(cached or _last_metrics)
     payload.update({
         "ps_available": PS_OK,
+        "system_identity": _system_identity(),
         "collection": status,
         "data_quality": {
             "status": status["state"],

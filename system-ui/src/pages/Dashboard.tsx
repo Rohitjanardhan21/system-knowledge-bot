@@ -1001,6 +1001,8 @@ interface SystemStatus {
   memory?: number;
   disk_percent?: number;
   network_percent?: number;
+  network_sent_bytes_per_sec?: number;
+  network_recv_bytes_per_sec?: number;
   anomaly_score?: number;
   health_score?: number;
   severity?: string;
@@ -1041,6 +1043,12 @@ interface SystemStatus {
     status?: string;
     source?: string;
     fresh?: boolean;
+  };
+  system_identity?: {
+    platform?: string;
+    platform_release?: string;
+    architecture?: string;
+    logical_cpu_count?: number;
   };
   [key: string]: unknown;
 }
@@ -1093,6 +1101,18 @@ function formatRootCause(value: unknown): string | null {
   }
 
   return "Root cause detected";
+}
+
+function formatRate(bytesPerSecond: number): string {
+  if (!Number.isFinite(bytesPerSecond) || bytesPerSecond <= 0) return "0 B/s";
+  const units = ["B/s", "KB/s", "MB/s", "GB/s"];
+  let value = bytesPerSecond;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+  return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[unitIndex]}`;
 }
 
 interface BackendActionResult {
@@ -2263,6 +2283,16 @@ export default function Dashboard({ onLogout }: DashboardProps) {
               <DataBar value={lastHistory.memory} color={T.primary} label="MEMORY" />
               <DataBar value={lastHistory.disk} color={T.success} label="DISK I/O" />
               <DataBar value={lastHistory.network} color={T.warning} label="NETWORK" />
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginTop: 10, color: T.textDim, fontSize: 9, fontFamily: "'Share Tech Mono', monospace" }}>
+                <span>IN {formatRate(data.network_recv_bytes_per_sec ?? 0)}</span>
+                <span>OUT {formatRate(data.network_sent_bytes_per_sec ?? 0)}</span>
+              </div>
+              {data.system_identity && (
+                <div style={{ marginTop: 12, paddingTop: 10, borderTop: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", gap: 10, color: T.textDim, fontSize: 9, fontFamily: "'Share Tech Mono', monospace" }}>
+                  <span>{data.system_identity.platform ?? "UNKNOWN"} {data.system_identity.platform_release ?? ""}</span>
+                  <span>{data.system_identity.logical_cpu_count ?? 0} LOGICAL CORES</span>
+                </div>
+              )}
               <div style={{ marginTop: "14px" }}>
                 <div style={{ fontSize: "10px", color: T.textDim, fontFamily: "'Share Tech Mono', monospace", marginBottom: "6px", display: "flex", justifyContent: "space-between" }}>
                   <span>RISK FIELD</span>
