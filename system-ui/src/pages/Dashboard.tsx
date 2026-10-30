@@ -831,43 +831,110 @@ const AIChat = () => {
 
 /* ── EVENT LOG ────────────────────────────────────────────── */
 interface SystemEvent {
+  id?: string;
+  rule_id?: string;
   type?: string;
   event?: string;
   message?: string;
   severity?: string;
   timestamp?: string | number;
   time?: string | number;
+  fired_at?: number;
+  resolved_at?: number | null;
+  metrics?: Record<string, unknown>;
+  sent_to?: string[];
   [key: string]: unknown;
 }
 
 interface EventLogProps {
   events?: SystemEvent[];
+  selectedId?: string;
+  onSelect?: (event: SystemEvent) => void;
 }
 
-const EventLog = ({ events }: EventLogProps) => {
+const EventLog = ({ events, selectedId, onSelect }: EventLogProps) => {
   const items = events ?? [];
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "7px" }}>
       {items.slice(0, 7).map((e, i) => {
         const color = e.severity === "CRITICAL" ? T.danger : e.severity === "HIGH" ? T.warning : e.severity === "MEDIUM" ? T.accent : T.textDim;
-        return (
-          <div key={i} style={{
+        const content = (
+          <>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "3px" }}>
+              <span style={{ fontWeight: 700, color, fontSize: "10px" }}>{e.severity}</span>
+              <span style={{ fontSize: "9px", color: T.textDim }}>{e.timestamp || "NOW"}</span>
+            </div>
+            <div style={{ color: T.textMuted, fontSize: "10px" }}>{e.message}</div>
+          </>
+        );
+        const style = {
             padding: "9px 12px", borderRadius: "4px",
             background: "rgba(0,0,0,0.25)",
             borderLeft: `2px solid ${color}`,
             fontSize: "11px", color: T.text,
             fontFamily: "'Share Tech Mono', monospace",
             animation: `slideIn ${0.3 + i * 0.08}s ease-out`,
-          }}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "3px" }}>
-              <span style={{ fontWeight: 700, color, fontSize: "10px" }}>{e.severity}</span>
-              <span style={{ fontSize: "9px", color: T.textDim }}>{e.timestamp || "NOW"}</span>
-            </div>
-            <div style={{ color: T.textMuted, fontSize: "10px" }}>{e.message}</div>
-          </div>
+            outline: selectedId && selectedId === e.id ? `1px solid ${T.accent}` : "none",
+          };
+        return onSelect ? (
+          <button key={i} type="button" onClick={() => onSelect(e)} style={{ ...style, width: "100%", textAlign: "left", cursor: "pointer", borderTop: "none", borderRight: "none", borderBottom: "none" }}>
+            {content}
+          </button>
+        ) : (
+          <div key={i} style={style}>{content}</div>
         );
       })}
+    </div>
+  );
+};
+
+function alertRecommendation(event: SystemEvent): string {
+  if (event.rule_id?.includes("mem_forecast")) {
+    return "Review the suspected process and close or restart it only after confirming it is safe to do so.";
+  }
+  if (event.rule_id?.includes("mem")) {
+    return "Check the largest memory consumers and close unnecessary applications.";
+  }
+  if (event.rule_id?.includes("cpu")) {
+    return "Check sustained CPU consumers and verify whether a workload or process is expected.";
+  }
+  if (event.rule_id?.includes("disk")) {
+    return "Review disk usage and remove or archive files only after checking retention requirements.";
+  }
+  return "Review the evidence and confirm whether this condition is expected before taking action.";
+}
+
+const AlertDetails = ({ event }: { event: SystemEvent }) => {
+  const metrics = event.metrics ?? {};
+  const process = metrics.memory_forecast_process;
+  const currentMemory = metrics.memory;
+  const forecastStatus = metrics.memory_forecast_status;
+  const minutesToCritical = metrics.memory_forecast_minutes_to_90;
+  const firedAt = event.fired_at
+    ? new Date(event.fired_at * 1000).toLocaleString()
+    : event.timestamp || "Unknown";
+
+  return (
+    <div style={{ marginTop: 10, padding: "12px", borderRadius: 4, background: "rgba(0,212,255,0.05)", border: `1px solid ${T.accent}45`, fontFamily: "'Share Tech Mono', monospace" }}>
+      <div style={{ color: T.accent, fontSize: 9, letterSpacing: "0.12em", marginBottom: 8 }}>ALERT DETAILS</div>
+      <div style={{ color: T.text, fontSize: 11, marginBottom: 8 }}>{event.message || "System alert"}</div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, color: T.textMuted, fontSize: 9 }}>
+        <div>Severity: {event.severity || "UNKNOWN"}</div>
+        <div>Started: {firedAt}</div>
+        <div>Status: {event.resolved_at ? "Resolved" : "Active"}</div>
+        {typeof currentMemory === "number" && <div>Host memory: {currentMemory.toFixed(1)}%</div>}
+        {typeof forecastStatus === "string" && <div>Forecast: {forecastStatus}</div>}
+        {typeof process === "string" && <div>Suspected process: {process}</div>}
+      </div>
+      {typeof minutesToCritical === "number" && (
+        <div style={{ color: T.warning, fontSize: 9, marginTop: 8 }}>
+          Estimated time to 90% memory: {minutesToCritical.toFixed(1)} minutes
+        </div>
+      )}
+      <div style={{ color: T.textDim, fontSize: 9, lineHeight: 1.5, marginTop: 8 }}>
+        Recommended next step: {alertRecommendation(event)}
+      </div>
     </div>
   );
 };
@@ -1210,6 +1277,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   const [history, setHistory] = useState<HistoryPoint[]>([]);
   const [forecast, setForecast] = useState<ForecastData>({});
   const [alertEvents, setAlertEvents] = useState<SystemEvent[]>([]);
+  const [selectedAlert, setSelectedAlert] = useState<SystemEvent | null>(null);
   const [eventsLoaded, setEventsLoaded] = useState(false);
   const [dna, setDna] = useState<DnaData>({});
   const [pipeline, setPipeline] = useState<PipelineData>({});
@@ -1393,8 +1461,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
 
         if (cancelled) return;
 
-        setAlertEvents(
-          (alertsResponse.data ?? []).map((alert) => ({
+        const alerts = (alertsResponse.data ?? []).map((alert) => ({
             ...alert,
             message:
               alert.message ??
@@ -1403,8 +1470,13 @@ export default function Dashboard({ onLogout }: DashboardProps) {
               "Alert recorded",
             timestamp: alert.timestamp ?? alert.time ?? "NOW",
             severity: alert.severity ?? "INFO",
-          }))
-        );
+          }));
+        setAlertEvents(alerts);
+        setSelectedAlert((current) => (
+          current?.id
+            ? alerts.find((event) => event.id === current.id) ?? current
+            : current
+        ));
         setEventsLoaded(true);
       } catch (error) {
         if (cancelled) return;
@@ -2755,8 +2827,13 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                   No system events have been recorded yet.
                 </div>
               ) : (
-                <EventLog events={alertEvents} />
+                <EventLog
+                  events={alertEvents}
+                  selectedId={selectedAlert?.id}
+                  onSelect={setSelectedAlert}
+                />
               )}
+              {selectedAlert && <AlertDetails event={selectedAlert} />}
             </Section>
           </div>
 
