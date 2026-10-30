@@ -87,6 +87,10 @@ The desktop app requires a local Redis service at `localhost:6379`; Redis is
 not bundled. Some dashboard features depend on Redis-backed services; start
 Redis for the full monitoring experience.
 
+Raw metric snapshots are retained for 30 days by default. Set
+`METRIC_SNAPSHOT_RETENTION_DAYS` in `.env` to change this (from 1 to 3650
+days); longer retention increases the persistent database size.
+
 ### Hosted personal accounts
 
 Hosted CVIS supports optional personal accounts with required email

@@ -56,7 +56,7 @@ from backend.core.alerts.alert_engine    import get_alert_engine, AlertRule
 from backend.chat_routes import router as chat_router
 from backend.core.storage.db import (
     save_alert, save_event, load_alerts, load_events, maybe_save_snapshot,
-    load_snapshots, db_info, close_db,
+    load_snapshots, db_info, close_db, snapshot_retention_days,
 )
 from backend.desktop_settings import read_settings, settings_path, write_settings
 from backend.core.diagnostics.log_analyzer import (
@@ -180,6 +180,7 @@ def _collection_status() -> dict:
         "psutil_available": PS_OK,
         "synthetic_metrics": not PS_OK,
         "last_error": _last_collector_error or None,
+        "snapshot_retention_days": snapshot_retention_days(),
     }
 
 
@@ -1899,8 +1900,10 @@ async def get_snapshots(
     hours: float = 1.0,
     principal: dict = Depends(require_scope("read")),
 ):
+    if hours <= 0:
+        raise HTTPException(422, "hours must be greater than zero")
     return await load_snapshots(
-        hours=min(hours, 24.0),
+        hours=min(hours, snapshot_retention_days() * 24),
         device_ids=_workspace_device_ids(principal),
     )
 

@@ -518,6 +518,25 @@ _last_snapshot_ts = 0.0
 _last_device_snapshot_ts: dict[str, float] = {}
 _startup_ts = __import__("time").time()
 STARTUP_GRACE_S = 300
+DEFAULT_SNAPSHOT_RETENTION_DAYS = 30
+
+
+def snapshot_retention_days() -> int:
+    """Return the bounded raw telemetry retention configured for this host."""
+    raw_days = os.environ.get(
+        "METRIC_SNAPSHOT_RETENTION_DAYS",
+        str(DEFAULT_SNAPSHOT_RETENTION_DAYS),
+    )
+    try:
+        days = int(raw_days)
+    except ValueError:
+        log.warning(
+            "Invalid METRIC_SNAPSHOT_RETENTION_DAYS=%r; using default %d",
+            raw_days,
+            DEFAULT_SNAPSHOT_RETENTION_DAYS,
+        )
+        days = DEFAULT_SNAPSHOT_RETENTION_DAYS
+    return max(1, min(days, 3650))
 
 async def maybe_save_snapshot(
     metrics: dict,
@@ -561,7 +580,8 @@ async def maybe_save_snapshot(
         )
         await db.commit()
         await db.execute(
-            "DELETE FROM metric_snapshots WHERE ts < ?", (now - 86400,)
+            "DELETE FROM metric_snapshots WHERE ts < ?",
+            (now - snapshot_retention_days() * 86400,),
         )
         await db.commit()
         return True
