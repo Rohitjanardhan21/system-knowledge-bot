@@ -57,7 +57,7 @@ from backend.chat_routes import router as chat_router
 from backend.core.storage.db import (
     save_alert, save_event, load_alerts, load_events, maybe_save_snapshot,
     load_snapshots, load_snapshot_rollups, db_info, close_db,
-    snapshot_retention_days,
+    snapshot_retention_days, save_incident, load_prediction_accuracy,
 )
 from backend.desktop_settings import read_settings, settings_path, write_settings
 from backend.core.diagnostics.log_analyzer import (
@@ -2089,6 +2089,23 @@ async def cognitive_predictions(
         for p in preds
     ]
 
+
+@app.get(
+    "/cognitive/predictions/accuracy",
+    tags=["Cognitive"],
+    dependencies=[Depends(require_scope("read"))],
+)
+async def cognitive_prediction_accuracy(
+    principal: dict = Depends(require_scope("read")),
+):
+    if principal.get("workspace_id"):
+        return {
+            "available": False,
+            "reason": "Prediction accuracy is only available to host operators",
+        }
+    return await load_prediction_accuracy()
+
+
 @app.get(
     "/cognitive/debug/matcher",
     tags=["Cognitive"],
@@ -2498,6 +2515,19 @@ async def mark_incident(
     dna         = get_dna_engine()
     incident_id = bb.mark_incident(incident_type, description or incident_type)
     dna.record_failure(incident_type, description or incident_type)
+    incident = bb.get_incident(incident_id) or {}
+    await save_incident({
+        "incident_id": incident_id,
+        "failure_type": incident_type,
+        "severity": _last_metrics.get("severity", "UNKNOWN"),
+        "status": "open",
+        "occurred_at": incident.get("occurred_at", time.time()),
+        "evidence": incident.get("plain_timeline"),
+        "metadata": {
+            "description": description or incident_type,
+            "source": "manual",
+        },
+    })
     return {"incident_id": incident_id, "recorded": True}
 
 @app.get(

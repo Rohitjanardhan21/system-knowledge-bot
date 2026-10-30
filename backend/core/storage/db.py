@@ -852,6 +852,62 @@ async def load_incidents(limit: int = 100) -> list[dict]:
         log.error("load_incidents: %s", e)
         return []
 
+
+async def load_prediction_accuracy() -> dict:
+    db = await get_db()
+    if not db:
+        return {
+            "available": False,
+            "resolved_predictions": 0,
+            "active_predictions": 0,
+        }
+    try:
+        async with db.execute(
+            """
+            SELECT
+                COUNT(*) AS resolved_predictions,
+                COALESCE(SUM(CASE WHEN outcome = 'correct' THEN 1 ELSE 0 END), 0)
+                    AS correct_predictions,
+                COALESCE(SUM(CASE WHEN outcome = 'incorrect' THEN 1 ELSE 0 END), 0)
+                    AS incorrect_predictions,
+                COALESCE(SUM(false_positive), 0) AS false_positives,
+                COALESCE(SUM(false_negative), 0) AS false_negatives,
+                AVG(lead_time_seconds) AS average_lead_time_seconds
+            FROM prediction_outcomes
+            """
+        ) as cur:
+            outcomes = dict(await cur.fetchone())
+        async with db.execute(
+            "SELECT COUNT(*) AS active_predictions "
+            "FROM predictions WHERE status = 'active'"
+        ) as cur:
+            active_predictions = int((await cur.fetchone())["active_predictions"])
+
+        resolved = int(outcomes["resolved_predictions"] or 0)
+        correct = int(outcomes["correct_predictions"] or 0)
+        return {
+            "available": True,
+            "resolved_predictions": resolved,
+            "active_predictions": active_predictions,
+            "correct_predictions": correct,
+            "incorrect_predictions": int(outcomes["incorrect_predictions"] or 0),
+            "false_positives": int(outcomes["false_positives"] or 0),
+            "false_negatives": int(outcomes["false_negatives"] or 0),
+            "accuracy": round(correct / resolved, 4) if resolved else None,
+            "average_lead_time_seconds": (
+                round(float(outcomes["average_lead_time_seconds"]), 1)
+                if outcomes["average_lead_time_seconds"] is not None
+                else None
+            ),
+        }
+    except Exception as e:
+        log.error("load_prediction_accuracy: %s", e)
+        return {
+            "available": False,
+            "resolved_predictions": 0,
+            "active_predictions": 0,
+        }
+
 # ─────────────────────────────────────────────────────────
 #  DB info — never raises, always returns a dict
 # ─────────────────────────────────────────────────────────

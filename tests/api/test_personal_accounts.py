@@ -217,6 +217,12 @@ def test_personal_account_requires_single_use_email_verification_before_login(
     )
     assert model_stats.status_code == 200
     assert model_stats.json() == {}
+    prediction_accuracy = client.get(
+        "/cognitive/predictions/accuracy",
+        headers={"Authorization": f"Bearer {login.json()['access_token']}"},
+    )
+    assert prediction_accuracy.status_code == 200
+    assert prediction_accuracy.json()["available"] is False
     settings = client.get(
         "/settings",
         headers={"Authorization": f"Bearer {login.json()['access_token']}"},
