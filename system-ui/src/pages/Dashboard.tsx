@@ -963,6 +963,25 @@ const AlertDetails = ({
           Estimated time to 90% memory: {minutesToCritical.toFixed(1)} minutes
         </div>
       )}
+      <div style={{ marginTop: 9, paddingTop: 8, borderTop: `1px solid ${T.border}` }}>
+        <div style={{ color: T.accent, fontSize: 9, marginBottom: 4 }}>NOTIFICATION AUDIT</div>
+        {event.snoozed_until ? (
+          <div style={{ color: T.warning, fontSize: 9 }}>
+            Notifications snoozed until {new Date(event.snoozed_until * 1000).toLocaleTimeString()}.
+          </div>
+        ) : event.sent_to && event.sent_to.length > 0 ? (
+          <div style={{ color: T.success, fontSize: 9 }}>
+            Confirmed delivery: {event.sent_to.join(", ")}
+          </div>
+        ) : (
+          <div style={{ color: T.textDim, fontSize: 9 }}>
+            No successful notification channel recorded.
+          </div>
+        )}
+        <div style={{ color: T.textDim, fontSize: 8, marginTop: 4 }}>
+          This records confirmed channels only; unavailable channels are not inferred.
+        </div>
+      </div>
       <div style={{ color: T.textDim, fontSize: 9, lineHeight: 1.5, marginTop: 8 }}>
         Recommended next step: {alertRecommendation(event)}
       </div>
