@@ -108,6 +108,11 @@ _event_loop: asyncio.AbstractEventLoop = None
 _collector_stop = threading.Event()
 _collector_thread = None
 _devices: dict = {}
+_collector_started_at = 0.0
+_last_collector_success_at = 0.0
+_last_collector_error = ""
+_collector_iterations = 0
+_COLLECTOR_WARMUP_S = 30.0
 
 
 def _workspace_device_ids(principal: dict) -> set[str] | None:
@@ -139,6 +144,43 @@ def _require_workspace_device(principal: dict, device_id: str) -> None:
         or _devices[device_id].get("workspace_id") != workspace_id
     ):
         raise HTTPException(404, "Device is not registered")
+
+
+def _collection_status() -> dict:
+    now = time.time()
+    poll_interval = max(
+        0.1,
+        float(os.environ.get("POLL_INTERVAL_S", "1")),
+    )
+    age = (
+        max(0.0, now - _last_collector_success_at)
+        if _last_collector_success_at
+        else None
+    )
+    thread_alive = bool(_collector_thread and _collector_thread.is_alive())
+    if not thread_alive:
+        state = "stopped"
+    elif _last_collector_success_at == 0:
+        state = "starting"
+    elif age is not None and age > max(10.0, poll_interval * 3):
+        state = "stale"
+    elif _collector_started_at and now - _collector_started_at < _COLLECTOR_WARMUP_S:
+        state = "warming_up"
+    else:
+        state = "healthy"
+
+    return {
+        "state": state,
+        "collector_alive": thread_alive,
+        "last_sample_at": _last_collector_success_at or None,
+        "sample_age_seconds": round(age, 1) if age is not None else None,
+        "poll_interval_seconds": poll_interval,
+        "samples_in_memory": len(feature_buffer),
+        "iterations": _collector_iterations,
+        "psutil_available": PS_OK,
+        "synthetic_metrics": not PS_OK,
+        "last_error": _last_collector_error or None,
+    }
 
 
 async def _restore_registered_devices():
@@ -563,7 +605,7 @@ def _record_process_crash(event: dict) -> None:
 
 
 def _collect():
-
+    global _last_collector_success_at, _last_collector_error, _collector_iterations
     engine    = get_engine()
     registry  = get_registry()
     lifecycle_monitor = (
@@ -623,6 +665,9 @@ def _collect():
 
             with _lock:
                 _last_metrics.update(update)
+                _last_collector_success_at = time.time()
+                _last_collector_error = ""
+                _collector_iterations += 1
 
             # Guard against closed loop (Windows shutdown race)
             if _event_loop and not _event_loop.is_closed():
@@ -725,13 +770,14 @@ def _collect():
                 last_save = time.time()
 
         except Exception as e:
+            _last_collector_error = str(e)
             log.error("Collector error: %s", e, exc_info=True)
         _collector_stop.wait(float(os.environ.get("POLL_INTERVAL_S", "1")))
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _event_loop, _collector_thread
+    global _event_loop, _collector_thread, _collector_started_at
     _event_loop = asyncio.get_running_loop()
     await _restore_registered_devices()
 
@@ -868,6 +914,7 @@ async def lifespan(app: FastAPI):
         )
 
     _collector_stop.clear()
+    _collector_started_at = time.time()
     _collector_thread = threading.Thread(target=_collect, daemon=True, name="cvis-collector")
     _collector_thread.start()
 
@@ -1402,7 +1449,18 @@ async def os_status(
     principal: dict = Depends(require_scope("read")),
 ):
     cached = await get_cached_metrics()
-    return cached or {**_last_metrics, "ps_available": PS_OK}
+    status = _collection_status()
+    payload = dict(cached or _last_metrics)
+    payload.update({
+        "ps_available": PS_OK,
+        "collection": status,
+        "data_quality": {
+            "status": status["state"],
+            "source": "synthetic" if status["synthetic_metrics"] else "live",
+            "fresh": status["state"] in {"healthy", "warming_up"},
+        },
+    })
+    return payload
 
 @app.get(
     "/os/processes",
@@ -1821,6 +1879,7 @@ async def health():
         "reason":       ex["reason"],
         "severity":     ex["severity"],
         "actions":      ex["actions"],
+        "collection":   _collection_status(),
     }
 
 @app.get("/health/full", tags=["System"], dependencies=[Depends(require_scope("read"))])

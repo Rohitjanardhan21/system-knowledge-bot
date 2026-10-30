@@ -1029,6 +1029,18 @@ interface SystemStatus {
   }>;
   events?: SystemEvent[];
   stability?: number;
+  collection?: {
+    state?: string;
+    sample_age_seconds?: number | null;
+    samples_in_memory?: number;
+    synthetic_metrics?: boolean;
+    last_error?: string | null;
+  };
+  data_quality?: {
+    status?: string;
+    source?: string;
+    fresh?: boolean;
+  };
   [key: string]: unknown;
 }
 
@@ -1440,6 +1452,19 @@ export default function Dashboard({ onLogout }: DashboardProps) {
 
   const isCritical = level === "CRITICAL";
   const isWarning = level === "WARNING";
+  const collectionState = data.collection?.state ?? "starting";
+  const collectionHealthy =
+    collectionState === "healthy" || collectionState === "warming_up";
+  const collectionColor =
+    collectionState === "healthy" ? T.success :
+    collectionState === "warming_up" || collectionState === "starting"
+      ? T.warning
+      : T.danger;
+  const collectionLabel =
+    collectionState === "healthy" ? "LIVE" :
+    collectionState === "warming_up" ? "WARMING UP" :
+    collectionState === "starting" ? "STARTING" :
+    collectionState.toUpperCase();
 
   useEffect(() => {
     if (level === "CRITICAL" && prevLevel.current !== "CRITICAL") {
@@ -1564,10 +1589,17 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                 Log out
               </button>
             )}
-            {/* Live indicator */}
-            <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "10px", fontFamily: "'Share Tech Mono', monospace", color: T.textDim }}>
-              <div style={{ width: "6px", height: "6px", borderRadius: "50%", background: T.success, animation: "pulse 1.5s infinite", boxShadow: `0 0 6px ${T.success}` }} />
-              LIVE
+            {/* Collection health indicator */}
+            <div
+              title={
+                data.collection?.sample_age_seconds != null
+                  ? `Last sample ${data.collection.sample_age_seconds.toFixed(1)}s ago`
+                  : "No telemetry sample received yet"
+              }
+              style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "10px", fontFamily: "'Share Tech Mono', monospace", color: collectionColor }}
+            >
+              <div style={{ width: "6px", height: "6px", borderRadius: "50%", background: collectionColor, animation: collectionHealthy ? "pulse 1.5s infinite" : undefined, boxShadow: `0 0 6px ${collectionColor}` }} />
+              {collectionLabel}
             </div>
             <div style={{ fontSize: "10px", fontFamily: "'Share Tech Mono', monospace", color: T.textDim, textAlign: "right" }}>
               <div>{new Date().toLocaleDateString()}</div>
@@ -1579,6 +1611,16 @@ export default function Dashboard({ onLogout }: DashboardProps) {
         {quitError && (
           <div role="alert" style={{ color: T.danger, textAlign: "right", marginBottom: 12 }}>
             {quitError}
+          </div>
+        )}
+        {data.data_quality?.source === "synthetic" && (
+          <div role="status" style={{ color: T.warning, textAlign: "right", marginBottom: 12, fontFamily: "'Share Tech Mono', monospace", fontSize: 10 }}>
+            DATA QUALITY: SYNTHETIC METRICS — SYSTEM SENSOR UNAVAILABLE
+          </div>
+        )}
+        {collectionState === "stale" && (
+          <div role="alert" style={{ color: T.danger, textAlign: "right", marginBottom: 12, fontFamily: "'Share Tech Mono', monospace", fontSize: 10 }}>
+            DATA QUALITY: TELEMETRY STALE — LAST SAMPLE {data.collection?.sample_age_seconds?.toFixed(0) ?? "UNKNOWN"}s AGO
           </div>
         )}
 
