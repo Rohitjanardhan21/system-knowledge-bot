@@ -23,7 +23,7 @@ import os
 import platform
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Literal, Optional, cast
 from collections import deque
 from urllib.parse import urlsplit
 
@@ -335,7 +335,8 @@ def _rank_process_contributors(incident_time: float) -> list[dict]:
         ranked,
         key=lambda item: (
             item["confidence"],
-            item["recent_cpu_percent"] + item["recent_memory_percent"],
+            cast(float, item["recent_cpu_percent"])
+            + cast(float, item["recent_memory_percent"]),
         ),
         reverse=True,
     )[:3]
