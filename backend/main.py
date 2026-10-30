@@ -2086,6 +2086,21 @@ async def suppress_alert_process(
     }
 
 @app.get(
+    "/alerts/process-suppressions",
+    tags=["Alerts"],
+    dependencies=[Depends(require_scope("read"))],
+)
+async def list_alert_process_suppressions(
+    principal: dict = Depends(require_scope("read")),
+):
+    _require_operator(principal)
+    suppressions = await load_process_suppressions(time.time())
+    return [
+        {"process_name": process_name, "suppressed_until": suppressed_until}
+        for process_name, suppressed_until in suppressions.items()
+    ]
+
+@app.get(
     "/alerts/stats",
     tags=["Alerts"],
     dependencies=[Depends(require_scope("read"))],

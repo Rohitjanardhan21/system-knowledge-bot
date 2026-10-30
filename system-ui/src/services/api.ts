@@ -184,6 +184,13 @@ export async function suppressAlertProcess(processName: string, minutes = 60) {
   return data;
 }
 
+export async function fetchAlertProcessSuppressions() {
+  const { data } = await api.get<
+    Array<{ process_name: string; suppressed_until: number }>
+  >("/alerts/process-suppressions");
+  return data ?? [];
+}
+
 export interface CognitiveIncidentTimelineEntry {
   t_minus_mins?: number;
   time_str?: string;

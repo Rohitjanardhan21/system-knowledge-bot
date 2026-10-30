@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback, type CSSProperties, type ReactNode } from "react";
-import { api, fetchDesktopSettings, fetchCognitivePredictions, fetchPredictionAccuracy, fetchCognitiveIncidents, acknowledgeCognitivePrediction, resolveCognitivePrediction, acknowledgeAlert as acknowledgeHostedAlert, snoozeAlert as snoozeHostedAlert, suppressAlertProcess, quitDesktopApp, type CognitivePrediction, type PredictionAccuracy, type CognitiveIncident } from "../services/api";
+import { api, fetchDesktopSettings, fetchCognitivePredictions, fetchPredictionAccuracy, fetchCognitiveIncidents, fetchAlertProcessSuppressions, acknowledgeCognitivePrediction, resolveCognitivePrediction, acknowledgeAlert as acknowledgeHostedAlert, snoozeAlert as snoozeHostedAlert, suppressAlertProcess, quitDesktopApp, type CognitivePrediction, type PredictionAccuracy, type CognitiveIncident } from "../services/api";
 import ErrorLogAnalyzer from "../components/ErrorLogAnalyzer";
 import DesktopSettings from "../components/DesktopSettings";
 import {
@@ -848,6 +848,11 @@ interface SystemEvent {
   [key: string]: unknown;
 }
 
+interface AlertSuppression {
+  process_name: string;
+  suppressed_until: number;
+}
+
 interface EventLogProps {
   events?: SystemEvent[];
   selectedId?: string;
@@ -1316,6 +1321,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   const [history, setHistory] = useState<HistoryPoint[]>([]);
   const [forecast, setForecast] = useState<ForecastData>({});
   const [alertEvents, setAlertEvents] = useState<SystemEvent[]>([]);
+  const [alertSuppressions, setAlertSuppressions] = useState<AlertSuppression[]>([]);
   const [selectedAlert, setSelectedAlert] = useState<SystemEvent | null>(null);
   const [acknowledgedAlerts, setAcknowledgedAlerts] = useState<Record<string, boolean>>({});
   const [snoozedAlerts, setSnoozedAlerts] = useState<Record<string, number>>({});
@@ -1559,6 +1565,12 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     const fetchAlertHistory = async () => {
       try {
         const alertsResponse = await api.get<SystemEvent[]>("/alerts/history?limit=10");
+        let suppressions: AlertSuppression[] = [];
+        try {
+          suppressions = await fetchAlertProcessSuppressions();
+        } catch (error) {
+          console.error("Alert suppression fetch failed:", error);
+        }
 
         if (cancelled) return;
 
@@ -1573,6 +1585,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
             severity: alert.severity ?? "INFO",
           }));
         setAlertEvents(alerts);
+        setAlertSuppressions(suppressions);
         setAcknowledgedAlerts((current) => ({
           ...Object.fromEntries(
             alerts
@@ -1870,6 +1883,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   const latestProcessSample = processTrends[processTrends.length - 1];
   const topCpuProcesses = latestProcessSample?.top_cpu ?? [];
   const topMemoryProcesses = latestProcessSample?.top_memory ?? [];
+  const activeAlerts = alertEvents.filter((event) => !event.resolved_at);
 
   return (
     <>
@@ -2918,6 +2932,44 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                   </div>
                 )}
               </div>
+            </Section>
+
+            <Section title="Alert Management" subtitle="Active conditions and notification controls">
+              {activeAlerts.length === 0 && alertSuppressions.length === 0 ? (
+                <div style={{ color: T.textDim, fontSize: 10, fontFamily: "'Share Tech Mono', monospace" }}>
+                  No active alerts or process suppressions.
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {activeAlerts.map((alert, index) => {
+                    const alertColor = alert.severity === "CRITICAL" ? T.danger : T.warning;
+                    return (
+                      <button
+                        key={alert.id ?? `active-${index}`}
+                        type="button"
+                        onClick={() => setSelectedAlert(alert)}
+                        style={{ textAlign: "left", padding: "9px 10px", borderRadius: 4, border: `1px solid ${T.border}`, borderLeft: `2px solid ${alertColor}`, background: selectedAlert?.id === alert.id ? "rgba(0,212,255,0.08)" : "rgba(0,0,0,0.2)", color: T.text, cursor: "pointer", fontFamily: "'Share Tech Mono', monospace" }}
+                      >
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 9 }}>
+                          <span style={{ color: alertColor }}>{alert.severity ?? "ALERT"}</span>
+                          <span style={{ color: T.textDim }}>{alert.acknowledged_at ? "ACKNOWLEDGED" : "UNACKNOWLEDGED"}</span>
+                        </div>
+                        <div style={{ color: T.textMuted, fontSize: 10, marginTop: 4 }}>{alert.message}</div>
+                        {alert.snoozed_until && (
+                          <div style={{ color: T.warning, fontSize: 9, marginTop: 4 }}>
+                            Snoozed until {new Date(alert.snoozed_until * 1000).toLocaleTimeString()}
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })}
+                  {alertSuppressions.map((suppression) => (
+                    <div key={suppression.process_name} style={{ padding: "8px 10px", borderRadius: 4, border: `1px solid ${T.warning}35`, color: T.warning, fontSize: 9, fontFamily: "'Share Tech Mono', monospace" }}>
+                      PROCESS SUPPRESSED: {suppression.process_name} · UNTIL {new Date(suppression.suppressed_until * 1000).toLocaleTimeString()}
+                    </div>
+                  ))}
+                </div>
+              )}
             </Section>
 
             <Section title="System Events" subtitle="Chronological event log">
