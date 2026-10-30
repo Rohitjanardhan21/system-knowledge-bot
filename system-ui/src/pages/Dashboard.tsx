@@ -1201,9 +1201,11 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   const [history, setHistory] = useState<HistoryPoint[]>([]);
   const [forecast, setForecast] = useState<ForecastData>({});
   const [alertEvents, setAlertEvents] = useState<SystemEvent[]>([]);
+  const [eventsLoaded, setEventsLoaded] = useState(false);
   const [dna, setDna] = useState<DnaData>({});
   const [pipeline, setPipeline] = useState<PipelineData>({});
   const [availableActions, setAvailableActions] = useState<BackendAction[]>([]);
+  const [actionsLoaded, setActionsLoaded] = useState(false);
   const [snapshotRollups, setSnapshotRollups] = useState<SnapshotRollup[]>([]);
   const [processTrends, setProcessTrends] = useState<ProcessTrendSample[]>([]);
   const [manualAction, setManualAction] = useState<string | null>(null);
@@ -1242,11 +1244,13 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   const fetchAvailableActions = useCallback(async () => {
     try {
       const response = await api.get<BackendAction[]>("/actions/available");
-      setAvailableActions(response.data);
+      setAvailableActions(Array.isArray(response.data) ? response.data : []);
       setActionError(null);
     } catch (error) {
       console.error("[AIOps] Failed to load available actions:", error);
       setActionError("ACTION REGISTRY UNAVAILABLE");
+    } finally {
+      setActionsLoaded(true);
     }
   }, []);
 
@@ -1392,10 +1396,12 @@ export default function Dashboard({ onLogout }: DashboardProps) {
             severity: alert.severity ?? "INFO",
           }))
         );
+        setEventsLoaded(true);
       } catch (error) {
         if (cancelled) return;
 
         console.error("Alert history fetch failed:", error);
+        setEventsLoaded(true);
       }
     };
 
@@ -2553,7 +2559,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                   </button>
                 ))}
 
-                {availableActions.length === 0 && !actionError && (
+                {availableActions.length === 0 && !actionsLoaded && !actionError && (
                   <div style={{
                     padding: "10px 12px",
                     color: T.textDim,
@@ -2561,6 +2567,21 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                     fontFamily: "'Share Tech Mono', monospace",
                   }}>
                     LOADING ACTION REGISTRY...
+                  </div>
+                )}
+
+                {availableActions.length === 0 && actionsLoaded && !actionError && (
+                  <div style={{
+                    padding: "10px 12px",
+                    borderRadius: "4px",
+                    background: "rgba(0,212,255,0.04)",
+                    border: `1px solid ${T.border}`,
+                    color: T.textDim,
+                    fontSize: "10px",
+                    lineHeight: 1.5,
+                    fontFamily: "'Share Tech Mono', monospace",
+                  }}>
+                    No operator actions are available for this account.
                   </div>
                 )}
 
@@ -2652,7 +2673,31 @@ export default function Dashboard({ onLogout }: DashboardProps) {
             </Section>
 
             <Section title="System Events" subtitle="Chronological event log">
-              <EventLog events={alertEvents} />
+              {!eventsLoaded ? (
+                <div style={{
+                  padding: "14px 12px",
+                  color: T.textDim,
+                  fontSize: "10px",
+                  fontFamily: "'Share Tech Mono', monospace",
+                }}>
+                  Loading event history...
+                </div>
+              ) : alertEvents.length === 0 ? (
+                <div style={{
+                  padding: "14px 12px",
+                  borderRadius: "4px",
+                  background: "rgba(0,212,255,0.04)",
+                  border: `1px solid ${T.border}`,
+                  color: T.textDim,
+                  fontSize: "10px",
+                  lineHeight: 1.5,
+                  fontFamily: "'Share Tech Mono', monospace",
+                }}>
+                  No system events have been recorded yet.
+                </div>
+              ) : (
+                <EventLog events={alertEvents} />
+              )}
             </Section>
           </div>
 
