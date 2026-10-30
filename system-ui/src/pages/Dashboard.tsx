@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback, type CSSProperties, type ReactNode } from "react";
-import { api, fetchDesktopSettings, fetchCognitivePredictions, fetchPredictionAccuracy, acknowledgeCognitivePrediction, resolveCognitivePrediction, quitDesktopApp, type CognitivePrediction, type PredictionAccuracy } from "../services/api";
+import { api, fetchDesktopSettings, fetchCognitivePredictions, fetchPredictionAccuracy, fetchCognitiveIncidents, acknowledgeCognitivePrediction, resolveCognitivePrediction, quitDesktopApp, type CognitivePrediction, type PredictionAccuracy, type CognitiveIncident } from "../services/api";
 import ErrorLogAnalyzer from "../components/ErrorLogAnalyzer";
 import DesktopSettings from "../components/DesktopSettings";
 import {
@@ -1161,6 +1161,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   const [quitError, setQuitError] = useState("");
   const [cognitivePredictions, setCognitivePredictions] = useState<CognitivePrediction[]>([]);
   const [predictionAccuracy, setPredictionAccuracy] = useState<PredictionAccuracy | null>(null);
+  const [cognitiveIncidents, setCognitiveIncidents] = useState<CognitiveIncident[]>([]);
   const [predictionBusy, setPredictionBusy] = useState<string | null>(null);
 
   const [data, setData] = useState<SystemStatus>({});
@@ -1402,6 +1403,17 @@ export default function Dashboard({ onLogout }: DashboardProps) {
       }
     };
 
+    const fetchIncidents = async () => {
+      try {
+        const result = await fetchCognitiveIncidents();
+        if (cancelled) return;
+        setCognitiveIncidents(Array.isArray(result) ? result : []);
+      } catch (error) {
+        if (cancelled) return;
+        console.error("Incident timeline fetch failed:", error);
+      }
+    };
+
     // Initial load.
     fetchTelemetry();
     fetchPipeline();
@@ -1410,6 +1422,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     fetchDna();
     fetchSnapshotRollups();
     fetchPredictionAccuracySummary();
+    fetchIncidents();
 
     // Telemetry is lightweight and remains responsive.
     const telemetryId = setInterval(fetchTelemetry, 500);
@@ -1423,6 +1436,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     const dnaId = setInterval(fetchDna, 30000);
     const rollupId = setInterval(fetchSnapshotRollups, 60000);
     const accuracyId = setInterval(fetchPredictionAccuracySummary, 60000);
+    const incidentsId = setInterval(fetchIncidents, 15000);
 
     return () => {
       cancelled = true;
@@ -1433,6 +1447,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
       clearInterval(dnaId);
       clearInterval(rollupId);
       clearInterval(accuracyId);
+      clearInterval(incidentsId);
     };
   }, []);
 
@@ -1832,6 +1847,65 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                 icon="◎"
                 tooltip="Predictions waiting for an outcome"
               />
+            </div>
+          </Section>
+        )}
+
+        {cognitiveIncidents.length > 0 && (
+          <Section
+            title="Incident Timeline"
+            subtitle="Evidence reconstructed from the monitoring window"
+            accentColor={T.danger}
+          >
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              {cognitiveIncidents.slice(0, 3).map((incident) => (
+                <div
+                  key={incident.incident_id ?? `${incident.type}-${incident.occurred_at}`}
+                  style={{
+                    padding: "16px 18px",
+                    borderRadius: 6,
+                    border: `1px solid ${T.danger}35`,
+                    background: "linear-gradient(90deg, rgba(255,51,102,0.10), rgba(10,20,50,0.24))",
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
+                    <div>
+                      <div style={{ color: T.danger, fontSize: 13, fontWeight: 700, letterSpacing: "0.08em", fontFamily: "'Rajdhani', sans-serif" }}>
+                        {incident.type ?? "SYSTEM INCIDENT"}
+                      </div>
+                      <div style={{ color: T.textMuted, fontSize: 10, marginTop: 3 }}>
+                        {incident.description ?? "Recorded system incident"}
+                      </div>
+                    </div>
+                    <div style={{ color: T.textDim, fontSize: 10, fontFamily: "'Share Tech Mono', monospace" }}>
+                      {incident.occurred_str ?? "TIME UNKNOWN"}
+                    </div>
+                  </div>
+                  {incident.timeline && incident.timeline.length > 0 ? (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                      {incident.timeline.slice(-6).map((entry, index) => (
+                        <div
+                          key={`${entry.time_str}-${entry.event}-${index}`}
+                          style={{ display: "grid", gridTemplateColumns: "72px 10px minmax(0, 1fr)", gap: 8, alignItems: "center", fontSize: 10, fontFamily: "'Share Tech Mono', monospace" }}
+                        >
+                          <span style={{ color: T.textDim, textAlign: "right" }}>
+                            {entry.t_minus_mins == null ? "—" : entry.t_minus_mins === 0 ? "NOW" : `-${entry.t_minus_mins}m`}
+                          </span>
+                          <span style={{ width: 7, height: 7, borderRadius: "50%", background: entry.significance === "incident" ? T.danger : T.accent, boxShadow: `0 0 8px ${entry.significance === "incident" ? T.danger : T.accent}` }} />
+                          <span style={{ color: entry.significance === "incident" ? T.danger : T.text }}>
+                            {entry.event ?? "Signal recorded"}
+                            {entry.value != null && <span style={{ color: T.textDim }}> · {entry.value}{entry.unit ?? ""}</span>}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={{ color: T.textDim, fontSize: 10, fontFamily: "'Share Tech Mono', monospace" }}>
+                      Timeline evidence is still being reconstructed.
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
           </Section>
         )}

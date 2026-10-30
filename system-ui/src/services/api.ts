@@ -157,8 +157,28 @@ export async function fetchCognitiveRemediationLog(limit = 20) {
 }
 
 export async function fetchCognitiveIncidents() {
-  const { data } = await api.get("/cognitive/incidents");
+  const { data } = await api.get<CognitiveIncident[]>("/cognitive/incidents");
   return data ?? [];
+}
+
+export interface CognitiveIncidentTimelineEntry {
+  t_minus_mins?: number;
+  time_str?: string;
+  event?: string;
+  metric?: string;
+  value?: number | null;
+  unit?: string;
+  significance?: string;
+}
+
+export interface CognitiveIncident {
+  incident_id?: string;
+  type?: string;
+  description?: string;
+  occurred_at?: number;
+  occurred_str?: string;
+  timeline?: CognitiveIncidentTimelineEntry[];
+  plain_timeline?: string;
 }
 
 export async function fetchCognitiveNotifications() {
