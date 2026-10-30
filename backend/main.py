@@ -1216,8 +1216,28 @@ async def lifespan(app: FastAPI):
 
         while True:
             if _last_metrics:
-                await ae.evaluate(dict(_last_metrics))
-                await cache_metrics(dict(_last_metrics), ttl=3)
+                metrics_for_alerts = dict(_last_metrics)
+                memory_forecast = _memory_pressure_forecast(time.time())
+                metrics_for_alerts.update({
+                    "memory_forecast_level": {
+                        "normal": 0,
+                        "warming_up": 0,
+                        "elevated": 1,
+                        "critical": 2,
+                    }.get(memory_forecast["status"], 0),
+                    "memory_forecast_status": memory_forecast["status"],
+                    "memory_forecast_process": (
+                        (memory_forecast.get("likely_process") or {}).get(
+                            "name",
+                            "unknown",
+                        )
+                    ),
+                    "memory_forecast_minutes_to_90": (
+                        memory_forecast.get("minutes_to_90_percent")
+                    ),
+                })
+                await ae.evaluate(metrics_for_alerts)
+                await cache_metrics(metrics_for_alerts, ttl=3)
 
             await asyncio.sleep(5)
 

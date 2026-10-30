@@ -81,6 +81,26 @@ DEFAULT_RULES = [
     AlertRule("r_cpu_warn",  "CPU Warning",      "cpu",      "gt", 75.0, "WARNING",   60),
     AlertRule("r_mem_crit",  "Memory Critical",  "mem",      "gt", 90.0, "CRITICAL", 120),
     AlertRule("r_mem_warn",  "Memory Warning",   "mem",      "gt", 75.0, "WARNING",   60),
+    AlertRule(
+        "r_mem_forecast_crit",
+        "Memory Forecast Critical",
+        "mem_forecast",
+        "gte",
+        2.0,
+        "CRITICAL",
+        300,
+        message_tpl="Memory pressure forecast is critical (process: {process})",
+    ),
+    AlertRule(
+        "r_mem_forecast_warn",
+        "Memory Forecast Warning",
+        "mem_forecast",
+        "gte",
+        1.0,
+        "WARNING",
+        300,
+        message_tpl="Memory pressure is rising (process: {process})",
+    ),
     AlertRule("r_disk_crit", "Disk Critical",    "disk",     "gt", 85.0, "CRITICAL",  90),
     AlertRule("r_ano_crit",  "Anomaly Critical", "ensemble", "gt",  0.8, "CRITICAL",  90),
     AlertRule("r_ano_warn",  "Anomaly Warning",  "ensemble", "gt",  0.5, "WARNING",   30),
@@ -118,6 +138,7 @@ class AlertEngine:
         metric_map = {
             "cpu":      metrics.get("cpu_percent",    0),
             "mem":      metrics.get("memory",         0),
+            "mem_forecast": metrics.get("memory_forecast_level", 0),
             "disk":     metrics.get("disk_percent",   0),
             "net":      metrics.get("network_percent", 0),
             "health":   metrics.get("health_score",  100),
@@ -176,6 +197,7 @@ class AlertEngine:
                 metric=rule.metric,
                 value=value,
                 threshold=rule.threshold,
+                process=metrics.get("memory_forecast_process", "unknown"),
             )
 
             alert = FiredAlert(
@@ -263,6 +285,7 @@ class AlertEngine:
                 metric=rule.metric,
                 value=value,
                 threshold=rule.threshold,
+                process=metrics.get("memory_forecast_process", "unknown"),
             )
 
             alert = FiredAlert(
