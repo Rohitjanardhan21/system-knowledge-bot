@@ -116,6 +116,7 @@ _last_collector_error = ""
 _collector_iterations = 0
 _collector_gap_count = 0
 _COLLECTOR_WARMUP_S = 30.0
+_process_trend_history: deque = deque(maxlen=720)
 _network_io_state = {
     "timestamp": 0.0,
     "bytes_sent": 0,
@@ -201,6 +202,61 @@ def _system_identity() -> dict:
         "architecture": platform.machine() or "unknown",
         "logical_cpu_count": os.cpu_count() or 0,
     }
+
+
+def _collect_process_summary() -> dict:
+    if not PS_OK:
+        return {"top_cpu": [], "top_memory": [], "available": False}
+
+    processes = []
+    try:
+        for process in psutil.process_iter(
+            ["pid", "name", "cpu_percent", "memory_percent", "status"]
+        ):
+            try:
+                info = process.info
+                if info.get("status") == "zombie":
+                    continue
+                processes.append({
+                    "pid": info.get("pid"),
+                    "name": (info.get("name") or "unknown")[:96],
+                    "cpu_percent": round(float(info.get("cpu_percent") or 0), 2),
+                    "memory_percent": round(
+                        float(info.get("memory_percent") or 0), 2
+                    ),
+                    "status": info.get("status") or "unknown",
+                })
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+    except Exception as exc:
+        log.warning("Process telemetry unavailable: %s", exc)
+        return {"top_cpu": [], "top_memory": [], "available": False}
+
+    top_cpu = sorted(
+        processes,
+        key=lambda item: item["cpu_percent"],
+        reverse=True,
+    )[:5]
+    top_memory = sorted(
+        processes,
+        key=lambda item: item["memory_percent"],
+        reverse=True,
+    )[:5]
+    return {
+        "top_cpu": top_cpu,
+        "top_memory": top_memory,
+        "available": True,
+    }
+
+
+def _record_process_trends(summary: dict, collected_at: float) -> None:
+    if not summary.get("available"):
+        return
+    _process_trend_history.append({
+        "timestamp": collected_at,
+        "top_cpu": summary.get("top_cpu", []),
+        "top_memory": summary.get("top_memory", []),
+    })
 
 
 async def _restore_registered_devices():
@@ -584,6 +640,9 @@ def _build_feature_vector():
             net = 0.0
 
     health = max(0, 100 - max(0, cpu - 70) * 0.35 - max(0, mem - 60) * 0.25)
+    collected_at = time.time()
+    process_summary = _collect_process_summary()
+    _record_process_trends(process_summary, collected_at)
     raw = {
         "cpu_percent":     round(float(cpu),    2),
         "memory":          round(float(mem),    2),
@@ -592,7 +651,8 @@ def _build_feature_vector():
         "network_sent_bytes_per_sec": round(network_sent_rate, 1),
         "network_recv_bytes_per_sec": round(network_recv_rate, 1),
         "health_score":    round(float(health), 2),
-        "collected_at":    time.time(),
+        "collected_at":    collected_at,
+        "processes":       process_summary,
     }
     feat = np.array([cpu/100, mem/100, disk/100, net/100, 0.0], dtype=np.float32)
     return feat, raw
@@ -1517,9 +1577,11 @@ async def os_status(
     tags=["OS"],
     dependencies=[Depends(require_scope("read"))],
 )
-async def os_processes():
+async def os_processes(principal: dict = Depends(require_scope("read"))):
+    if principal.get("workspace_id"):
+        return {"by_cpu": [], "by_mem": [], "available": False}
     if not PS_OK:
-        return {"by_cpu": [], "by_mem": []}
+        return {"by_cpu": [], "by_mem": [], "available": False}
     procs = []
     for p in psutil.process_iter(["pid", "name", "cpu_percent", "memory_percent", "status"]):
         try:
@@ -1537,7 +1599,23 @@ async def os_processes():
     return {
         "by_cpu": sorted(procs, key=lambda x: x["cpu"], reverse=True)[:10],
         "by_mem": sorted(procs, key=lambda x: x["mem"], reverse=True)[:10],
+        "available": True,
     }
+
+
+@app.get(
+    "/os/process-trends",
+    tags=["OS"],
+    dependencies=[Depends(require_scope("read"))],
+)
+async def os_process_trends(
+    limit: int = 60,
+    principal: dict = Depends(require_scope("read")),
+):
+    if principal.get("workspace_id"):
+        return []
+    bounded_limit = max(1, min(limit, 720))
+    return list(_process_trend_history)[-bounded_limit:]
 
 
 class FeatRequest(BaseModel):

@@ -1053,6 +1053,19 @@ interface SystemStatus {
   [key: string]: unknown;
 }
 
+interface ProcessTrendEntry {
+  pid?: number;
+  name?: string;
+  cpu_percent?: number;
+  memory_percent?: number;
+}
+
+interface ProcessTrendSample {
+  timestamp: number;
+  top_cpu?: ProcessTrendEntry[];
+  top_memory?: ProcessTrendEntry[];
+}
+
 interface SnapshotRollup {
   device_id?: string | null;
   bucket_ts: number;
@@ -1192,6 +1205,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   const [pipeline, setPipeline] = useState<PipelineData>({});
   const [availableActions, setAvailableActions] = useState<BackendAction[]>([]);
   const [snapshotRollups, setSnapshotRollups] = useState<SnapshotRollup[]>([]);
+  const [processTrends, setProcessTrends] = useState<ProcessTrendSample[]>([]);
   const [manualAction, setManualAction] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -1423,6 +1437,19 @@ export default function Dashboard({ onLogout }: DashboardProps) {
       }
     };
 
+    const fetchProcessTrends = async () => {
+      try {
+        const response = await api.get<ProcessTrendSample[]>(
+          "/os/process-trends?limit=60"
+        );
+        if (cancelled) return;
+        setProcessTrends(Array.isArray(response.data) ? response.data : []);
+      } catch (error) {
+        if (cancelled) return;
+        console.error("Process trend fetch failed:", error);
+      }
+    };
+
     const fetchIncidents = async () => {
       try {
         const result = await fetchCognitiveIncidents();
@@ -1443,6 +1470,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     fetchSnapshotRollups();
     fetchPredictionAccuracySummary();
     fetchIncidents();
+    fetchProcessTrends();
 
     // Telemetry is lightweight and remains responsive.
     const telemetryId = setInterval(fetchTelemetry, 500);
@@ -1457,6 +1485,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     const rollupId = setInterval(fetchSnapshotRollups, 60000);
     const accuracyId = setInterval(fetchPredictionAccuracySummary, 60000);
     const incidentsId = setInterval(fetchIncidents, 15000);
+    const processTrendsId = setInterval(fetchProcessTrends, 10000);
 
     return () => {
       cancelled = true;
@@ -1468,6 +1497,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
       clearInterval(rollupId);
       clearInterval(accuracyId);
       clearInterval(incidentsId);
+      clearInterval(processTrendsId);
     };
   }, []);
 
@@ -1633,6 +1663,9 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     predictionAccuracy?.average_lead_time_seconds == null
       ? null
       : predictionAccuracy.average_lead_time_seconds / 60;
+  const latestProcessSample = processTrends[processTrends.length - 1];
+  const topCpuProcesses = latestProcessSample?.top_cpu ?? [];
+  const topMemoryProcesses = latestProcessSample?.top_memory ?? [];
 
   return (
     <>
@@ -2313,6 +2346,47 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                   {(risk * 100).toFixed(1)}%
                 </div>
               </div>
+            </Section>
+
+            <Section title="Process Contributors" subtitle="Top live CPU and memory consumers">
+              {topCpuProcesses.length === 0 && topMemoryProcesses.length === 0 ? (
+                <div style={{ color: T.textDim, fontSize: 10, fontFamily: "'Share Tech Mono', monospace" }}>
+                  Process telemetry is unavailable or still warming up.
+                </div>
+              ) : (
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+                  <div>
+                    <div style={{ color: T.accent, fontSize: 9, letterSpacing: "0.12em", fontFamily: "'Share Tech Mono', monospace", marginBottom: 8 }}>
+                      CPU PRESSURE
+                    </div>
+                    {topCpuProcesses.slice(0, 5).map((process, index) => (
+                      <div key={`cpu-${process.pid ?? process.name}-${index}`} style={{ display: "flex", justifyContent: "space-between", gap: 8, padding: "6px 0", borderBottom: `1px solid ${T.border}`, fontSize: 10, fontFamily: "'Share Tech Mono', monospace" }}>
+                        <span style={{ color: T.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {process.name ?? "unknown"}
+                        </span>
+                        <span style={{ color: process.cpu_percent && process.cpu_percent > 80 ? T.danger : T.textMuted, flexShrink: 0 }}>
+                          {(process.cpu_percent ?? 0).toFixed(1)}%
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  <div>
+                    <div style={{ color: T.primary, fontSize: 9, letterSpacing: "0.12em", fontFamily: "'Share Tech Mono', monospace", marginBottom: 8 }}>
+                      MEMORY PRESSURE
+                    </div>
+                    {topMemoryProcesses.slice(0, 5).map((process, index) => (
+                      <div key={`memory-${process.pid ?? process.name}-${index}`} style={{ display: "flex", justifyContent: "space-between", gap: 8, padding: "6px 0", borderBottom: `1px solid ${T.border}`, fontSize: 10, fontFamily: "'Share Tech Mono', monospace" }}>
+                        <span style={{ color: T.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {process.name ?? "unknown"}
+                        </span>
+                        <span style={{ color: process.memory_percent && process.memory_percent > 10 ? T.warning : T.textMuted, flexShrink: 0 }}>
+                          {(process.memory_percent ?? 0).toFixed(1)}%
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </Section>
 
             {/* AI Reasoning */}
