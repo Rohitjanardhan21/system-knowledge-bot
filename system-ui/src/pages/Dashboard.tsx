@@ -1044,6 +1044,14 @@ interface SystemStatus {
     source?: string;
     fresh?: boolean;
   };
+  memory_pressure_forecast?: {
+    status?: "warming_up" | "normal" | "elevated" | "critical";
+    current_percent?: number | null;
+    rate_percent_per_minute?: number | null;
+    minutes_to_90_percent?: number | null;
+    likely_process?: ProcessTrendEntry | null;
+    explanation?: string;
+  };
   system_identity?: {
     platform?: string;
     platform_release?: string;
@@ -1940,7 +1948,25 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                       {incident.occurred_str ?? "TIME UNKNOWN"}
                     </div>
                   </div>
-                  {incident.timeline && incident.timeline.length > 0 ? (
+                    {incident.likely_contributors && incident.likely_contributors.length > 0 && (
+                      <div style={{ marginBottom: 12, padding: "10px 12px", borderRadius: 4, background: "rgba(255,176,32,0.08)", border: `1px solid ${T.warning}35` }}>
+                        <div style={{ color: T.warning, fontSize: 9, letterSpacing: "0.12em", fontFamily: "'Share Tech Mono', monospace", marginBottom: 7 }}>
+                          POSSIBLE CONTRIBUTORS · EVIDENCE-BASED, NOT PROOF OF CAUSE
+                        </div>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                          {incident.likely_contributors.map((process, index) => (
+                              <div key={`${process.pid ?? process.name}-${index}`} style={{ color: T.text, fontSize: 10, fontFamily: "'Share Tech Mono', monospace" }} title={process.explanation}>
+                              <strong>{process.name ?? "unknown"}</strong>
+                              <span style={{ color: T.textMuted }}> · CPU {(process.recent_cpu_percent ?? 0).toFixed(1)}% · memory {(process.recent_memory_percent ?? 0).toFixed(1)}%</span>
+                              {process.memory_risk && process.memory_risk !== "normal" && (
+                                <span style={{ color: process.memory_risk === "high" ? T.danger : T.warning }}> · {process.memory_risk.toUpperCase()} MEMORY RISK</span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {incident.timeline && incident.timeline.length > 0 ? (
                     <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
                       {incident.timeline.slice(-6).map((entry, index) => (
                         <div
@@ -2355,6 +2381,21 @@ export default function Dashboard({ onLogout }: DashboardProps) {
             </Section>
 
             <Section title="Process Contributors" subtitle="Top live CPU and memory consumers">
+              {data.memory_pressure_forecast && data.memory_pressure_forecast.status !== "warming_up" && (
+                <div style={{ marginBottom: 14, padding: "10px 12px", borderRadius: 4, border: `1px solid ${data.memory_pressure_forecast.status === "critical" ? T.danger : data.memory_pressure_forecast.status === "elevated" ? T.warning : T.border}`, background: data.memory_pressure_forecast.status === "critical" ? "rgba(255,51,102,0.10)" : "rgba(255,176,32,0.06)" }}>
+                  <div style={{ color: data.memory_pressure_forecast.status === "critical" ? T.danger : data.memory_pressure_forecast.status === "elevated" ? T.warning : T.success, fontSize: 9, letterSpacing: "0.12em", fontFamily: "'Share Tech Mono', monospace", marginBottom: 5 }}>
+                    MEMORY FORECAST · {(data.memory_pressure_forecast.status ?? "unknown").toUpperCase()}
+                  </div>
+                  <div style={{ color: T.text, fontSize: 10, fontFamily: "'Share Tech Mono', monospace" }}>
+                    {data.memory_pressure_forecast.explanation}
+                  </div>
+                  {data.memory_pressure_forecast.minutes_to_90_percent != null && (
+                    <div style={{ color: T.textMuted, fontSize: 10, marginTop: 5, fontFamily: "'Share Tech Mono', monospace" }}>
+                      Estimated time to 90% host memory: {data.memory_pressure_forecast.minutes_to_90_percent.toFixed(1)} minutes
+                    </div>
+                  )}
+                </div>
+              )}
               {topCpuProcesses.length === 0 && topMemoryProcesses.length === 0 ? (
                 <div style={{ color: T.textDim, fontSize: 10, fontFamily: "'Share Tech Mono', monospace" }}>
                   Process telemetry is unavailable or still warming up.

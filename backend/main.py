@@ -116,7 +116,8 @@ _last_collector_error = ""
 _collector_iterations = 0
 _collector_gap_count = 0
 _COLLECTOR_WARMUP_S = 30.0
-_process_trend_history: deque = deque(maxlen=720)
+_process_trend_history: deque = deque(maxlen=3600)
+_memory_usage_history: deque = deque(maxlen=3600)
 _network_io_state = {
     "timestamp": 0.0,
     "bytes_sent": 0,
@@ -257,6 +258,159 @@ def _record_process_trends(summary: dict, collected_at: float) -> None:
         "top_cpu": summary.get("top_cpu", []),
         "top_memory": summary.get("top_memory", []),
     })
+
+
+def _rank_process_contributors(incident_time: float) -> list[dict]:
+    """Rank processes whose recent resource pressure increased before an incident."""
+    recent_cutoff = incident_time - 15 * 60
+    baseline_cutoff = incident_time - 30 * 60
+    recent: dict[tuple[object, str], list[tuple[float, float]]] = {}
+    baseline: dict[tuple[object, str], list[tuple[float, float]]] = {}
+
+    for sample in list(_process_trend_history):
+        timestamp = sample.get("timestamp", 0)
+        if timestamp < baseline_cutoff or timestamp > incident_time:
+            continue
+        target = recent if timestamp >= recent_cutoff else baseline
+        seen: set[tuple[object, str]] = set()
+        for field in ("top_cpu", "top_memory"):
+            for process in sample.get(field, []):
+                name = str(process.get("name") or "unknown")
+                key = (process.get("pid"), name)
+                if key in seen:
+                    continue
+                seen.add(key)
+                target.setdefault(key, []).append((
+                    float(process.get("cpu_percent") or 0),
+                    float(process.get("memory_percent") or 0),
+                ))
+
+    ranked = []
+    for (pid, name), samples in recent.items():
+        if not samples:
+            continue
+        recent_cpu = sum(item[0] for item in samples) / len(samples)
+        recent_memory = sum(item[1] for item in samples) / len(samples)
+        baseline_samples = baseline.get((pid, name), [])
+        baseline_cpu = (
+            sum(item[0] for item in baseline_samples) / len(baseline_samples)
+            if baseline_samples else 0.0
+        )
+        baseline_memory = (
+            sum(item[1] for item in baseline_samples) / len(baseline_samples)
+            if baseline_samples else 0.0
+        )
+        cpu_growth = max(0.0, recent_cpu - baseline_cpu)
+        memory_growth = max(0.0, recent_memory - baseline_memory)
+        persistence = min(1.0, len(samples) / 3)
+        score = (cpu_growth / 100 + memory_growth / 100) * persistence
+        if score <= 0.03 and recent_cpu < 20 and recent_memory < 5:
+            continue
+        if recent_memory >= 20 or memory_growth >= 10:
+            memory_risk = "high"
+            explanation = "High memory use or rapid memory growth was observed before the incident."
+        elif recent_memory >= 10 or memory_growth >= 5:
+            memory_risk = "elevated"
+            explanation = "Memory use was elevated before the incident, but this is not proof of causation."
+        elif recent_cpu >= 50 or cpu_growth >= 20:
+            memory_risk = "normal"
+            explanation = "CPU pressure increased before the incident; memory pressure was not dominant."
+        else:
+            memory_risk = "normal"
+            explanation = "The process was repeatedly observed among the highest resource consumers."
+        ranked.append({
+            "pid": pid,
+            "name": name,
+            "recent_cpu_percent": round(recent_cpu, 2),
+            "recent_memory_percent": round(recent_memory, 2),
+            "cpu_growth_percent": round(cpu_growth, 2),
+            "memory_growth_percent": round(memory_growth, 2),
+            "observations": len(samples),
+            "memory_risk": memory_risk,
+            "explanation": explanation,
+            "confidence": round(min(0.99, max(0.1, score * 2.5)), 2),
+        })
+
+    return sorted(
+        ranked,
+        key=lambda item: (
+            item["confidence"],
+            item["recent_cpu_percent"] + item["recent_memory_percent"],
+        ),
+        reverse=True,
+    )[:3]
+
+
+def _memory_pressure_forecast(now: float) -> dict:
+    """Estimate near-term host memory pressure from recent collection samples."""
+    samples = [
+        sample for sample in list(_memory_usage_history)
+        if now - sample["timestamp"] <= 10 * 60
+    ]
+    if len(samples) < 4:
+        return {
+            "status": "warming_up",
+            "current_percent": None,
+            "rate_percent_per_minute": None,
+            "minutes_to_90_percent": None,
+            "likely_process": None,
+            "explanation": "Collecting enough memory samples for a trend estimate.",
+        }
+
+    midpoint = len(samples) // 2
+    older = samples[:midpoint]
+    newer = samples[midpoint:]
+    older_avg = sum(item["memory"] for item in older) / len(older)
+    newer_avg = sum(item["memory"] for item in newer) / len(newer)
+    elapsed_minutes = max(
+        0.1,
+        (newer[-1]["timestamp"] - older[0]["timestamp"]) / 60,
+    )
+    rate = (newer_avg - older_avg) / elapsed_minutes
+    current = samples[-1]["memory"]
+    minutes_to_90 = (
+        (90.0 - current) / rate
+        if rate > 0 and current < 90
+        else None
+    )
+    if current >= 90:
+        status = "critical"
+    elif current >= 80 or (minutes_to_90 is not None and minutes_to_90 <= 30):
+        status = "elevated"
+    else:
+        status = "normal"
+
+    contributors = _rank_process_contributors(now)
+    memory_driver = max(
+        contributors,
+        key=lambda item: (
+            item["memory_growth_percent"],
+            item["recent_memory_percent"],
+        ),
+        default=None,
+    )
+    if status == "critical":
+        explanation = "Host memory is already critical. Processes shown are candidates for investigation."
+    elif status == "elevated" and memory_driver:
+        explanation = (
+            f"{memory_driver['name']} is the strongest observed memory contributor; "
+            "this is a trend warning, not proof it will crash the system."
+        )
+    elif status == "elevated":
+        explanation = "Host memory is rising and may become critical if the trend continues."
+    else:
+        explanation = "No near-term critical memory trend detected."
+
+    return {
+        "status": status,
+        "current_percent": round(current, 2),
+        "rate_percent_per_minute": round(rate, 3),
+        "minutes_to_90_percent": (
+            round(minutes_to_90, 1) if minutes_to_90 is not None else None
+        ),
+        "likely_process": memory_driver,
+        "explanation": explanation,
+    }
 
 
 async def _restore_registered_devices():
@@ -641,6 +795,10 @@ def _build_feature_vector():
 
     health = max(0, 100 - max(0, cpu - 70) * 0.35 - max(0, mem - 60) * 0.25)
     collected_at = time.time()
+    _memory_usage_history.append({
+        "timestamp": collected_at,
+        "memory": float(mem),
+    })
     process_summary = _collect_process_summary()
     _record_process_trends(process_summary, collected_at)
     raw = {
@@ -1564,6 +1722,7 @@ async def os_status(
         "ps_available": PS_OK,
         "system_identity": _system_identity(),
         "collection": status,
+        "memory_pressure_forecast": _memory_pressure_forecast(time.time()),
         "data_quality": {
             "status": status["state"],
             "source": "synthetic" if status["synthetic_metrics"] else "live",
@@ -2633,6 +2792,10 @@ async def mark_incident(
     incident_id = bb.mark_incident(incident_type, description or incident_type)
     dna.record_failure(incident_type, description or incident_type)
     incident = bb.get_incident(incident_id) or {}
+    likely_contributors = _rank_process_contributors(
+        incident.get("occurred_at", time.time())
+    )
+    incident["likely_contributors"] = likely_contributors
     await save_incident({
         "incident_id": incident_id,
         "failure_type": incident_type,
@@ -2643,9 +2806,14 @@ async def mark_incident(
         "metadata": {
             "description": description or incident_type,
             "source": "manual",
+            "likely_contributors": likely_contributors,
         },
     })
-    return {"incident_id": incident_id, "recorded": True}
+    return {
+        "incident_id": incident_id,
+        "recorded": True,
+        "likely_contributors": likely_contributors,
+    }
 
 @app.get(
     "/cognitive/incidents",

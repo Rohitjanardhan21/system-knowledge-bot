@@ -171,6 +171,19 @@ export interface CognitiveIncidentTimelineEntry {
   significance?: string;
 }
 
+export interface CognitiveIncidentContributor {
+  pid?: number;
+  name?: string;
+  recent_cpu_percent?: number;
+  recent_memory_percent?: number;
+  cpu_growth_percent?: number;
+  memory_growth_percent?: number;
+  observations?: number;
+  memory_risk?: "normal" | "elevated" | "high";
+  explanation?: string;
+  confidence?: number;
+}
+
 export interface CognitiveIncident {
   incident_id?: string;
   type?: string;
@@ -179,6 +192,7 @@ export interface CognitiveIncident {
   occurred_str?: string;
   timeline?: CognitiveIncidentTimelineEntry[];
   plain_timeline?: string;
+  likely_contributors?: CognitiveIncidentContributor[];
 }
 
 export async function fetchCognitiveNotifications() {
