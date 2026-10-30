@@ -1,14 +1,21 @@
 import json
+import hashlib
+import logging
+import os
+import tempfile
 from pathlib import Path
-from statistics import mean, stdev
+from statistics import StatisticsError, mean, stdev
 from datetime import datetime, timezone
 import math
+
+log = logging.getLogger("cvis.learning")
 
 # ---------------------------------------------------------
 # FILES
 # ---------------------------------------------------------
 HISTORY_FILE = Path("system_facts/history/learning.json")
 WEIGHTS_FILE = Path("system_facts/history/action_weights.json")
+STATS_FILE = Path("system_facts/history/action_statistics.json")
 
 HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
 
@@ -23,49 +30,120 @@ SUPPORTED_FEEDBACK_ACTIONS = frozenset({
     "monitor",
     "immediate_stabilization",
 })
+ACTION_ALIASES = {
+    "clear_temp": "optimize_io",
+    "clear_docker_cache": "optimize_io",
+    "clear_logs": "optimize_io",
+    "clear_pip_cache": "optimize_io",
+    "drop_caches": "optimize_memory",
+    "kill_process": "reduce_compute_load",
+    "kill_high_cpu_process": "reduce_compute_load",
+    "throttle_process": "reduce_compute_load",
+}
 
 
 class LearningEngine:
 
-    def __init__(self):
+    def __init__(self, workspace_id="global"):
+        self.workspace_id = self._normalize_workspace_id(workspace_id)
+        if self.workspace_id == "global":
+            self._history_file = HISTORY_FILE
+            self._weights_file = WEIGHTS_FILE
+            self._stats_file = STATS_FILE
+        else:
+            workspace_dir = HISTORY_FILE.parent / "workspaces" / (
+                hashlib.sha256(self.workspace_id.encode()).hexdigest()[:16]
+            )
+            self._history_file = workspace_dir / "learning.json"
+            self._weights_file = workspace_dir / "action_weights.json"
+            self._stats_file = workspace_dir / "action_statistics.json"
         self.history = self.load_history()
         self.action_weights = self.load_weights()
+        self.action_stats = self.load_stats()
+
+    @staticmethod
+    def _normalize_workspace_id(workspace_id):
+        if not isinstance(workspace_id, str) or not workspace_id.strip():
+            return "global"
+        return workspace_id.strip()[:128]
 
     # ---------------------------------------------------------
     # SAFE LOAD / SAVE
     # ---------------------------------------------------------
     def load_history(self):
-        if HISTORY_FILE.exists():
+        if self._history_file.exists():
             try:
-                data = json.loads(HISTORY_FILE.read_text())
+                data = json.loads(self._history_file.read_text(encoding="utf-8"))
+                if not isinstance(data, list):
+                    raise ValueError("Learning history must be a list")
                 return [h for h in data if isinstance(h, dict)]
-            except:
-                return []
+            except (OSError, json.JSONDecodeError) as exc:
+                raise RuntimeError(f"Unable to load learning history: {self._history_file}") from exc
         return []
 
     def save_history(self):
-        try:
-            HISTORY_FILE.write_text(
-                json.dumps(self.history[-MAX_HISTORY:], indent=2)
-            )
-        except:
-            pass
+        self._atomic_write(self._history_file, self.history[-MAX_HISTORY:])
 
     def load_weights(self):
-        if WEIGHTS_FILE.exists():
+        if self._weights_file.exists():
             try:
-                return json.loads(WEIGHTS_FILE.read_text())
-            except:
-                return {}
+                data = json.loads(self._weights_file.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as exc:
+                raise RuntimeError(f"Unable to load learning weights: {self._weights_file}") from exc
+            if not isinstance(data, dict):
+                raise ValueError(f"Learning weights must be an object: {self._weights_file}")
+            return {
+                action: self.safe_float(weight)
+                for action, weight in data.items()
+                if action in SUPPORTED_FEEDBACK_ACTIONS
+            }
         return {}
 
     def save_weights(self):
+        self._atomic_write(self._weights_file, self.action_weights)
+
+    def load_stats(self):
+        if not self._stats_file.exists():
+            return {}
         try:
-            WEIGHTS_FILE.write_text(
-                json.dumps(self.action_weights, indent=2)
-            )
-        except:
-            pass
+            data = json.loads(self._stats_file.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise RuntimeError(f"Unable to load learning statistics: {self._stats_file}") from exc
+        if not isinstance(data, dict):
+            raise ValueError(f"Learning statistics must be an object: {self._stats_file}")
+        return {
+            action: stats
+            for action, stats in data.items()
+            if action in SUPPORTED_FEEDBACK_ACTIONS and isinstance(stats, dict)
+        }
+
+    def save_stats(self):
+        self._atomic_write(self._stats_file, self.action_stats)
+
+    @staticmethod
+    def _atomic_write(path, value):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temp_path = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=str(path.parent),
+                prefix=f".{path.name}.",
+                suffix=".tmp",
+                delete=False,
+            ) as destination:
+                temp_path = destination.name
+                json.dump(value, destination, indent=2)
+                destination.write("\n")
+                destination.flush()
+                os.fsync(destination.fileno())
+            os.replace(temp_path, path)
+        except OSError as exc:
+            raise RuntimeError(f"Unable to persist learning state: {path}") from exc
+        finally:
+            if temp_path is not None and os.path.exists(temp_path):
+                os.unlink(temp_path)
 
     # ---------------------------------------------------------
     # CLEAN VALUE
@@ -76,7 +154,7 @@ class LearningEngine:
             if math.isnan(val) or math.isinf(val):
                 return 0.0
             return val
-        except:
+        except (TypeError, ValueError):
             return 0.0
 
     # ---------------------------------------------------------
@@ -111,7 +189,7 @@ class LearningEngine:
                 "mean": mean(values),
                 "std": stdev(values) if len(values) > 1 else 0.0
             }
-        except:
+        except (TypeError, ValueError, StatisticsError):
             return {"mean": 0.0, "std": 0.0}
 
     def get_baseline(self):
@@ -230,29 +308,66 @@ class LearningEngine:
     # LEARNING FROM FEEDBACK
     # ---------------------------------------------------------
     def learn_from_feedback(self, action, verification):
+        self.record_outcome(action, verification, trusted=False)
+
+    def record_outcome(self, action, verification, *, trusted=False):
+        action = ACTION_ALIASES.get(action, action)
         if not isinstance(action, str) or action not in SUPPORTED_FEEDBACK_ACTIONS:
             raise ValueError("Unsupported feedback action")
 
-        if (
-            not isinstance(verification, dict)
-            or verification.get("verified") is not True
-            or verification.get("status") != "success"
-        ):
+        if not isinstance(verification, dict):
             raise ValueError("Verified successful outcome evidence is required")
 
-        if action not in self.action_weights:
-            self.action_weights[action] = 0.5
+        status = verification.get("status")
+        verified = verification.get("verified") is True
+        if not trusted and (status != "success" or not verified):
+            raise ValueError("Verified successful outcome evidence is required")
+        if status not in {"success", "partial", "failed"}:
+            raise ValueError("Outcome evidence has an unsupported status")
 
-        self.action_weights[action] += 0.05
-
-        self.action_weights[action] = max(
-            0.1, min(1.0, self.action_weights[action])
+        stats = self.action_stats.setdefault(
+            action,
+            {"successes": 0, "partials": 0, "failures": 0},
         )
+        if status == "success" and verified:
+            stats["successes"] = int(stats.get("successes", 0)) + 1
+        elif status == "partial":
+            stats["partials"] = int(stats.get("partials", 0)) + 1
+        else:
+            stats["failures"] = int(stats.get("failures", 0)) + 1
+
+        effective_successes = stats["successes"] + stats["partials"] * 0.5
+        total = effective_successes + stats["failures"] + 2.0
+        self.action_weights[action] = max(
+            0.1,
+            min(0.9, (effective_successes + 1.0) / total),
+        )
+        stats["last_outcome"] = status
+        stats["updated_at"] = datetime.now(timezone.utc).isoformat()
 
         self.save_weights()
+        self.save_stats()
 
     def get_action_weight(self, action):
-        return self.action_weights.get(action, 0.5)
+        action = ACTION_ALIASES.get(action, action)
+        return max(0.1, min(0.9, self.safe_float(
+            self.action_weights.get(action, 0.5)
+        )))
+
+    def get_action_stats(self, action):
+        action = ACTION_ALIASES.get(action, action)
+        stats = self.action_stats.get(action, {})
+        return {
+            "successes": int(stats.get("successes", 0)),
+            "partials": int(stats.get("partials", 0)),
+            "failures": int(stats.get("failures", 0)),
+            "samples": sum(
+                int(stats.get(key, 0))
+                for key in ("successes", "partials", "failures")
+            ),
+            "weight": self.get_action_weight(action),
+            "last_outcome": stats.get("last_outcome"),
+        }
 
     # ---------------------------------------------------------
     # FULL ANALYSIS
@@ -271,3 +386,13 @@ class LearningEngine:
             "prediction": self.predict_next(),
             "risk": self.compute_risk(anomalies)
         }
+
+
+_learning_engines = {}
+
+
+def get_learning_engine(workspace_id="global"):
+    normalized_id = LearningEngine._normalize_workspace_id(workspace_id)
+    if normalized_id not in _learning_engines:
+        _learning_engines[normalized_id] = LearningEngine(normalized_id)
+    return _learning_engines[normalized_id]

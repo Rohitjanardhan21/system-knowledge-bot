@@ -5,13 +5,13 @@ from pydantic import BaseModel, ConfigDict, StrictStr
 
 from backend.core.auth.auth import require_scope
 from backend.core.learning_engine import (
-    LearningEngine,
+    get_learning_engine,
     SUPPORTED_FEEDBACK_ACTIONS,
 )
 from backend.experience_store import consume_verified_experience
 
 router = APIRouter()
-engine = LearningEngine()
+engine = get_learning_engine()
 
 
 class LearningFeedback(BaseModel):
@@ -25,7 +25,10 @@ class LearningFeedback(BaseModel):
     "/api/learn",
     dependencies=[Depends(require_scope("write"))],
 )
-async def learn(payload: LearningFeedback):
+async def learn(
+    payload: LearningFeedback,
+    principal: dict = Depends(require_scope("write")),
+):
     if payload.action not in SUPPORTED_FEEDBACK_ACTIONS:
         raise HTTPException(422, "Unsupported learning action")
 
@@ -50,7 +53,12 @@ async def learn(payload: LearningFeedback):
         )
 
     try:
-        engine.learn_from_feedback(payload.action, verification)
+        learner = (
+            engine
+            if not principal.get("workspace_id")
+            else get_learning_engine(principal["workspace_id"])
+        )
+        learner.learn_from_feedback(payload.action, verification)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
 
