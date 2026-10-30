@@ -132,6 +132,7 @@ class AlertEngine:
         self._email_cooldowns: dict[str, float] = {}
         self._email_cooldown_s = int(os.environ.get("ALERT_EMAIL_COOLDOWN_S", "300"))  # 5 min default
         self._suppressed_processes: dict[str, float] = {}
+        self._snoozed_alerts: dict[str, float] = {}
 
     # ── Evaluation ───────────────────────────────────────
 
@@ -377,6 +378,12 @@ class AlertEngine:
     def remove_process_suppression(self, process_name: str) -> None:
         self._suppressed_processes.pop(process_name, None)
 
+    def snooze_alert_notifications(self, alert_id: str, snoozed_until: float) -> None:
+        self._snoozed_alerts[alert_id] = snoozed_until
+
+    def unsnooze_alert_notifications(self, alert_id: str) -> None:
+        self._snoozed_alerts.pop(alert_id, None)
+
     def restore_process_suppressions(self, suppressions: dict[str, float]) -> None:
         self._suppressed_processes = dict(suppressions)
 
@@ -390,6 +397,11 @@ class AlertEngine:
     # ── Dispatch ─────────────────────────────────────────
 
     async def _dispatch(self, alert: FiredAlert):
+        snoozed_until = self._snoozed_alerts.get(alert.alert_id, 0)
+        if snoozed_until > time.time():
+            return
+        self._snoozed_alerts.pop(alert.alert_id, None)
+
         tasks = []
 
         # Webhooks

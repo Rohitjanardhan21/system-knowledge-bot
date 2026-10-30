@@ -1,6 +1,7 @@
 import asyncio
 import time
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 from backend.core.alerts.alert_engine import AlertEngine, FiredAlert
 from backend.core.storage import db
@@ -108,3 +109,26 @@ def test_process_suppression_prevents_forecast_alert_until_restored():
     assert {
         alert.rule_id for alert in engine.history
     } == {"r_mem_forecast_warn", "r_mem_forecast_crit"}
+
+
+def test_snooze_suppresses_outbound_notification_without_hiding_alert():
+    engine = AlertEngine()
+    webhook = engine.add_webhook("https://example.test/alerts", "test")
+    engine._send_webhook = AsyncMock()
+    alert = FiredAlert(
+        alert_id="alert-2",
+        rule_id="r_mem_warn",
+        severity="WARNING",
+        message="Memory pressure is rising",
+        metrics={},
+        fired_at=time.time(),
+    )
+
+    engine.snooze_alert_notifications(alert.alert_id, time.time() + 60)
+    _run(engine._dispatch(alert))
+
+    engine._send_webhook.assert_not_awaited()
+    assert webhook.id in engine.webhooks
+    engine.unsnooze_alert_notifications(alert.alert_id)
+    _run(engine._dispatch(alert))
+    engine._send_webhook.assert_awaited_once()

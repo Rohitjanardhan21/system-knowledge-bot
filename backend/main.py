@@ -2062,6 +2062,7 @@ async def snooze_alert_route(
     snoozed_until = time.time() + request.minutes * 60
     if not await snooze_alert(alert_id, snoozed_until):
         raise HTTPException(404, "Alert not found")
+    get_alert_engine().snooze_alert_notifications(alert_id, snoozed_until)
     return {"alert_id": alert_id, "snoozed_until": snoozed_until}
 
 @app.delete(
@@ -2076,6 +2077,7 @@ async def unsnooze_alert_route(
     _require_operator(principal)
     if not await unsnooze_alert(alert_id):
         raise HTTPException(404, "Alert not found")
+    get_alert_engine().unsnooze_alert_notifications(alert_id)
     return {"alert_id": alert_id, "snoozed_until": None}
 
 @app.post(
