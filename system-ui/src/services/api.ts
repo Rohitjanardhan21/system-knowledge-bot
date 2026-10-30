@@ -100,6 +100,26 @@ export async function fetchCognitivePredictions(): Promise<CognitivePrediction[]
   return data ?? [];
 }
 
+export interface PredictionAccuracy {
+  available: boolean;
+  reason?: string;
+  resolved_predictions?: number;
+  active_predictions?: number;
+  correct_predictions?: number;
+  incorrect_predictions?: number;
+  false_positives?: number;
+  false_negatives?: number;
+  accuracy?: number | null;
+  average_lead_time_seconds?: number | null;
+}
+
+export async function fetchPredictionAccuracy(): Promise<PredictionAccuracy> {
+  const { data } = await api.get<PredictionAccuracy>(
+    "/cognitive/predictions/accuracy"
+  );
+  return data;
+}
+
 export async function acknowledgeCognitivePrediction(id: string) {
   const { data } = await api.post(
     `/cognitive/predictions/${encodeURIComponent(id)}/acknowledge`
@@ -137,8 +157,86 @@ export async function fetchCognitiveRemediationLog(limit = 20) {
 }
 
 export async function fetchCognitiveIncidents() {
-  const { data } = await api.get("/cognitive/incidents");
+  const { data } = await api.get<CognitiveIncident[]>("/cognitive/incidents");
   return data ?? [];
+}
+
+export async function acknowledgeAlert(alertId: string) {
+  const { data } = await api.post(
+    `/alerts/${encodeURIComponent(alertId)}/acknowledge`
+  );
+  return data;
+}
+
+export async function snoozeAlert(alertId: string, minutes = 30) {
+  const { data } = await api.post(
+    `/alerts/${encodeURIComponent(alertId)}/snooze`,
+    { minutes }
+  );
+  return data;
+}
+
+export async function unsnoozeAlert(alertId: string) {
+  const { data } = await api.delete(
+    `/alerts/${encodeURIComponent(alertId)}/snooze`
+  );
+  return data;
+}
+
+export async function suppressAlertProcess(processName: string, minutes = 60) {
+  const { data } = await api.post("/alerts/process-suppressions", {
+    process_name: processName,
+    minutes,
+  });
+  return data;
+}
+
+export async function unsuppressAlertProcess(processName: string) {
+  const { data } = await api.delete(
+    `/alerts/process-suppressions/${encodeURIComponent(processName)}`
+  );
+  return data;
+}
+
+export async function fetchAlertProcessSuppressions() {
+  const { data } = await api.get<
+    Array<{ process_name: string; suppressed_until: number }>
+  >("/alerts/process-suppressions");
+  return Array.isArray(data) ? data : [];
+}
+
+export interface CognitiveIncidentTimelineEntry {
+  t_minus_mins?: number;
+  time_str?: string;
+  event?: string;
+  metric?: string;
+  value?: number | null;
+  unit?: string;
+  significance?: string;
+}
+
+export interface CognitiveIncidentContributor {
+  pid?: number;
+  name?: string;
+  recent_cpu_percent?: number;
+  recent_memory_percent?: number;
+  cpu_growth_percent?: number;
+  memory_growth_percent?: number;
+  observations?: number;
+  memory_risk?: "normal" | "elevated" | "high";
+  explanation?: string;
+  confidence?: number;
+}
+
+export interface CognitiveIncident {
+  incident_id?: string;
+  type?: string;
+  description?: string;
+  occurred_at?: number;
+  occurred_str?: string;
+  timeline?: CognitiveIncidentTimelineEntry[];
+  plain_timeline?: string;
+  likely_contributors?: CognitiveIncidentContributor[];
 }
 
 export async function fetchCognitiveNotifications() {

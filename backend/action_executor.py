@@ -1,4 +1,5 @@
 import time
+import logging
 import psutil
 from backend.core.process_lifecycle import get_process_lifecycle_monitor
 from datetime import datetime, timezone
@@ -9,15 +10,17 @@ from backend.safety_guard import is_safe
 from backend.dqn_agent import ACTIONS as DQN_ACTIONS, DQNAgent
 from backend.os_system.simulation_engine import SimulationEngine
 from backend.core.causal_engine import CausalEngine
+from backend.core.learning_engine import get_learning_engine
 from backend.self_optimizer import update_optimizer, get_optimizer
 
 from backend.action_history import record as record_action
 from backend.os_system.action_feedback import penalize, is_blocked
 from backend.policy_engine import is_action_allowed
-from backend.core.actions.action_executor import ACTIONS, execute_action
+from backend.core.actions.action_executor import execute_action
 
 # In-process capability granted only after successful approval consumption.
 _PROCESS_TERMINATION_AUTHORITY = object()
+log = logging.getLogger("cvis.action_executor")
 
 
 COOLDOWN_SECONDS = 2
@@ -333,6 +336,17 @@ class ActionExecutor:
             after,
             result,
         )
+        try:
+            get_learning_engine(
+                decision.get("workspace_id", "global")
+            ).record_outcome(
+                action,
+                verification,
+                trusted=True,
+            )
+        except (OSError, RuntimeError, ValueError) as exc:
+            result["learning_persistence_error"] = str(exc)
+            log.error("Failed to persist learning outcome for %s: %s", action, exc)
 
         # ---------------- REWARD ----------------
         reward = self._compute_reward(before, after, result)

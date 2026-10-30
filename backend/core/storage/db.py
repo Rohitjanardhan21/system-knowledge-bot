@@ -52,7 +52,9 @@ CREATE TABLE IF NOT EXISTS alerts (
     sent_to           TEXT,
     lifecycle_version INTEGER NOT NULL DEFAULT 1,
     device_id         TEXT,
-    device_name       TEXT
+    device_name       TEXT,
+    acknowledged_at   REAL,
+    snoozed_until     REAL
 );
 CREATE INDEX IF NOT EXISTS idx_alerts_fired_at ON alerts(fired_at DESC);
 CREATE INDEX IF NOT EXISTS idx_alerts_severity  ON alerts(severity);
@@ -77,6 +79,7 @@ CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts DESC);
 
 CREATE TABLE IF NOT EXISTS metric_snapshots (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_id   TEXT,
     cpu         REAL,
     mem         REAL,
     disk        REAL,
@@ -87,6 +90,22 @@ CREATE TABLE IF NOT EXISTS metric_snapshots (
     ts          REAL    NOT NULL DEFAULT (unixepoch('now', 'subsec'))
 );
 CREATE INDEX IF NOT EXISTS idx_snapshots_ts ON metric_snapshots(ts DESC);
+
+CREATE TABLE IF NOT EXISTS metric_snapshot_hourly (
+    device_id   TEXT NOT NULL DEFAULT '',
+    bucket_ts   INTEGER NOT NULL,
+    samples     INTEGER NOT NULL DEFAULT 0,
+    cpu_avg     REAL NOT NULL DEFAULT 0,
+    mem_avg     REAL NOT NULL DEFAULT 0,
+    disk_avg    REAL NOT NULL DEFAULT 0,
+    net_avg     REAL NOT NULL DEFAULT 0,
+    anomaly_avg REAL NOT NULL DEFAULT 0,
+    health_avg  REAL NOT NULL DEFAULT 0,
+    PRIMARY KEY (device_id, bucket_ts)
+);
+CREATE INDEX IF NOT EXISTS idx_snapshot_hourly_ts
+ON metric_snapshot_hourly(bucket_ts DESC);
+
 CREATE TABLE IF NOT EXISTS incidents (
     incident_id      TEXT PRIMARY KEY,
     device_id        TEXT,
@@ -221,7 +240,37 @@ async def get_db():
                 )
                 log.info("Added alerts.device_name column")
 
+            if "acknowledged_at" not in columns:
+                await _conn.execute(
+                    "ALTER TABLE alerts ADD COLUMN acknowledged_at REAL"
+                )
+                log.info("Added alerts.acknowledged_at column")
+
+            if "snoozed_until" not in columns:
+                await _conn.execute(
+                    "ALTER TABLE alerts ADD COLUMN snoozed_until REAL"
+                )
+                log.info("Added alerts.snoozed_until column")
+
+            await _conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS alert_process_suppressions (
+                    process_name TEXT PRIMARY KEY,
+                    suppressed_until REAL NOT NULL
+                )
+                """
+            )
+
             await _conn.commit()
+
+            async with _conn.execute("PRAGMA table_info(metric_snapshots)") as cur:
+                snapshot_columns = {row["name"] for row in await cur.fetchall()}
+            if "device_id" not in snapshot_columns:
+                await _conn.execute(
+                    "ALTER TABLE metric_snapshots ADD COLUMN device_id TEXT"
+                )
+                log.info("Added metric_snapshots.device_id column")
+                await _conn.commit()
 
             await _conn.execute("PRAGMA journal_mode=WAL")
             await _conn.execute("PRAGMA synchronous=NORMAL")
@@ -284,9 +333,11 @@ async def save_alert(alert) -> bool:
                 sent_to,
                 lifecycle_version,
                 device_id,
-                device_name
+                device_name,
+                acknowledged_at,
+                snoozed_until
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 alert.alert_id,
@@ -300,6 +351,8 @@ async def save_alert(alert) -> bool:
                 2,
                 getattr(alert, "device_id", None),
                 getattr(alert, "device_name", None),
+                getattr(alert, "acknowledged_at", None),
+                getattr(alert, "snoozed_until", None),
             ),
         )
 
@@ -323,6 +376,112 @@ async def save_alert(alert) -> bool:
     except Exception as e:
         log.error("save_alert: %s", e)
         return False
+
+
+async def acknowledge_alert(alert_id: str, acknowledged_at: float) -> bool:
+    db = await get_db()
+    if not db:
+        return False
+    try:
+        cursor = await db.execute(
+            "UPDATE alerts SET acknowledged_at = ? WHERE id = ?",
+            (acknowledged_at, alert_id),
+        )
+        await db.commit()
+        return cursor.rowcount > 0
+    except Exception as e:
+        log.error("acknowledge_alert: %s", e)
+        return False
+
+
+async def snooze_alert(alert_id: str, snoozed_until: float) -> bool:
+    db = await get_db()
+    if not db:
+        return False
+    try:
+        cursor = await db.execute(
+            "UPDATE alerts SET snoozed_until = ? WHERE id = ?",
+            (snoozed_until, alert_id),
+        )
+        await db.commit()
+        return cursor.rowcount > 0
+    except Exception as e:
+        log.error("snooze_alert: %s", e)
+        return False
+
+
+async def unsnooze_alert(alert_id: str) -> bool:
+    db = await get_db()
+    if not db:
+        return False
+    try:
+        cursor = await db.execute(
+            "UPDATE alerts SET snoozed_until = NULL WHERE id = ?",
+            (alert_id,),
+        )
+        await db.commit()
+        return cursor.rowcount > 0
+    except Exception as e:
+        log.error("unsnooze_alert: %s", e)
+        return False
+
+
+async def save_process_suppression(process_name: str, suppressed_until: float) -> bool:
+    db = await get_db()
+    if not db:
+        return False
+    try:
+        await db.execute(
+            """
+            INSERT INTO alert_process_suppressions (process_name, suppressed_until)
+            VALUES (?, ?)
+            ON CONFLICT(process_name) DO UPDATE SET suppressed_until = excluded.suppressed_until
+            """,
+            (process_name, suppressed_until),
+        )
+        await db.commit()
+        return True
+    except Exception as e:
+        log.error("save_process_suppression: %s", e)
+        return False
+
+
+async def remove_process_suppression(process_name: str) -> bool:
+    db = await get_db()
+    if not db:
+        return False
+    try:
+        cursor = await db.execute(
+            "DELETE FROM alert_process_suppressions WHERE process_name = ?",
+            (process_name,),
+        )
+        await db.commit()
+        return cursor.rowcount > 0
+    except Exception as e:
+        log.error("remove_process_suppression: %s", e)
+        return False
+
+
+async def load_process_suppressions(now: float) -> dict[str, float]:
+    db = await get_db()
+    if not db:
+        return {}
+    try:
+        await db.execute(
+            "DELETE FROM alert_process_suppressions WHERE suppressed_until <= ?",
+            (now,),
+        )
+        await db.commit()
+        async with db.execute(
+            "SELECT process_name, suppressed_until FROM alert_process_suppressions"
+        ) as cur:
+            return {
+                row["process_name"]: float(row["suppressed_until"])
+                for row in await cur.fetchall()
+            }
+    except Exception as e:
+        log.error("load_process_suppressions: %s", e)
+        return {}
 
 
 
@@ -387,16 +546,29 @@ async def load_active_alerts() -> list[dict]:
         return []
 
 
-async def load_alerts(limit: int = 200, severity: str = None) -> list[dict]:
+async def load_alerts(
+    limit: int = 200,
+    severity: str = None,
+    device_ids: set[str] | None = None,
+) -> list[dict]:
     db = await get_db()
     if not db:
+        return []
+    if device_ids is not None and not device_ids:
         return []
     try:
         q = "SELECT * FROM alerts"
         params = []
+        filters = []
         if severity:
-            q += " WHERE severity = ?"
+            filters.append("severity = ?")
             params.append(severity)
+        if device_ids is not None:
+            placeholders = ",".join("?" for _ in device_ids)
+            filters.append(f"device_id IN ({placeholders})")
+            params.extend(sorted(device_ids))
+        if filters:
+            q += " WHERE " + " AND ".join(filters)
         q += f" ORDER BY fired_at DESC LIMIT {int(limit)}"
         async with db.execute(q, params) as cur:
             rows = await cur.fetchall()
@@ -492,38 +664,131 @@ async def load_events(limit: int = 60) -> list[dict]:
 #  METRIC SNAPSHOTS
 # ─────────────────────────────────────────────────────────
 _last_snapshot_ts = 0.0
+_last_device_snapshot_ts: dict[str, float] = {}
 _startup_ts = __import__("time").time()
 STARTUP_GRACE_S = 300
+DEFAULT_SNAPSHOT_RETENTION_DAYS = 30
 
-async def maybe_save_snapshot(metrics: dict, interval_s: int = 10) -> bool:
+
+def snapshot_retention_days() -> int:
+    """Return the bounded raw telemetry retention configured for this host."""
+    raw_days = os.environ.get(
+        "METRIC_SNAPSHOT_RETENTION_DAYS",
+        str(DEFAULT_SNAPSHOT_RETENTION_DAYS),
+    )
+    try:
+        days = int(raw_days)
+    except ValueError:
+        log.warning(
+            "Invalid METRIC_SNAPSHOT_RETENTION_DAYS=%r; using default %d",
+            raw_days,
+            DEFAULT_SNAPSHOT_RETENTION_DAYS,
+        )
+        days = DEFAULT_SNAPSHOT_RETENTION_DAYS
+    return max(1, min(days, 3650))
+
+async def maybe_save_snapshot(
+    metrics: dict,
+    interval_s: int = 10,
+    device_id: str | None = None,
+) -> bool:
     global _last_snapshot_ts
     now = time.time()
-    if now - _startup_ts < STARTUP_GRACE_S:
+    if device_id is None and now - _startup_ts < STARTUP_GRACE_S:
         return False
-    if now - _last_snapshot_ts < interval_s:
+    last_snapshot_ts = (
+        _last_snapshot_ts
+        if device_id is None
+        else _last_device_snapshot_ts.get(device_id, 0.0)
+    )
+    if now - last_snapshot_ts < interval_s:
         return False
-    _last_snapshot_ts = now
+    if device_id is None:
+        _last_snapshot_ts = now
+    else:
+        _last_device_snapshot_ts[device_id] = now
     db = await get_db()
     if not db:
         return False
     try:
+        numeric_metrics = {
+            "cpu": float(metrics.get("cpu_percent", 0) or 0),
+            "mem": float(metrics.get("memory", 0) or 0),
+            "disk": float(metrics.get("disk_percent", 0) or 0),
+            "net": float(metrics.get("network_percent", 0) or 0),
+            "anomaly": float(metrics.get("anomaly_score", 0) or 0),
+            "health": float(metrics.get("health_score", 100) or 100),
+        }
         await db.execute(
-            "INSERT INTO metric_snapshots (cpu,mem,disk,net,anomaly,health,ensemble,ts) "
-            "VALUES (?,?,?,?,?,?,?,?)",
+            "INSERT INTO metric_snapshots "
+            "(device_id,cpu,mem,disk,net,anomaly,health,ensemble,ts) "
+            "VALUES (?,?,?,?,?,?,?,?,?)",
             (
-                metrics.get("cpu_percent",    0),
-                metrics.get("memory",         0),
-                metrics.get("disk_percent",   0),
-                metrics.get("network_percent",0),
-                metrics.get("anomaly_score",  0),
-                metrics.get("health_score",   100),
-                metrics.get("anomaly_score",  0),
+                device_id,
+                numeric_metrics["cpu"],
+                numeric_metrics["mem"],
+                numeric_metrics["disk"],
+                numeric_metrics["net"],
+                numeric_metrics["anomaly"],
+                numeric_metrics["health"],
+                numeric_metrics["anomaly"],
                 now,
             )
         )
         await db.commit()
+        bucket_ts = int(now // 3600) * 3600
+        rollup_device_id = device_id or ""
         await db.execute(
-            "DELETE FROM metric_snapshots WHERE ts < ?", (now - 86400,)
+            """
+            INSERT INTO metric_snapshot_hourly (
+                device_id, bucket_ts, samples, cpu_avg, mem_avg,
+                disk_avg, net_avg, anomaly_avg, health_avg
+            ) VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(device_id, bucket_ts) DO UPDATE SET
+                cpu_avg = (
+                    metric_snapshot_hourly.cpu_avg
+                    * metric_snapshot_hourly.samples + excluded.cpu_avg
+                ) / (metric_snapshot_hourly.samples + 1),
+                mem_avg = (
+                    metric_snapshot_hourly.mem_avg
+                    * metric_snapshot_hourly.samples + excluded.mem_avg
+                ) / (metric_snapshot_hourly.samples + 1),
+                disk_avg = (
+                    metric_snapshot_hourly.disk_avg
+                    * metric_snapshot_hourly.samples + excluded.disk_avg
+                ) / (metric_snapshot_hourly.samples + 1),
+                net_avg = (
+                    metric_snapshot_hourly.net_avg
+                    * metric_snapshot_hourly.samples + excluded.net_avg
+                ) / (metric_snapshot_hourly.samples + 1),
+                anomaly_avg = (
+                    metric_snapshot_hourly.anomaly_avg
+                    * metric_snapshot_hourly.samples + excluded.anomaly_avg
+                ) / (metric_snapshot_hourly.samples + 1),
+                health_avg = (
+                    metric_snapshot_hourly.health_avg
+                    * metric_snapshot_hourly.samples + excluded.health_avg
+                ) / (metric_snapshot_hourly.samples + 1),
+                samples = metric_snapshot_hourly.samples + 1
+            """,
+            (
+                rollup_device_id,
+                bucket_ts,
+                numeric_metrics["cpu"],
+                numeric_metrics["mem"],
+                numeric_metrics["disk"],
+                numeric_metrics["net"],
+                numeric_metrics["anomaly"],
+                numeric_metrics["health"],
+            ),
+        )
+        await db.execute(
+            "DELETE FROM metric_snapshots WHERE ts < ?",
+            (now - snapshot_retention_days() * 86400,),
+        )
+        await db.execute(
+            "DELETE FROM metric_snapshot_hourly WHERE bucket_ts < ?",
+            (now - snapshot_retention_days() * 86400,),
         )
         await db.commit()
         return True
@@ -531,17 +796,65 @@ async def maybe_save_snapshot(metrics: dict, interval_s: int = 10) -> bool:
         log.error("save_snapshot: %s", e)
         return False
 
-async def load_snapshots(hours: float = 1.0) -> list[dict]:
+async def load_snapshots(
+    hours: float = 1.0,
+    device_ids: set[str] | None = None,
+) -> list[dict]:
     db = await get_db()
     if not db:
         return []
+    if device_ids is not None and not device_ids:
+        return []
     try:
         since = time.time() - hours * 3600
-        async with db.execute(
-            "SELECT * FROM metric_snapshots WHERE ts > ? ORDER BY ts ASC", (since,)
-        ) as cur:
+        query = "SELECT * FROM metric_snapshots WHERE ts > ?"
+        params: list[object] = [since]
+        if device_ids is not None:
+            placeholders = ",".join("?" for _ in device_ids)
+            query += f" AND device_id IN ({placeholders})"
+            params.extend(sorted(device_ids))
+        query += " ORDER BY ts ASC"
+        async with db.execute(query, params) as cur:
             return [dict(r) for r in await cur.fetchall()]
     except Exception:
+        return []
+
+
+async def load_snapshot_rollups(
+    hours: float = 24.0,
+    device_ids: set[str] | None = None,
+) -> list[dict]:
+    db = await get_db()
+    if not db:
+        return []
+    if device_ids is not None and not device_ids:
+        return []
+    try:
+        since = int(time.time() - hours * 3600)
+        query = """
+            SELECT
+                NULLIF(device_id, '') AS device_id,
+                bucket_ts,
+                samples,
+                cpu_avg,
+                mem_avg,
+                disk_avg,
+                net_avg,
+                anomaly_avg,
+                health_avg
+            FROM metric_snapshot_hourly
+            WHERE bucket_ts > ?
+        """
+        params: list[object] = [since]
+        if device_ids is not None:
+            placeholders = ",".join("?" for _ in device_ids)
+            query += f" AND device_id IN ({placeholders})"
+            params.extend(sorted(device_ids))
+        query += " ORDER BY bucket_ts ASC"
+        async with db.execute(query, params) as cur:
+            return [dict(r) for r in await cur.fetchall()]
+    except Exception as e:
+        log.error("load_snapshot_rollups: %s", e)
         return []
 
 # ─────────────────────────────────────────────────────────
@@ -671,6 +984,62 @@ async def load_incidents(limit: int = 100) -> list[dict]:
     except Exception as e:
         log.error("load_incidents: %s", e)
         return []
+
+
+async def load_prediction_accuracy() -> dict:
+    db = await get_db()
+    if not db:
+        return {
+            "available": False,
+            "resolved_predictions": 0,
+            "active_predictions": 0,
+        }
+    try:
+        async with db.execute(
+            """
+            SELECT
+                COUNT(*) AS resolved_predictions,
+                COALESCE(SUM(CASE WHEN outcome = 'correct' THEN 1 ELSE 0 END), 0)
+                    AS correct_predictions,
+                COALESCE(SUM(CASE WHEN outcome = 'incorrect' THEN 1 ELSE 0 END), 0)
+                    AS incorrect_predictions,
+                COALESCE(SUM(false_positive), 0) AS false_positives,
+                COALESCE(SUM(false_negative), 0) AS false_negatives,
+                AVG(lead_time_seconds) AS average_lead_time_seconds
+            FROM prediction_outcomes
+            """
+        ) as cur:
+            outcomes = dict(await cur.fetchone())
+        async with db.execute(
+            "SELECT COUNT(*) AS active_predictions "
+            "FROM predictions WHERE status = 'active'"
+        ) as cur:
+            active_predictions = int((await cur.fetchone())["active_predictions"])
+
+        resolved = int(outcomes["resolved_predictions"] or 0)
+        correct = int(outcomes["correct_predictions"] or 0)
+        return {
+            "available": True,
+            "resolved_predictions": resolved,
+            "active_predictions": active_predictions,
+            "correct_predictions": correct,
+            "incorrect_predictions": int(outcomes["incorrect_predictions"] or 0),
+            "false_positives": int(outcomes["false_positives"] or 0),
+            "false_negatives": int(outcomes["false_negatives"] or 0),
+            "accuracy": round(correct / resolved, 4) if resolved else None,
+            "average_lead_time_seconds": (
+                round(float(outcomes["average_lead_time_seconds"]), 1)
+                if outcomes["average_lead_time_seconds"] is not None
+                else None
+            ),
+        }
+    except Exception as e:
+        log.error("load_prediction_accuracy: %s", e)
+        return {
+            "available": False,
+            "resolved_predictions": 0,
+            "active_predictions": 0,
+        }
 
 # ─────────────────────────────────────────────────────────
 #  DB info — never raises, always returns a dict

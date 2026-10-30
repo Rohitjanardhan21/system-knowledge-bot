@@ -2,9 +2,9 @@
 # 🧠 DECISION ENGINE (ZERO-HALLUCINATION + PRODUCTION SAFE)
 # ---------------------------------------------------------
 
-from backend.core.learning_engine import LearningEngine
+from backend.core.learning_engine import get_learning_engine
 
-engine = LearningEngine()
+engine = get_learning_engine()
 
 
 # ---------------------------------------------------------
@@ -63,7 +63,8 @@ def compute_decision(
     anomalies,
     causal,
     multimodal=None,
-    temporal=None
+    temporal=None,
+    workspace_id="global",
 ):
 
     # -----------------------------------------------------
@@ -158,8 +159,13 @@ def compute_decision(
     # -----------------------------------------------------
     # 🔥 LEARNING INFLUENCE
     # -----------------------------------------------------
-    action_weight = engine.get_action_weight(action)
-    learning_factor = 0.15 * action_weight
+    learning_engine = (
+        engine
+        if workspace_id == "global"
+        else get_learning_engine(workspace_id)
+    )
+    action_weight = learning_engine.get_action_weight(action)
+    learning_factor = action_weight
 
     # -----------------------------------------------------
     # TIME WINDOW
@@ -189,6 +195,10 @@ def compute_decision(
         stability,
         data_points
     )
+    confidence = max(
+        0.1,
+        min(0.95, confidence + (action_weight - 0.5) * 0.1),
+    )
 
     # -----------------------------------------------------
     # 🔥 SAFETY GATE (REAL-WORLD)
@@ -199,6 +209,8 @@ def compute_decision(
         requires_human = True
 
     if cause_type in ["mechanical_fault", "power_instability"]:
+        requires_human = True
+    if action_weight < 0.35:
         requires_human = True
 
     # -----------------------------------------------------
@@ -250,6 +262,7 @@ def compute_decision(
         "meta": {
             "weights": weights,
             "learning_factor": round(learning_factor, 3),
+            "learning_stats": learning_engine.get_action_stats(action),
             "data_points": data_points
         }
     }

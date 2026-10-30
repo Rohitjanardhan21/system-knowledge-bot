@@ -158,7 +158,11 @@ class TokenPair:
         self.expires_in = expires_in
 
 
-def _issue_access_token(subject: str, scope: str) -> str:
+def _issue_access_token(
+    subject: str,
+    scope: str,
+    workspace_id: str | None = None,
+) -> str:
     if not JWT_OK:
         raise HTTPException(501, "JWT not available — use API key")
     now = datetime.now(timezone.utc)
@@ -170,10 +174,16 @@ def _issue_access_token(subject: str, scope: str) -> str:
         "jti": uuid.uuid4().hex,
         "type": "access",
     }
+    if workspace_id:
+        payload["workspace_id"] = workspace_id
     return _jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 
-def _issue_refresh_token(subject: str, scope: str) -> str:
+def _issue_refresh_token(
+    subject: str,
+    scope: str,
+    workspace_id: str | None = None,
+) -> str:
     if not JWT_OK:
         raise HTTPException(501, "JWT not available")
     now = datetime.now(timezone.utc)
@@ -185,13 +195,19 @@ def _issue_refresh_token(subject: str, scope: str) -> str:
         "jti": uuid.uuid4().hex,
         "type": "refresh",
     }
+    if workspace_id:
+        payload["workspace_id"] = workspace_id
     return _jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 
-def issue_token_pair(subject: str, scope: str = "read") -> TokenPair:
+def issue_token_pair(
+    subject: str,
+    scope: str = "read",
+    workspace_id: str | None = None,
+) -> TokenPair:
     return TokenPair(
-        access=_issue_access_token(subject, scope),
-        refresh=_issue_refresh_token(subject, scope),
+        access=_issue_access_token(subject, scope, workspace_id),
+        refresh=_issue_refresh_token(subject, scope, workspace_id),
         expires_in=ACCESS_TTL_S,
     )
 
@@ -497,7 +513,15 @@ async def refresh_access_token(refresh_token: str) -> TokenPair:
 
     # SET NX is a single-use check-and-consume, including concurrent requests.
     await _consume_refresh_jti(payload.get("jti"), int(expires_at))
-    return issue_token_pair(subject, payload.get("scope", "read"))
+    workspace_id = payload.get("workspace_id")
+    if workspace_id is not None and (
+        not isinstance(workspace_id, str) or not workspace_id
+    ):
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED,
+            "Refresh token has an invalid workspace",
+        )
+    return issue_token_pair(subject, payload.get("scope", "read"), workspace_id)
 
 
 # ─────────────────────────────────────────────────────────

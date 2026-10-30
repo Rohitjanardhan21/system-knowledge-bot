@@ -87,6 +87,10 @@ The desktop app requires a local Redis service at `localhost:6379`; Redis is
 not bundled. Some dashboard features depend on Redis-backed services; start
 Redis for the full monitoring experience.
 
+Raw metric snapshots are retained for 30 days by default. Set
+`METRIC_SNAPSHOT_RETENTION_DAYS` in `.env` to change this (from 1 to 3650
+days); longer retention increases the persistent database size.
+
 ### Hosted personal accounts
 
 Hosted CVIS supports optional personal accounts with required email
@@ -214,6 +218,10 @@ NEW=$(curl -s -X POST http://localhost:8000/auth/refresh \
 | `admin` | POST/DELETE /models/*, /alerts/rules, /auth/api-keys | Operators |
 | *(public)* | GET /health, GET /metrics | Load balancers, Prometheus |
 
+Hosted personal-account JWTs also carry the account's `workspace_id`; use
+`GET /auth/me` to discover the current workspace before workspace-scoped
+features are enabled.
+
 ```bash
 # Create a read-only key for your monitoring service
 curl -X POST -H "X-API-Key: $Synapse_API_KEY" http://localhost:8000/auth/api-keys \
@@ -332,7 +340,7 @@ cvis_alerts_rules_active   cvis_model_versions_total cvis_disk_percent
 ## Backup & restore
 
 ```bash
-# Create a snapshot (model weights + Redis + .env digest)
+# Create a snapshot (model weights + application data + Redis + .env digest)
 bash scripts/backup.sh backup
 
 # List snapshots
@@ -350,6 +358,11 @@ bash scripts/backup.sh cron-install
 # Optional S3 offsite
 BACKUP_S3_BUCKET=s3://mybucket/cvis bash scripts/backup.sh backup
 ```
+
+`backup.sh` reads the named Docker volumes from the backend and Redis
+containers, so run it while the Compose stack is available. The deployment
+update command creates a snapshot before rebuilding; if its smoke tests fail,
+it resets the checkout and rebuilds the previous version automatically.
 
 ---
 

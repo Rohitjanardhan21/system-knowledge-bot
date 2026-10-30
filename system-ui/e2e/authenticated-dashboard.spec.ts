@@ -46,4 +46,9 @@ test("login loads authenticated telemetry and alerts", async ({ page }) => {
   expect(alerts?.status()).toBe(200);
   await expect(page.getByText("Authentication required")).toHaveCount(0);
   expect(pageErrors).toEqual([]);
+
+  await expect(page.getByRole("button", { name: "Log out" })).toBeVisible();
+  await page.getByRole("button", { name: "Log out" }).click();
+  await expect(page.getByRole("heading", { name: "CVIS System UI" })).toBeVisible();
+  await expect(page.getByLabel("Password")).toBeVisible();
 });

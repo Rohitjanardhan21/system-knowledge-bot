@@ -20,6 +20,7 @@ die()  { echo -e "${RED}  ✗  FATAL:${NC} $*"; exit 1; }
 BACKUP_DIR="${BACKUP_DIR:-./backups}"
 S3_BUCKET="${BACKUP_S3_BUCKET:-}"
 RETAIN_DAYS="${BACKUP_RETAIN_DAYS:-30}"
+PYTHON_BIN="${PYTHON_BIN:-$(command -v python3 || command -v python || true)}"
 TS=$(date -u +%Y%m%dT%H%M%S)
 mkdir -p "$BACKUP_DIR"
 
@@ -27,12 +28,25 @@ cmd_backup() {
     SNAP_DIR="$BACKUP_DIR/$TS"; mkdir -p "$SNAP_DIR"
     info "Creating snapshot: $TS"
 
-    # 1. Model versions (JSON registry + weight files)
-    if ls model_versions/*.json &>/dev/null 2>&1; then
+    BACKEND_C=$(docker compose ps -q backend 2>/dev/null | head -1)
+
+    # 1. Model versions and application data from the Docker volumes.
+    if [[ -n "$BACKEND_C" ]] && docker cp "$BACKEND_C:/app/model_versions" "$SNAP_DIR/model_versions" 2>/dev/null; then
+        tar czf "$SNAP_DIR/model_versions.tar.gz" -C "$SNAP_DIR" model_versions
+        rm -rf "$SNAP_DIR/model_versions"
+        ok "Model versions saved from backend volume"
+    elif [[ -d model_versions ]]; then
         tar czf "$SNAP_DIR/model_versions.tar.gz" model_versions/
-        ok "Model versions: $(ls model_versions/*.json | wc -l) files"
+        ok "Model versions saved from local directory"
     else
         warn "No model versions yet"; touch "$SNAP_DIR/model_versions.EMPTY"
+    fi
+    if [[ -n "$BACKEND_C" ]] && docker cp "$BACKEND_C:/app/data" "$SNAP_DIR/data" 2>/dev/null; then
+        tar czf "$SNAP_DIR/data.tar.gz" -C "$SNAP_DIR" data
+        rm -rf "$SNAP_DIR/data"
+        ok "Application data saved from backend volume"
+    else
+        warn "Application data volume unavailable"
     fi
 
     # 2. Redis BGSAVE + copy dump
@@ -48,7 +62,7 @@ cmd_backup() {
     else warn "Redis not running — skipping"; fi
 
     # 3. Ask backend to flush a model version save
-    API="${CVIS_API_URL:-http://localhost:8000}"
+    API="${CVIS_API_URL:-http://127.0.0.1:8020}"
     API_KEY="${CVIS_API_KEY:-$(grep '^CVIS_API_KEY=' .env 2>/dev/null | cut -d= -f2-)}"
     SAVE_RESP=$(curl -sf -X POST -H "X-API-Key: $API_KEY" \
         -H "Content-Type: application/json" \
@@ -102,20 +116,32 @@ cmd_restore() {
     tar xzf "$ARCHIVE" -C "$TMP"
     SNAP=$(ls -d "$TMP"/*/ | head -1)
 
+    BACKEND_C=$(docker compose ps -q backend 2>/dev/null | head -1)
+    [[ -n "$BACKEND_C" ]] || die "Backend container is unavailable"
+    docker compose stop backend >/dev/null
     [[ -f "$SNAP/model_versions.tar.gz" ]] && {
-        mv model_versions "model_versions.bak.$(date +%s)" 2>/dev/null || true
-        tar xzf "$SNAP/model_versions.tar.gz"; ok "Model versions restored"
+        tar xzf "$SNAP/model_versions.tar.gz" -C "$TMP"
+        docker cp "$TMP/model_versions/." "$BACKEND_C:/app/model_versions/"
+        ok "Model versions restored"
+    }
+    [[ -f "$SNAP/data.tar.gz" ]] && {
+        tar xzf "$SNAP/data.tar.gz" -C "$TMP"
+        docker cp "$TMP/data/." "$BACKEND_C:/app/data/"
+        ok "Application data restored"
     }
     [[ -f "$SNAP/redis.rdb" ]] && {
+        REDIS_C=$(docker compose ps -q redis 2>/dev/null | head -1)
+        [[ -n "$REDIS_C" ]] || die "Redis container is unavailable"
         docker compose stop redis
-        RC=$(docker compose ps -q redis 2>/dev/null | head -1)
-        [[ -n "$RC" ]] && docker cp "$SNAP/redis.rdb" "${RC}:/data/dump.rdb"
+        docker cp "$SNAP/redis.rdb" "${REDIS_C}:/data/dump.rdb"
+        [[ -f "$SNAP/redis.aof" ]] && docker cp "$SNAP/redis.aof" "${REDIS_C}:/data/cvis.aof" || true
         docker compose start redis; ok "Redis restored"
     }
-    docker compose restart backend; sleep 3
+    docker compose start backend; sleep 3
 
     [[ -f "$SNAP/saved_version.json" ]] && {
-        VID=$(python3 -c "import json; print(json.load(open('$SNAP/saved_version.json')).get('version_id',''))" 2>/dev/null)
+        [[ -n "$PYTHON_BIN" ]] || die "Python is required to activate the saved model version"
+        VID=$("$PYTHON_BIN" -c "import json; print(json.load(open('$SNAP/saved_version.json')).get('version_id',''))" 2>/dev/null)
         [[ -n "$VID" ]] && {
             curl -sf -X POST -H "X-API-Key: ${CVIS_API_KEY:-}" \
                 "http://localhost:8000/models/activate/ensemble/$VID" &>/dev/null \
@@ -147,8 +173,13 @@ cmd_verify() {
     TMP=$(mktemp -d); trap "rm -rf $TMP" EXIT
     tar xzf "$ARCHIVE" -C "$TMP"
     SNAP=$(ls -d "$TMP"/*/ | head -1)
-    [[ -f "$SNAP/manifest.json" ]]          && { ok "Manifest OK"; cat "$SNAP/manifest.json" | python3 -m json.tool | sed 's/^/    /'; }
+    [[ -f "$SNAP/manifest.json" ]]          && {
+        [[ -n "$PYTHON_BIN" ]] || die "Python is required to verify the manifest"
+        ok "Manifest OK"
+        cat "$SNAP/manifest.json" | "$PYTHON_BIN" -m json.tool | sed 's/^/    /'
+    }
     [[ -f "$SNAP/model_versions.tar.gz" ]]  && ok "model_versions.tar.gz present" || warn "No model versions"
+    [[ -f "$SNAP/data.tar.gz" ]]             && ok "data.tar.gz present"             || warn "No application data"
     [[ -f "$SNAP/redis.rdb" ]]              && ok "redis.rdb present"             || warn "No Redis dump"
     ok "Verification complete"
 }

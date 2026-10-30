@@ -165,11 +165,11 @@ smoke_test() {
     local fails=0
 
     # Health (public)
-    STATUS=$(curl -sf http://localhost:8000/health 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('status','fail'))" 2>/dev/null || echo "fail")
+    STATUS=$(curl -sf http://localhost:8020/health 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('status','fail'))" 2>/dev/null || echo "fail")
     [[ "$STATUS" == "ok" ]] && ok "/health → ok" || { warn "/health FAILED"; fails=$((fails+1)); }
 
     # Authenticated endpoint
-    ML_STATUS=$(curl -sf -H "X-API-Key: $API_KEY" http://localhost:8000/ml/status 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('backend','fail'))" 2>/dev/null || echo "fail")
+    ML_STATUS=$(curl -sf -H "X-API-Key: $API_KEY" http://localhost:8020/ml/status 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('backend','fail'))" 2>/dev/null || echo "fail")
     [[ "$ML_STATUS" != "fail" ]] && ok "/ml/status → $ML_STATUS" || { warn "/ml/status FAILED (auth?)"; fails=$((fails+1)); }
 
     # nginx on port 80
@@ -181,6 +181,7 @@ smoke_test() {
     else
         warn "$fails smoke test(s) failed — check docker compose logs"
     fi
+    return "$fails"
 }
 
 # ─────────────────────────────────────────────────────────
@@ -195,7 +196,7 @@ print_summary() {
     echo ""
     echo -e "  Frontend : http://${DOMAIN}  (run https-setup.sh for HTTPS)"
     echo -e "  API docs : http://${DOMAIN}/docs"
-    echo -e "  Health   : curl http://localhost:8000/health"
+    echo -e "  Health   : curl http://localhost:8020/health"
     echo -e "  Monitor  : bash scripts/monitor.sh"
     echo ""
     echo -e "  API Key  : ${API_KEY}… (see .env for full key)"
@@ -213,10 +214,19 @@ print_summary() {
 cmd_update() {
     cd "$DEPLOY_DIR"
     info "Updating to version: $VERSION"
+    PREVIOUS_VERSION=$(git rev-parse HEAD)
+    bash scripts/backup.sh backup || die "Pre-deploy backup failed"
     setup_repo
-    docker compose pull backend
-    docker compose up -d --no-deps --wait backend
-    smoke_test
+    docker compose build --pull backend frontend
+    docker compose up -d --no-deps --wait backend frontend
+    if ! smoke_test; then
+        warn "Smoke tests failed — rolling back to $PREVIOUS_VERSION"
+        git reset --hard "$PREVIOUS_VERSION"
+        docker compose build --pull backend frontend
+        docker compose up -d --no-deps --wait backend frontend
+        smoke_test || die "Rollback failed; inspect docker compose logs"
+        die "Update rolled back after failed smoke tests"
+    fi
     ok "Update complete → $VERSION"
 }
 

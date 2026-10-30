@@ -81,6 +81,26 @@ DEFAULT_RULES = [
     AlertRule("r_cpu_warn",  "CPU Warning",      "cpu",      "gt", 75.0, "WARNING",   60),
     AlertRule("r_mem_crit",  "Memory Critical",  "mem",      "gt", 90.0, "CRITICAL", 120),
     AlertRule("r_mem_warn",  "Memory Warning",   "mem",      "gt", 75.0, "WARNING",   60),
+    AlertRule(
+        "r_mem_forecast_crit",
+        "Memory Forecast Critical",
+        "mem_forecast",
+        "gte",
+        2.0,
+        "CRITICAL",
+        300,
+        message_tpl="Memory pressure forecast is critical (process: {process})",
+    ),
+    AlertRule(
+        "r_mem_forecast_warn",
+        "Memory Forecast Warning",
+        "mem_forecast",
+        "gte",
+        1.0,
+        "WARNING",
+        300,
+        message_tpl="Memory pressure is rising (process: {process})",
+    ),
     AlertRule("r_disk_crit", "Disk Critical",    "disk",     "gt", 85.0, "CRITICAL",  90),
     AlertRule("r_ano_crit",  "Anomaly Critical", "ensemble", "gt",  0.8, "CRITICAL",  90),
     AlertRule("r_ano_warn",  "Anomaly Warning",  "ensemble", "gt",  0.5, "WARNING",   30),
@@ -111,6 +131,8 @@ class AlertEngine:
         # One email per severity level per cooldown window
         self._email_cooldowns: dict[str, float] = {}
         self._email_cooldown_s = int(os.environ.get("ALERT_EMAIL_COOLDOWN_S", "300"))  # 5 min default
+        self._suppressed_processes: dict[str, float] = {}
+        self._snoozed_alerts: dict[str, float] = {}
 
     # ── Evaluation ───────────────────────────────────────
 
@@ -118,6 +140,7 @@ class AlertEngine:
         metric_map = {
             "cpu":      metrics.get("cpu_percent",    0),
             "mem":      metrics.get("memory",         0),
+            "mem_forecast": metrics.get("memory_forecast_level", 0),
             "disk":     metrics.get("disk_percent",   0),
             "net":      metrics.get("network_percent", 0),
             "health":   metrics.get("health_score",  100),
@@ -142,6 +165,14 @@ class AlertEngine:
                 rule.operator,
                 rule.threshold,
             )
+            process_name = metrics.get("memory_forecast_process")
+            if (
+                condition_met
+                and rule.rule_id.startswith("r_mem_forecast")
+                and isinstance(process_name, str)
+                and self.is_process_suppressed(process_name)
+            ):
+                condition_met = False
 
             active = self._active_alerts.get(rule.rule_id)
 
@@ -176,6 +207,7 @@ class AlertEngine:
                 metric=rule.metric,
                 value=value,
                 threshold=rule.threshold,
+                process=metrics.get("memory_forecast_process", "unknown"),
             )
 
             alert = FiredAlert(
@@ -263,6 +295,7 @@ class AlertEngine:
                 metric=rule.metric,
                 value=value,
                 threshold=rule.threshold,
+                process=metrics.get("memory_forecast_process", "unknown"),
             )
 
             alert = FiredAlert(
@@ -339,9 +372,36 @@ class AlertEngine:
             "lte": value <= threshold,
         }.get(op, False)
 
+    def set_process_suppression(self, process_name: str, suppressed_until: float) -> None:
+        self._suppressed_processes[process_name] = suppressed_until
+
+    def remove_process_suppression(self, process_name: str) -> None:
+        self._suppressed_processes.pop(process_name, None)
+
+    def snooze_alert_notifications(self, alert_id: str, snoozed_until: float) -> None:
+        self._snoozed_alerts[alert_id] = snoozed_until
+
+    def unsnooze_alert_notifications(self, alert_id: str) -> None:
+        self._snoozed_alerts.pop(alert_id, None)
+
+    def restore_process_suppressions(self, suppressions: dict[str, float]) -> None:
+        self._suppressed_processes = dict(suppressions)
+
+    def is_process_suppressed(self, process_name: str) -> bool:
+        suppressed_until = self._suppressed_processes.get(process_name, 0)
+        if suppressed_until <= time.time():
+            self._suppressed_processes.pop(process_name, None)
+            return False
+        return True
+
     # ── Dispatch ─────────────────────────────────────────
 
     async def _dispatch(self, alert: FiredAlert):
+        snoozed_until = self._snoozed_alerts.get(alert.alert_id, 0)
+        if snoozed_until > time.time():
+            return
+        self._snoozed_alerts.pop(alert.alert_id, None)
+
         tasks = []
 
         # Webhooks

@@ -270,7 +270,15 @@ async def _pg_authenticate_personal_user(email: str, password: str) -> dict | No
     connection = await _pg_connect()
     try:
         user = await connection.fetchrow(
-            "SELECT user_id,email,password_hash,email_verified_at FROM personal_users WHERE email=$1", email)
+            """
+            SELECT u.user_id, u.email, u.password_hash, u.email_verified_at,
+                   w.workspace_id
+            FROM personal_users AS u
+            JOIN personal_workspaces AS w ON w.owner_user_id = u.user_id
+            WHERE u.email = $1
+            """,
+            email,
+        )
     finally:
         await connection.close()
     if user is None:
@@ -280,7 +288,11 @@ async def _pg_authenticate_personal_user(email: str, password: str) -> dict | No
         return None
     if user["email_verified_at"] is None:
         raise PermissionError("Verify your email before signing in.")
-    return {"user_id": user["user_id"], "email": user["email"]}
+    return {
+        "user_id": user["user_id"],
+        "email": user["email"],
+        "workspace_id": user["workspace_id"],
+    }
 
 
 async def _pg_verify_email_token(token: str) -> None:
@@ -650,9 +662,11 @@ async def authenticate_personal_user(email: str, password: str) -> dict | None:
     try:
         async with connection.execute(
             """
-            SELECT user_id, email, password_hash, email_verified_at
-            FROM personal_users
-            WHERE email = ?
+            SELECT u.user_id, u.email, u.password_hash, u.email_verified_at,
+                   w.workspace_id
+            FROM personal_users AS u
+            JOIN personal_workspaces AS w ON w.owner_user_id = u.user_id
+            WHERE u.email = ?
             """,
             (normalized_email,),
         ) as cursor:
@@ -670,7 +684,11 @@ async def authenticate_personal_user(email: str, password: str) -> dict | None:
         return None
     if user["email_verified_at"] is None:
         raise PermissionError("Verify your email before signing in.")
-    return {"user_id": user["user_id"], "email": user["email"]}
+    return {
+        "user_id": user["user_id"],
+        "email": user["email"],
+        "workspace_id": user["workspace_id"],
+    }
 
 
 async def verify_email_token(token: str) -> None:

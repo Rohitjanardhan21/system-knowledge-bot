@@ -41,6 +41,7 @@ test("desktop webview opens dashboard with its local API key and no account logi
       "/cognitive/predictions",
       "/cognitive/incidents",
       "/cognitive/notifications",
+      "/alerts/process-suppressions",
     ]);
 
     const body =

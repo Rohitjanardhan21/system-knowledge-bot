@@ -1,5 +1,5 @@
-import { useEffect, useState, useRef, useCallback, type CSSProperties, type ReactNode } from "react";
-import { api, fetchDesktopSettings, fetchCognitivePredictions, acknowledgeCognitivePrediction, resolveCognitivePrediction, quitDesktopApp, type CognitivePrediction } from "../services/api";
+import { useEffect, useState, useRef, useCallback, useMemo, type CSSProperties, type ReactNode } from "react";
+import { api, fetchDesktopSettings, fetchCognitivePredictions, fetchPredictionAccuracy, fetchCognitiveIncidents, fetchAlertProcessSuppressions, acknowledgeCognitivePrediction, resolveCognitivePrediction, acknowledgeAlert as acknowledgeHostedAlert, snoozeAlert as snoozeHostedAlert, unsnoozeAlert as unsnoozeHostedAlert, suppressAlertProcess, unsuppressAlertProcess, quitDesktopApp, type CognitivePrediction, type PredictionAccuracy, type CognitiveIncident } from "../services/api";
 import ErrorLogAnalyzer from "../components/ErrorLogAnalyzer";
 import DesktopSettings from "../components/DesktopSettings";
 import {
@@ -775,7 +775,7 @@ const AIChat = () => {
 
       {/* Quick actions */}
       <div style={{ padding: "8px 16px", borderTop: `1px solid ${T.border}`, display: "flex", gap: "6px", flexWrap: "wrap" }}>
-        {["status", "anomaly", "predict", "recommend"].map(cmd => (
+        {["status", "why memory", "explain alerts", "what changed", "recommend"].map(cmd => (
           <button
             key={cmd}
             onClick={() => { setInput(cmd); }}
@@ -831,43 +831,177 @@ const AIChat = () => {
 
 /* ── EVENT LOG ────────────────────────────────────────────── */
 interface SystemEvent {
+  id?: string;
+  rule_id?: string;
   type?: string;
   event?: string;
   message?: string;
   severity?: string;
   timestamp?: string | number;
   time?: string | number;
+  fired_at?: number;
+  resolved_at?: number | null;
+  acknowledged_at?: number | null;
+  snoozed_until?: number | null;
+  metrics?: Record<string, unknown>;
+  sent_to?: string[];
   [key: string]: unknown;
+}
+
+interface AlertSuppression {
+  process_name: string;
+  suppressed_until: number;
 }
 
 interface EventLogProps {
   events?: SystemEvent[];
+  selectedId?: string;
+  onSelect?: (event: SystemEvent) => void;
 }
 
-const EventLog = ({ events }: EventLogProps) => {
+const EventLog = ({ events, selectedId, onSelect }: EventLogProps) => {
   const items = events ?? [];
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "7px" }}>
       {items.slice(0, 7).map((e, i) => {
         const color = e.severity === "CRITICAL" ? T.danger : e.severity === "HIGH" ? T.warning : e.severity === "MEDIUM" ? T.accent : T.textDim;
-        return (
-          <div key={i} style={{
+        const content = (
+          <>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "3px" }}>
+              <span style={{ fontWeight: 700, color, fontSize: "10px" }}>{e.severity}</span>
+              <span style={{ fontSize: "9px", color: T.textDim }}>{e.timestamp || "NOW"}</span>
+            </div>
+            <div style={{ color: T.textMuted, fontSize: "10px" }}>{e.message}</div>
+          </>
+        );
+        const style = {
             padding: "9px 12px", borderRadius: "4px",
             background: "rgba(0,0,0,0.25)",
             borderLeft: `2px solid ${color}`,
             fontSize: "11px", color: T.text,
             fontFamily: "'Share Tech Mono', monospace",
             animation: `slideIn ${0.3 + i * 0.08}s ease-out`,
-          }}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "3px" }}>
-              <span style={{ fontWeight: 700, color, fontSize: "10px" }}>{e.severity}</span>
-              <span style={{ fontSize: "9px", color: T.textDim }}>{e.timestamp || "NOW"}</span>
-            </div>
-            <div style={{ color: T.textMuted, fontSize: "10px" }}>{e.message}</div>
-          </div>
+            outline: selectedId && selectedId === e.id ? `1px solid ${T.accent}` : "none",
+          };
+        return onSelect ? (
+          <button key={i} type="button" onClick={() => onSelect(e)} style={{ ...style, width: "100%", textAlign: "left", cursor: "pointer", borderTop: "none", borderRight: "none", borderBottom: "none" }}>
+            {content}
+          </button>
+        ) : (
+          <div key={i} style={style}>{content}</div>
         );
       })}
+    </div>
+  );
+};
+
+function alertRecommendation(event: SystemEvent): string {
+  if (event.rule_id?.includes("mem_forecast")) {
+    return "Review the suspected process and close or restart it only after confirming it is safe to do so.";
+  }
+  if (event.rule_id?.includes("mem")) {
+    return "Check the largest memory consumers and close unnecessary applications.";
+  }
+  if (event.rule_id?.includes("cpu")) {
+    return "Check sustained CPU consumers and verify whether a workload or process is expected.";
+  }
+  if (event.rule_id?.includes("disk")) {
+    return "Review disk usage and remove or archive files only after checking retention requirements.";
+  }
+  return "Review the evidence and confirm whether this condition is expected before taking action.";
+}
+
+interface AlertDetailsProps {
+  event: SystemEvent;
+  acknowledged: boolean;
+  snoozedUntil?: number;
+  suppressedProcess?: string;
+  onAcknowledge: () => void | Promise<void>;
+  onSnooze: () => void | Promise<void>;
+  onUnsnooze: () => void | Promise<void>;
+  onSuppressProcess: () => void | Promise<void>;
+  onUnsuppressProcess: () => void | Promise<void>;
+  controlError?: string | null;
+}
+
+const AlertDetails = ({
+  event,
+  acknowledged,
+  snoozedUntil,
+  suppressedProcess,
+  onAcknowledge,
+  onSnooze,
+  onUnsnooze,
+  onSuppressProcess,
+  onUnsuppressProcess,
+  controlError,
+}: AlertDetailsProps) => {
+  const metrics = event.metrics ?? {};
+  const process = metrics.memory_forecast_process;
+  const currentMemory = metrics.memory;
+  const forecastStatus = metrics.memory_forecast_status;
+  const minutesToCritical = metrics.memory_forecast_minutes_to_90;
+  const firedAt = event.fired_at
+    ? new Date(event.fired_at * 1000).toLocaleString()
+    : event.timestamp || "Unknown";
+
+  return (
+    <div style={{ marginTop: 10, padding: "12px", borderRadius: 4, background: "rgba(0,212,255,0.05)", border: `1px solid ${T.accent}45`, fontFamily: "'Share Tech Mono', monospace" }}>
+      <div style={{ color: T.accent, fontSize: 9, letterSpacing: "0.12em", marginBottom: 8 }}>ALERT DETAILS</div>
+      <div style={{ color: T.text, fontSize: 11, marginBottom: 8 }}>{event.message || "System alert"}</div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, color: T.textMuted, fontSize: 9 }}>
+        <div>Severity: {event.severity || "UNKNOWN"}</div>
+        <div>Started: {firedAt}</div>
+        <div>Status: {event.resolved_at ? "Resolved" : "Active"}</div>
+        {typeof currentMemory === "number" && <div>Host memory: {currentMemory.toFixed(1)}%</div>}
+        {typeof forecastStatus === "string" && <div>Forecast: {forecastStatus}</div>}
+        {typeof process === "string" && <div>Suspected process: {process}</div>}
+      </div>
+      {typeof minutesToCritical === "number" && (
+        <div style={{ color: T.warning, fontSize: 9, marginTop: 8 }}>
+          Estimated time to 90% memory: {minutesToCritical.toFixed(1)} minutes
+        </div>
+      )}
+      <div style={{ marginTop: 9, paddingTop: 8, borderTop: `1px solid ${T.border}` }}>
+        <div style={{ color: T.accent, fontSize: 9, marginBottom: 4 }}>NOTIFICATION AUDIT</div>
+        {event.snoozed_until ? (
+          <div style={{ color: T.warning, fontSize: 9 }}>
+            Notifications snoozed until {new Date(event.snoozed_until * 1000).toLocaleTimeString()}.
+          </div>
+        ) : event.sent_to && event.sent_to.length > 0 ? (
+          <div style={{ color: T.success, fontSize: 9 }}>
+            Confirmed delivery: {event.sent_to.join(", ")}
+          </div>
+        ) : (
+          <div style={{ color: T.textDim, fontSize: 9 }}>
+            No successful notification channel recorded.
+          </div>
+        )}
+        <div style={{ color: T.textDim, fontSize: 8, marginTop: 4 }}>
+          This records confirmed channels only; unavailable channels are not inferred.
+        </div>
+      </div>
+      <div style={{ color: T.textDim, fontSize: 9, lineHeight: 1.5, marginTop: 8 }}>
+        Recommended next step: {alertRecommendation(event)}
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 10 }}>
+        <button type="button" onClick={() => void onAcknowledge()} disabled={acknowledged} style={{ border: `1px solid ${T.border}`, borderRadius: 3, background: acknowledged ? "rgba(0,255,157,0.08)" : "transparent", color: acknowledged ? T.success : T.textMuted, cursor: acknowledged ? "default" : "pointer", padding: "5px 8px", fontSize: 9, fontFamily: "'Share Tech Mono', monospace" }}>
+          {acknowledged ? "ACKNOWLEDGED" : "ACKNOWLEDGE"}
+        </button>
+        <button type="button" onClick={() => void (snoozedUntil ? onUnsnooze() : onSnooze())} style={{ border: `1px solid ${T.border}`, borderRadius: 3, background: snoozedUntil ? "rgba(255,170,0,0.08)" : "transparent", color: T.textMuted, cursor: "pointer", padding: "5px 8px", fontSize: 9, fontFamily: "'Share Tech Mono', monospace" }}>
+          {snoozedUntil ? "UNSNOOZE" : "SNOOZE 30M"}
+        </button>
+        {typeof process === "string" && (
+          <button type="button" onClick={() => void (suppressedProcess === process ? onUnsuppressProcess() : onSuppressProcess())} style={{ border: `1px solid ${T.border}`, borderRadius: 3, background: suppressedProcess === process ? "rgba(255,176,32,0.08)" : "transparent", color: suppressedProcess === process ? T.warning : T.textMuted, cursor: "pointer", padding: "5px 8px", fontSize: 9, fontFamily: "'Share Tech Mono', monospace" }}>
+            {suppressedProcess === process ? `UNSUPPRESS ${process}` : `SUPPRESS ${process}`}
+          </button>
+        )}
+      </div>
+      {controlError && <div style={{ color: T.danger, fontSize: 9, marginTop: 7 }}>{controlError}</div>}
+      <div style={{ color: T.textDim, fontSize: 8, marginTop: 7 }}>
+        Controls persist for this account. They do not stop or terminate the process.
+      </div>
     </div>
   );
 };
@@ -1001,6 +1135,8 @@ interface SystemStatus {
   memory?: number;
   disk_percent?: number;
   network_percent?: number;
+  network_sent_bytes_per_sec?: number;
+  network_recv_bytes_per_sec?: number;
   anomaly_score?: number;
   health_score?: number;
   severity?: string;
@@ -1029,7 +1165,59 @@ interface SystemStatus {
   }>;
   events?: SystemEvent[];
   stability?: number;
+  collection?: {
+    state?: string;
+    sample_age_seconds?: number | null;
+    samples_in_memory?: number;
+    gap_count?: number;
+    synthetic_metrics?: boolean;
+    last_error?: string | null;
+  };
+  data_quality?: {
+    status?: string;
+    source?: string;
+    fresh?: boolean;
+  };
+  memory_pressure_forecast?: {
+    status?: "warming_up" | "normal" | "elevated" | "critical";
+    current_percent?: number | null;
+    rate_percent_per_minute?: number | null;
+    minutes_to_90_percent?: number | null;
+    likely_process?: ProcessTrendEntry | null;
+    explanation?: string;
+  };
+  system_identity?: {
+    platform?: string;
+    platform_release?: string;
+    architecture?: string;
+    logical_cpu_count?: number;
+  };
   [key: string]: unknown;
+}
+
+interface ProcessTrendEntry {
+  pid?: number;
+  name?: string;
+  cpu_percent?: number;
+  memory_percent?: number;
+}
+
+interface ProcessTrendSample {
+  timestamp: number;
+  top_cpu?: ProcessTrendEntry[];
+  top_memory?: ProcessTrendEntry[];
+}
+
+interface SnapshotRollup {
+  device_id?: string | null;
+  bucket_ts: number;
+  samples: number;
+  cpu_avg: number;
+  mem_avg: number;
+  disk_avg: number;
+  net_avg: number;
+  anomaly_avg: number;
+  health_avg: number;
 }
 
 interface CognitivePattern {
@@ -1068,6 +1256,18 @@ function formatRootCause(value: unknown): string | null {
   }
 
   return "Root cause detected";
+}
+
+function formatRate(bytesPerSecond: number): string {
+  if (!Number.isFinite(bytesPerSecond) || bytesPerSecond <= 0) return "0 B/s";
+  const units = ["B/s", "KB/s", "MB/s", "GB/s"];
+  let value = bytesPerSecond;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+  return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[unitIndex]}`;
 }
 
 interface BackendActionResult {
@@ -1131,24 +1331,136 @@ export default function Dashboard({ onLogout }: DashboardProps) {
 
   const [showLogAnalyzer, setShowLogAnalyzer] = useState(false);
   const [showDesktopSettings, setShowDesktopSettings] = useState(false);
+  const [showMemoryDetails, setShowMemoryDetails] = useState(false);
   const [desktopSettingsAvailable, setDesktopSettingsAvailable] = useState(false);
   const [quitPending, setQuitPending] = useState(false);
   const [quitError, setQuitError] = useState("");
   const [cognitivePredictions, setCognitivePredictions] = useState<CognitivePrediction[]>([]);
+  const [predictionAccuracy, setPredictionAccuracy] = useState<PredictionAccuracy | null>(null);
+  const [cognitiveIncidents, setCognitiveIncidents] = useState<CognitiveIncident[]>([]);
   const [predictionBusy, setPredictionBusy] = useState<string | null>(null);
 
   const [data, setData] = useState<SystemStatus>({});
   const [history, setHistory] = useState<HistoryPoint[]>([]);
   const [forecast, setForecast] = useState<ForecastData>({});
   const [alertEvents, setAlertEvents] = useState<SystemEvent[]>([]);
+  const [alertSuppressions, setAlertSuppressions] = useState<AlertSuppression[]>([]);
+  const [selectedAlert, setSelectedAlert] = useState<SystemEvent | null>(null);
+  const [alertSeverityFilter, setAlertSeverityFilter] = useState("ALL");
+  const [alertStatusFilter, setAlertStatusFilter] = useState("ACTIVE");
+  const [alertProcessFilter, setAlertProcessFilter] = useState("");
+  const [alertTimeFilter, setAlertTimeFilter] = useState("24h");
+  const [acknowledgedAlerts, setAcknowledgedAlerts] = useState<Record<string, boolean>>({});
+  const [snoozedAlerts, setSnoozedAlerts] = useState<Record<string, number>>({});
+  const [suppressedProcesses, setSuppressedProcesses] = useState<Record<string, boolean>>({});
+  const [alertControlError, setAlertControlError] = useState<string | null>(null);
+  const [eventsLoaded, setEventsLoaded] = useState(false);
   const [dna, setDna] = useState<DnaData>({});
   const [pipeline, setPipeline] = useState<PipelineData>({});
   const [availableActions, setAvailableActions] = useState<BackendAction[]>([]);
+  const [actionsLoaded, setActionsLoaded] = useState(false);
+  const [snapshotRollups, setSnapshotRollups] = useState<SnapshotRollup[]>([]);
+  const [processTrends, setProcessTrends] = useState<ProcessTrendSample[]>([]);
   const [manualAction, setManualAction] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionResult, setActionResult] = useState<BackendActionResult | null>(null);
   const prevLevel = useRef("OPTIMAL");
+
+  useEffect(() => {
+    try {
+      setAcknowledgedAlerts(JSON.parse(window.localStorage.getItem("cvis:acknowledged-alerts") || "{}"));
+      setSnoozedAlerts(JSON.parse(window.localStorage.getItem("cvis:snoozed-alerts") || "{}"));
+      setSuppressedProcesses(JSON.parse(window.localStorage.getItem("cvis:suppressed-processes") || "{}"));
+    } catch (error) {
+      console.error("Could not restore alert controls:", error);
+    }
+  }, []);
+
+  const acknowledgeAlert = useCallback(async (alertId: string) => {
+    setAlertControlError(null);
+    try {
+      await acknowledgeHostedAlert(alertId);
+    } catch (error) {
+      console.error("Could not persist alert acknowledgement:", error);
+      setAlertControlError("Could not save acknowledgement. Check operator access and try again.");
+      return;
+    }
+    setAcknowledgedAlerts((current) => {
+      const next = { ...current, [alertId]: true };
+      window.localStorage.setItem("cvis:acknowledged-alerts", JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const snoozeAlert = useCallback(async (alertId: string) => {
+    setAlertControlError(null);
+    try {
+      await snoozeHostedAlert(alertId, 30);
+    } catch (error) {
+      console.error("Could not persist alert snooze:", error);
+      setAlertControlError("Could not save snooze. Check operator access and try again.");
+      return;
+    }
+    setSnoozedAlerts((current) => {
+      const next = { ...current, [alertId]: Date.now() + 30 * 60 * 1000 };
+      window.localStorage.setItem("cvis:snoozed-alerts", JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const unsnoozeAlert = useCallback(async (alertId: string) => {
+    setAlertControlError(null);
+    try {
+      await unsnoozeHostedAlert(alertId);
+    } catch (error) {
+      console.error("Could not remove alert snooze:", error);
+      setAlertControlError("Could not remove snooze. Check operator access and try again.");
+      return;
+    }
+    setSnoozedAlerts((current) => {
+      const next = { ...current };
+      delete next[alertId];
+      window.localStorage.setItem("cvis:snoozed-alerts", JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const suppressProcess = useCallback(async (processName: string) => {
+    setAlertControlError(null);
+    try {
+      await suppressAlertProcess(processName, 60);
+    } catch (error) {
+      console.error("Could not persist process suppression:", error);
+      setAlertControlError("Could not save process suppression. Check operator access and try again.");
+      return;
+    }
+    setSuppressedProcesses((current) => {
+      const next = { ...current, [processName]: true };
+      window.localStorage.setItem("cvis:suppressed-processes", JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const unsuppressProcess = useCallback(async (processName: string) => {
+    setAlertControlError(null);
+    try {
+      await unsuppressAlertProcess(processName);
+    } catch (error) {
+      console.error("Could not remove process suppression:", error);
+      setAlertControlError("Could not remove process suppression. Check operator access and try again.");
+      return;
+    }
+    setSuppressedProcesses((current) => {
+      const next = { ...current };
+      delete next[processName];
+      window.localStorage.setItem("cvis:suppressed-processes", JSON.stringify(next));
+      return next;
+    });
+    setAlertSuppressions((current) =>
+      current.filter((suppression) => suppression.process_name !== processName)
+    );
+  }, []);
 
   const quitCvis = useCallback(async () => {
     if (!window.confirm("Quit CVIS and stop all monitoring and system-data collection?")) {
@@ -1180,11 +1492,13 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   const fetchAvailableActions = useCallback(async () => {
     try {
       const response = await api.get<BackendAction[]>("/actions/available");
-      setAvailableActions(response.data);
+      setAvailableActions(Array.isArray(response.data) ? response.data : []);
       setActionError(null);
     } catch (error) {
       console.error("[AIOps] Failed to load available actions:", error);
       setActionError("ACTION REGISTRY UNAVAILABLE");
+    } finally {
+      setActionsLoaded(true);
     }
   }, []);
 
@@ -1315,11 +1629,16 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     const fetchAlertHistory = async () => {
       try {
         const alertsResponse = await api.get<SystemEvent[]>("/alerts/history?limit=10");
+        let suppressions: AlertSuppression[] = [];
+        try {
+          suppressions = await fetchAlertProcessSuppressions();
+        } catch (error) {
+          console.error("Alert suppression fetch failed:", error);
+        }
 
         if (cancelled) return;
 
-        setAlertEvents(
-          (alertsResponse.data ?? []).map((alert) => ({
+        const alerts = (alertsResponse.data ?? []).map((alert) => ({
             ...alert,
             message:
               alert.message ??
@@ -1328,12 +1647,36 @@ export default function Dashboard({ onLogout }: DashboardProps) {
               "Alert recorded",
             timestamp: alert.timestamp ?? alert.time ?? "NOW",
             severity: alert.severity ?? "INFO",
-          }))
-        );
+          }));
+        setAlertEvents(alerts);
+        setAlertSuppressions(suppressions);
+        setAcknowledgedAlerts((current) => ({
+          ...Object.fromEntries(
+            alerts
+              .filter((alert) => alert.id && alert.acknowledged_at)
+              .map((alert) => [alert.id as string, true])
+          ),
+          ...current,
+        }));
+        setSnoozedAlerts((current) => ({
+          ...Object.fromEntries(
+            alerts
+              .filter((alert) => alert.id && alert.snoozed_until)
+              .map((alert) => [alert.id as string, alert.snoozed_until as number])
+          ),
+          ...current,
+        }));
+        setSelectedAlert((current) => (
+          current?.id
+            ? alerts.find((event) => event.id === current.id) ?? current
+            : current
+        ));
+        setEventsLoaded(true);
       } catch (error) {
         if (cancelled) return;
 
         console.error("Alert history fetch failed:", error);
+        setEventsLoaded(true);
       }
     };
 
@@ -1351,12 +1694,64 @@ export default function Dashboard({ onLogout }: DashboardProps) {
       }
     };
 
+    const fetchSnapshotRollups = async () => {
+      try {
+        const response = await api.get<SnapshotRollup[]>(
+          "/db/snapshots/rollups?hours=168"
+        );
+        if (cancelled) return;
+        setSnapshotRollups(Array.isArray(response.data) ? response.data : []);
+      } catch (error) {
+        if (cancelled) return;
+        console.error("Telemetry rollup fetch failed:", error);
+      }
+    };
+
+    const fetchPredictionAccuracySummary = async () => {
+      try {
+        const result = await fetchPredictionAccuracy();
+        if (cancelled) return;
+        setPredictionAccuracy(result);
+      } catch (error) {
+        if (cancelled) return;
+        console.error("Prediction accuracy fetch failed:", error);
+      }
+    };
+
+    const fetchProcessTrends = async () => {
+      try {
+        const response = await api.get<ProcessTrendSample[]>(
+          "/os/process-trends?limit=60"
+        );
+        if (cancelled) return;
+        setProcessTrends(Array.isArray(response.data) ? response.data : []);
+      } catch (error) {
+        if (cancelled) return;
+        console.error("Process trend fetch failed:", error);
+      }
+    };
+
+    const fetchIncidents = async () => {
+      try {
+        const result = await fetchCognitiveIncidents();
+        if (cancelled) return;
+        setCognitiveIncidents(Array.isArray(result) ? result : []);
+      } catch (error) {
+        if (cancelled) return;
+        console.error("Incident timeline fetch failed:", error);
+      }
+    };
+
     // Initial load.
     fetchTelemetry();
     fetchPipeline();
     fetchForecast();
     fetchAlertHistory();
     fetchDna();
+    fetchSnapshotRollups();
+    fetchPredictionAccuracySummary();
+    fetchIncidents();
+    fetchProcessTrends();
 
     // Telemetry is lightweight and remains responsive.
     const telemetryId = setInterval(fetchTelemetry, 500);
@@ -1368,6 +1763,10 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     const forecastId = setInterval(fetchForecast, 10000);
     const alertId = setInterval(fetchAlertHistory, 5000);
     const dnaId = setInterval(fetchDna, 30000);
+    const rollupId = setInterval(fetchSnapshotRollups, 60000);
+    const accuracyId = setInterval(fetchPredictionAccuracySummary, 60000);
+    const incidentsId = setInterval(fetchIncidents, 15000);
+    const processTrendsId = setInterval(fetchProcessTrends, 10000);
 
     return () => {
       cancelled = true;
@@ -1376,6 +1775,10 @@ export default function Dashboard({ onLogout }: DashboardProps) {
       clearInterval(forecastId);
       clearInterval(alertId);
       clearInterval(dnaId);
+      clearInterval(rollupId);
+      clearInterval(accuracyId);
+      clearInterval(incidentsId);
+      clearInterval(processTrendsId);
     };
   }, []);
 
@@ -1440,6 +1843,19 @@ export default function Dashboard({ onLogout }: DashboardProps) {
 
   const isCritical = level === "CRITICAL";
   const isWarning = level === "WARNING";
+  const collectionState = data.collection?.state ?? "starting";
+  const collectionHealthy =
+    collectionState === "healthy" || collectionState === "warming_up";
+  const collectionColor =
+    collectionState === "healthy" ? T.success :
+    collectionState === "warming_up" || collectionState === "starting"
+      ? T.warning
+      : T.danger;
+  const collectionLabel =
+    collectionState === "healthy" ? "LIVE" :
+    collectionState === "warming_up" ? "WARMING UP" :
+    collectionState === "starting" ? "STARTING" :
+    collectionState.toUpperCase();
 
   useEffect(() => {
     if (level === "CRITICAL" && prevLevel.current !== "CRITICAL") {
@@ -1502,6 +1918,60 @@ export default function Dashboard({ onLogout }: DashboardProps) {
 
   // Sparkline history slices
   const anomalySpark = history.slice(-20).map(h => h.anomaly);
+  const rollupSamples = snapshotRollups.reduce(
+    (total, point) => total + (point.samples || 0),
+    0
+  );
+  const rollupHealth = rollupSamples
+    ? snapshotRollups.reduce(
+        (total, point) => total + point.health_avg * point.samples,
+        0
+      ) / rollupSamples
+    : null;
+  const rollupAnomaly = rollupSamples
+    ? snapshotRollups.reduce(
+        (total, point) => total + point.anomaly_avg * point.samples,
+        0
+      ) / rollupSamples
+    : null;
+  const rollupStart = snapshotRollups[0]?.bucket_ts;
+  const rollupEnd = snapshotRollups[snapshotRollups.length - 1]?.bucket_ts;
+  const accuracyPercent =
+    predictionAccuracy?.accuracy == null
+      ? null
+      : predictionAccuracy.accuracy * 100;
+  const leadTimeMinutes =
+    predictionAccuracy?.average_lead_time_seconds == null
+      ? null
+      : predictionAccuracy.average_lead_time_seconds / 60;
+  const latestProcessSample = processTrends[processTrends.length - 1];
+  const topCpuProcesses = latestProcessSample?.top_cpu ?? [];
+  const topMemoryProcesses = latestProcessSample?.top_memory ?? [];
+  const filteredAlerts = useMemo(() => {
+    const now = Date.now();
+    const timeWindowMs = alertTimeFilter === "ALL"
+      ? null
+      : Number(alertTimeFilter.replace("h", "")) * 60 * 60 * 1000;
+
+    return alertEvents.filter((event) => {
+      const eventProcess = typeof event.metrics?.memory_forecast_process === "string"
+        ? event.metrics.memory_forecast_process
+        : "";
+      const eventTime = typeof event.fired_at === "number"
+        ? event.fired_at * 1000
+        : typeof event.timestamp === "number"
+          ? event.timestamp * 1000
+          : Date.parse(String(event.timestamp ?? ""));
+
+      return (
+        (alertSeverityFilter === "ALL" || event.severity === alertSeverityFilter) &&
+        (alertStatusFilter === "ALL" ||
+          (alertStatusFilter === "ACTIVE" ? !event.resolved_at : Boolean(event.resolved_at))) &&
+        (!alertProcessFilter || eventProcess.toLowerCase().includes(alertProcessFilter.toLowerCase())) &&
+        (timeWindowMs === null || (Number.isFinite(eventTime) && now - eventTime <= timeWindowMs))
+      );
+    });
+  }, [alertEvents, alertProcessFilter, alertSeverityFilter, alertStatusFilter, alertTimeFilter]);
 
   return (
     <>
@@ -1564,10 +2034,17 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                 Log out
               </button>
             )}
-            {/* Live indicator */}
-            <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "10px", fontFamily: "'Share Tech Mono', monospace", color: T.textDim }}>
-              <div style={{ width: "6px", height: "6px", borderRadius: "50%", background: T.success, animation: "pulse 1.5s infinite", boxShadow: `0 0 6px ${T.success}` }} />
-              LIVE
+            {/* Collection health indicator */}
+            <div
+              title={
+                data.collection?.sample_age_seconds != null
+                  ? `Last sample ${data.collection.sample_age_seconds.toFixed(1)}s ago`
+                  : "No telemetry sample received yet"
+              }
+              style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "10px", fontFamily: "'Share Tech Mono', monospace", color: collectionColor }}
+            >
+              <div style={{ width: "6px", height: "6px", borderRadius: "50%", background: collectionColor, animation: collectionHealthy ? "pulse 1.5s infinite" : undefined, boxShadow: `0 0 6px ${collectionColor}` }} />
+              {collectionLabel}
             </div>
             <div style={{ fontSize: "10px", fontFamily: "'Share Tech Mono', monospace", color: T.textDim, textAlign: "right" }}>
               <div>{new Date().toLocaleDateString()}</div>
@@ -1579,6 +2056,16 @@ export default function Dashboard({ onLogout }: DashboardProps) {
         {quitError && (
           <div role="alert" style={{ color: T.danger, textAlign: "right", marginBottom: 12 }}>
             {quitError}
+          </div>
+        )}
+        {data.data_quality?.source === "synthetic" && (
+          <div role="status" style={{ color: T.warning, textAlign: "right", marginBottom: 12, fontFamily: "'Share Tech Mono', monospace", fontSize: 10 }}>
+            DATA QUALITY: SYNTHETIC METRICS — SYSTEM SENSOR UNAVAILABLE
+          </div>
+        )}
+        {collectionState === "stale" && (
+          <div role="alert" style={{ color: T.danger, textAlign: "right", marginBottom: 12, fontFamily: "'Share Tech Mono', monospace", fontSize: 10 }}>
+            DATA QUALITY: TELEMETRY STALE — LAST SAMPLE {data.collection?.sample_age_seconds?.toFixed(0) ?? "UNKNOWN"}s AGO
           </div>
         )}
 
@@ -1627,6 +2114,178 @@ export default function Dashboard({ onLogout }: DashboardProps) {
             tooltip="Latest autonomous action by cognitive engine"
           />
         </div>
+
+        <Section
+          title="Long-Term Telemetry"
+          subtitle="Hourly rollups · last 7 days"
+        >
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 }}>
+            <MetricCard
+              label="Samples Covered"
+              value={rollupSamples ? rollupSamples.toLocaleString() : "—"}
+              subtitle={rollupStart && rollupEnd
+                ? `${new Date(rollupStart * 1000).toLocaleDateString()} – ${new Date(rollupEnd * 1000).toLocaleDateString()}`
+                : "Waiting for telemetry"}
+              icon="◷"
+              tooltip="Number of raw samples represented by hourly rollups"
+            />
+            <MetricCard
+              label="7-Day Avg Health"
+              value={rollupHealth == null ? "—" : `${rollupHealth.toFixed(1)}%`}
+              subtitle="Weighted by sample count"
+              icon="♥"
+              tooltip="Average health across available hourly telemetry"
+              alert={rollupHealth != null && rollupHealth < 80}
+            />
+            <MetricCard
+              label="7-Day Avg Anomaly"
+              value={rollupAnomaly == null ? "—" : rollupAnomaly.toFixed(3)}
+              subtitle="Weighted by sample count"
+              icon="⚠"
+              tooltip="Average anomaly score across available hourly telemetry"
+              alert={rollupAnomaly != null && rollupAnomaly > 0.5}
+            />
+            <MetricCard
+              label="Coverage"
+              value={data.collection?.gap_count?.toString() ?? "0"}
+              subtitle="Collection gaps detected"
+              icon="⌁"
+              tooltip="Number of gaps longer than three polling intervals"
+              alert={(data.collection?.gap_count ?? 0) > 0}
+            />
+          </div>
+        </Section>
+
+        {predictionAccuracy?.available && (
+          <Section
+            title="Prediction Performance"
+            subtitle="Measured against recorded outcomes"
+            accentColor={T.primary}
+          >
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 14, alignItems: "stretch" }}>
+              <div style={{
+                position: "relative",
+                overflow: "hidden",
+                padding: "18px 20px",
+                borderRadius: 6,
+                border: `1px solid ${accuracyPercent != null && accuracyPercent >= 80 ? T.success : T.primary}40`,
+                background: "linear-gradient(135deg, rgba(74,127,255,0.16), rgba(0,212,255,0.04))",
+              }}>
+                <div style={{ color: T.textMuted, fontSize: 10, letterSpacing: "0.12em", fontFamily: "'Share Tech Mono', monospace" }}>
+                  VERIFIED ACCURACY
+                </div>
+                <div style={{ color: accuracyPercent != null && accuracyPercent >= 80 ? T.success : T.text, fontSize: 36, fontWeight: 700, fontFamily: "'Rajdhani', sans-serif", margin: "8px 0 2px" }}>
+                  {accuracyPercent == null ? "—" : `${accuracyPercent.toFixed(1)}%`}
+                </div>
+                <div style={{ color: T.textDim, fontSize: 10, fontFamily: "'Share Tech Mono', monospace" }}>
+                  {predictionAccuracy.resolved_predictions ?? 0} outcomes measured
+                </div>
+                <div style={{ height: 4, marginTop: 14, borderRadius: 4, background: "rgba(255,255,255,0.08)" }}>
+                  <div style={{ height: "100%", width: `${Math.min(100, Math.max(0, accuracyPercent ?? 0))}%`, borderRadius: 4, background: accuracyPercent != null && accuracyPercent >= 80 ? T.success : T.primary, transition: "width 0.5s ease" }} />
+                </div>
+              </div>
+              <MetricCard
+                label="Lead Time"
+                value={leadTimeMinutes == null ? "—" : `${leadTimeMinutes.toFixed(1)}m`}
+                subtitle="Average warning"
+                icon="◷"
+                tooltip="Average time between a prediction and its recorded outcome"
+              />
+              <MetricCard
+                label="False Alarms"
+                value={String(predictionAccuracy.false_positives ?? 0)}
+                subtitle={`${predictionAccuracy.incorrect_predictions ?? 0} incorrect outcomes`}
+                icon="⚠"
+                tooltip="Predictions marked incorrect by an operator"
+                alert={(predictionAccuracy.false_positives ?? 0) > 0}
+              />
+              <MetricCard
+                label="Still Tracking"
+                value={String(predictionAccuracy.active_predictions ?? 0)}
+                subtitle="Active predictions"
+                icon="◎"
+                tooltip="Predictions waiting for an outcome"
+              />
+            </div>
+          </Section>
+        )}
+
+        {cognitiveIncidents.length > 0 && (
+          <Section
+            title="Incident Timeline"
+            subtitle="Evidence reconstructed from the monitoring window"
+            accentColor={T.danger}
+          >
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              {cognitiveIncidents.slice(0, 3).map((incident) => (
+                <div
+                  key={incident.incident_id ?? `${incident.type}-${incident.occurred_at}`}
+                  style={{
+                    padding: "16px 18px",
+                    borderRadius: 6,
+                    border: `1px solid ${T.danger}35`,
+                    background: "linear-gradient(90deg, rgba(255,51,102,0.10), rgba(10,20,50,0.24))",
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
+                    <div>
+                      <div style={{ color: T.danger, fontSize: 13, fontWeight: 700, letterSpacing: "0.08em", fontFamily: "'Rajdhani', sans-serif" }}>
+                        {incident.type ?? "SYSTEM INCIDENT"}
+                      </div>
+                      <div style={{ color: T.textMuted, fontSize: 10, marginTop: 3 }}>
+                        {incident.description ?? "Recorded system incident"}
+                      </div>
+                    </div>
+                    <div style={{ color: T.textDim, fontSize: 10, fontFamily: "'Share Tech Mono', monospace" }}>
+                      {incident.occurred_str ?? "TIME UNKNOWN"}
+                    </div>
+                  </div>
+                    {incident.likely_contributors && incident.likely_contributors.length > 0 && (
+                      <div style={{ marginBottom: 12, padding: "10px 12px", borderRadius: 4, background: "rgba(255,176,32,0.08)", border: `1px solid ${T.warning}35` }}>
+                        <div style={{ color: T.warning, fontSize: 9, letterSpacing: "0.12em", fontFamily: "'Share Tech Mono', monospace", marginBottom: 7 }}>
+                          POSSIBLE CONTRIBUTORS · EVIDENCE-BASED, NOT PROOF OF CAUSE
+                        </div>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                          {incident.likely_contributors.map((process, index) => (
+                              <div key={`${process.pid ?? process.name}-${index}`} style={{ color: T.text, fontSize: 10, fontFamily: "'Share Tech Mono', monospace" }} title={process.explanation}>
+                              <strong>{process.name ?? "unknown"}</strong>
+                              <span style={{ color: T.textMuted }}> · CPU {(process.recent_cpu_percent ?? 0).toFixed(1)}% · memory {(process.recent_memory_percent ?? 0).toFixed(1)}%</span>
+                              {process.memory_risk && process.memory_risk !== "normal" && (
+                                <span style={{ color: process.memory_risk === "high" ? T.danger : T.warning }}> · {process.memory_risk.toUpperCase()} MEMORY RISK</span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {incident.timeline && incident.timeline.length > 0 ? (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                      {incident.timeline.slice(-6).map((entry, index) => (
+                        <div
+                          key={`${entry.time_str}-${entry.event}-${index}`}
+                          style={{ display: "grid", gridTemplateColumns: "72px 10px minmax(0, 1fr)", gap: 8, alignItems: "center", fontSize: 10, fontFamily: "'Share Tech Mono', monospace" }}
+                        >
+                          <span style={{ color: T.textDim, textAlign: "right" }}>
+                            {entry.t_minus_mins == null ? "—" : entry.t_minus_mins === 0 ? "NOW" : `-${entry.t_minus_mins}m`}
+                          </span>
+                          <span style={{ width: 7, height: 7, borderRadius: "50%", background: entry.significance === "incident" ? T.danger : T.accent, boxShadow: `0 0 8px ${entry.significance === "incident" ? T.danger : T.accent}` }} />
+                          <span style={{ color: entry.significance === "incident" ? T.danger : T.text }}>
+                            {entry.event ?? "Signal recorded"}
+                            {entry.value != null && <span style={{ color: T.textDim }}> · {entry.value}{entry.unit ?? ""}</span>}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={{ color: T.textDim, fontSize: 10, fontFamily: "'Share Tech Mono', monospace" }}>
+                      Timeline evidence is still being reconstructed.
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </Section>
+        )}
 
         {/* MAIN GRID */}
         <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr) 380px", gap: "20px", alignItems: "start" }}>
@@ -1981,6 +2640,16 @@ export default function Dashboard({ onLogout }: DashboardProps) {
               <DataBar value={lastHistory.memory} color={T.primary} label="MEMORY" />
               <DataBar value={lastHistory.disk} color={T.success} label="DISK I/O" />
               <DataBar value={lastHistory.network} color={T.warning} label="NETWORK" />
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginTop: 10, color: T.textDim, fontSize: 9, fontFamily: "'Share Tech Mono', monospace" }}>
+                <span>IN {formatRate(data.network_recv_bytes_per_sec ?? 0)}</span>
+                <span>OUT {formatRate(data.network_sent_bytes_per_sec ?? 0)}</span>
+              </div>
+              {data.system_identity && (
+                <div style={{ marginTop: 12, paddingTop: 10, borderTop: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", gap: 10, color: T.textDim, fontSize: 9, fontFamily: "'Share Tech Mono', monospace" }}>
+                  <span>{data.system_identity.platform ?? "UNKNOWN"} {data.system_identity.platform_release ?? ""}</span>
+                  <span>{data.system_identity.logical_cpu_count ?? 0} LOGICAL CORES</span>
+                </div>
+              )}
               <div style={{ marginTop: "14px" }}>
                 <div style={{ fontSize: "10px", color: T.textDim, fontFamily: "'Share Tech Mono', monospace", marginBottom: "6px", display: "flex", justifyContent: "space-between" }}>
                   <span>RISK FIELD</span>
@@ -2001,6 +2670,79 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                   {(risk * 100).toFixed(1)}%
                 </div>
               </div>
+            </Section>
+
+            <Section title="Process Contributors" subtitle="Top live CPU and memory consumers">
+              {data.memory_pressure_forecast && data.memory_pressure_forecast.status !== "warming_up" && (
+                <div style={{ marginBottom: 14, padding: "10px 12px", borderRadius: 4, border: `1px solid ${data.memory_pressure_forecast.status === "critical" ? T.danger : data.memory_pressure_forecast.status === "elevated" ? T.warning : T.border}`, background: data.memory_pressure_forecast.status === "critical" ? "rgba(255,51,102,0.10)" : "rgba(255,176,32,0.06)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                    <div style={{ color: data.memory_pressure_forecast.status === "critical" ? T.danger : data.memory_pressure_forecast.status === "elevated" ? T.warning : T.success, fontSize: 9, letterSpacing: "0.12em", fontFamily: "'Share Tech Mono', monospace" }}>
+                      MEMORY FORECAST · {(data.memory_pressure_forecast.status ?? "unknown").toUpperCase()}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowMemoryDetails(value => !value)}
+                      style={{ background: "transparent", border: `1px solid ${T.border}`, borderRadius: 3, color: T.textMuted, cursor: "pointer", fontSize: 9, padding: "3px 7px", fontFamily: "'Share Tech Mono', monospace" }}
+                    >
+                      {showMemoryDetails ? "HIDE DETAILS" : "WHY?"}
+                    </button>
+                  </div>
+                  <div style={{ color: T.text, fontSize: 10, fontFamily: "'Share Tech Mono', monospace" }}>
+                    {data.memory_pressure_forecast.explanation}
+                  </div>
+                  {data.memory_pressure_forecast.minutes_to_90_percent != null && (
+                    <div style={{ color: T.textMuted, fontSize: 10, marginTop: 5, fontFamily: "'Share Tech Mono', monospace" }}>
+                      Estimated time to 90% host memory: {data.memory_pressure_forecast.minutes_to_90_percent.toFixed(1)} minutes
+                    </div>
+                  )}
+                  {showMemoryDetails && (
+                    <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${T.border}`, color: T.textMuted, fontSize: 9, lineHeight: 1.6, fontFamily: "'Share Tech Mono', monospace" }}>
+                      <div>Current host memory: {data.memory_pressure_forecast.current_percent?.toFixed(1) ?? "—"}%</div>
+                      <div>Observed rate: {data.memory_pressure_forecast.rate_percent_per_minute?.toFixed(2) ?? "—"} percentage points/min</div>
+                      <div>Suspected process: {data.memory_pressure_forecast.likely_process?.name ?? "No single process identified"}</div>
+                      <div style={{ color: T.textDim, marginTop: 4 }}>This is evidence for investigation, not proof that the process caused or will cause a crash.</div>
+                    </div>
+                  )}
+                </div>
+              )}
+              {topCpuProcesses.length === 0 && topMemoryProcesses.length === 0 ? (
+                <div style={{ color: T.textDim, fontSize: 10, fontFamily: "'Share Tech Mono', monospace" }}>
+                  Process telemetry is unavailable or still warming up.
+                </div>
+              ) : (
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+                  <div>
+                    <div style={{ color: T.accent, fontSize: 9, letterSpacing: "0.12em", fontFamily: "'Share Tech Mono', monospace", marginBottom: 8 }}>
+                      CPU PRESSURE
+                    </div>
+                    {topCpuProcesses.slice(0, 5).map((process, index) => (
+                      <div key={`cpu-${process.pid ?? process.name}-${index}`} style={{ display: "flex", justifyContent: "space-between", gap: 8, padding: "6px 0", borderBottom: `1px solid ${T.border}`, fontSize: 10, fontFamily: "'Share Tech Mono', monospace" }}>
+                        <span style={{ color: T.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {process.name ?? "unknown"}
+                        </span>
+                        <span style={{ color: process.cpu_percent && process.cpu_percent > 80 ? T.danger : T.textMuted, flexShrink: 0 }}>
+                          {(process.cpu_percent ?? 0).toFixed(1)}%
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  <div>
+                    <div style={{ color: T.primary, fontSize: 9, letterSpacing: "0.12em", fontFamily: "'Share Tech Mono', monospace", marginBottom: 8 }}>
+                      MEMORY PRESSURE
+                    </div>
+                    {topMemoryProcesses.slice(0, 5).map((process, index) => (
+                      <div key={`memory-${process.pid ?? process.name}-${index}`} style={{ display: "flex", justifyContent: "space-between", gap: 8, padding: "6px 0", borderBottom: `1px solid ${T.border}`, fontSize: 10, fontFamily: "'Share Tech Mono', monospace" }}>
+                        <span style={{ color: T.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {process.name ?? "unknown"}
+                        </span>
+                        <span style={{ color: process.memory_percent && process.memory_percent > 10 ? T.warning : T.textMuted, flexShrink: 0 }}>
+                          {(process.memory_percent ?? 0).toFixed(1)}%
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </Section>
 
             {/* AI Reasoning */}
@@ -2167,7 +2909,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                   </button>
                 ))}
 
-                {availableActions.length === 0 && !actionError && (
+                {availableActions.length === 0 && !actionsLoaded && !actionError && (
                   <div style={{
                     padding: "10px 12px",
                     color: T.textDim,
@@ -2175,6 +2917,21 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                     fontFamily: "'Share Tech Mono', monospace",
                   }}>
                     LOADING ACTION REGISTRY...
+                  </div>
+                )}
+
+                {availableActions.length === 0 && actionsLoaded && !actionError && (
+                  <div style={{
+                    padding: "10px 12px",
+                    borderRadius: "4px",
+                    background: "rgba(0,212,255,0.04)",
+                    border: `1px solid ${T.border}`,
+                    color: T.textDim,
+                    fontSize: "10px",
+                    lineHeight: 1.5,
+                    fontFamily: "'Share Tech Mono', monospace",
+                  }}>
+                    No operator actions are available for this account.
                   </div>
                 )}
 
@@ -2265,8 +3022,148 @@ export default function Dashboard({ onLogout }: DashboardProps) {
               </div>
             </Section>
 
+            <Section title="Alert Management" subtitle="Active conditions and notification controls">
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 6, marginBottom: 10 }}>
+                <select
+                  aria-label="Alert severity filter"
+                  value={alertSeverityFilter}
+                  onChange={(event) => setAlertSeverityFilter(event.target.value)}
+                  style={{ background: T.bg, color: T.text, border: `1px solid ${T.border}`, borderRadius: 3, padding: "6px 5px", fontSize: 9, fontFamily: "'Share Tech Mono', monospace" }}
+                >
+                  <option value="ALL">ALL SEVERITIES</option>
+                  <option value="CRITICAL">CRITICAL</option>
+                  <option value="HIGH">HIGH</option>
+                  <option value="WARNING">WARNING</option>
+                  <option value="INFO">INFO</option>
+                </select>
+                <select
+                  aria-label="Alert status filter"
+                  value={alertStatusFilter}
+                  onChange={(event) => setAlertStatusFilter(event.target.value)}
+                  style={{ background: T.bg, color: T.text, border: `1px solid ${T.border}`, borderRadius: 3, padding: "6px 5px", fontSize: 9, fontFamily: "'Share Tech Mono', monospace" }}
+                >
+                  <option value="ACTIVE">ACTIVE</option>
+                  <option value="RESOLVED">RESOLVED</option>
+                  <option value="ALL">ALL STATUSES</option>
+                </select>
+                <select
+                  aria-label="Alert time range filter"
+                  value={alertTimeFilter}
+                  onChange={(event) => setAlertTimeFilter(event.target.value)}
+                  style={{ background: T.bg, color: T.text, border: `1px solid ${T.border}`, borderRadius: 3, padding: "6px 5px", fontSize: 9, fontFamily: "'Share Tech Mono', monospace" }}
+                >
+                  <option value="1h">LAST HOUR</option>
+                  <option value="24h">LAST 24 HOURS</option>
+                  <option value="168h">LAST 7 DAYS</option>
+                  <option value="ALL">ALL TIME</option>
+                </select>
+                <input
+                  aria-label="Alert process filter"
+                  value={alertProcessFilter}
+                  onChange={(event) => setAlertProcessFilter(event.target.value)}
+                  placeholder="PROCESS"
+                  style={{ minWidth: 0, background: T.bg, color: T.text, border: `1px solid ${T.border}`, borderRadius: 3, padding: "6px 7px", fontSize: 9, fontFamily: "'Share Tech Mono', monospace" }}
+                />
+              </div>
+              {filteredAlerts.length === 0 && alertSuppressions.length === 0 ? (
+                <div style={{ color: T.textDim, fontSize: 10, fontFamily: "'Share Tech Mono', monospace" }}>
+                  No alerts match the selected filters.
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {filteredAlerts.map((alert, index) => {
+                    const alertColor = alert.severity === "CRITICAL" ? T.danger : T.warning;
+                    return (
+                      <button
+                        key={alert.id ?? `active-${index}`}
+                        type="button"
+                        onClick={() => setSelectedAlert(alert)}
+                        style={{ textAlign: "left", padding: "9px 10px", borderRadius: 4, border: `1px solid ${T.border}`, borderLeft: `2px solid ${alertColor}`, background: selectedAlert?.id === alert.id ? "rgba(0,212,255,0.08)" : "rgba(0,0,0,0.2)", color: T.text, cursor: "pointer", fontFamily: "'Share Tech Mono', monospace" }}
+                      >
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 9 }}>
+                          <span style={{ color: alertColor }}>{alert.severity ?? "ALERT"}</span>
+                          <span style={{ color: T.textDim }}>{alert.acknowledged_at ? "ACKNOWLEDGED" : "UNACKNOWLEDGED"}</span>
+                        </div>
+                        <div style={{ color: T.textMuted, fontSize: 10, marginTop: 4 }}>{alert.message}</div>
+                        {alert.snoozed_until && (
+                          <div style={{ color: T.warning, fontSize: 9, marginTop: 4 }}>
+                            Snoozed until {new Date(alert.snoozed_until * 1000).toLocaleTimeString()}
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })}
+                  {alertSuppressions.map((suppression) => (
+                    <div key={suppression.process_name} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "8px 10px", borderRadius: 4, border: `1px solid ${T.warning}35`, color: T.warning, fontSize: 9, fontFamily: "'Share Tech Mono', monospace" }}>
+                      <span>PROCESS SUPPRESSED: {suppression.process_name} · UNTIL {new Date(suppression.suppressed_until * 1000).toLocaleTimeString()}</span>
+                      <button
+                        type="button"
+                        onClick={() => void unsuppressProcess(suppression.process_name)}
+                        style={{ border: `1px solid ${T.warning}55`, borderRadius: 3, background: "transparent", color: T.warning, cursor: "pointer", padding: "4px 6px", fontSize: 8, fontFamily: "'Share Tech Mono', monospace" }}
+                      >
+                        UNSUPPRESS
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Section>
+
             <Section title="System Events" subtitle="Chronological event log">
-              <EventLog events={alertEvents} />
+              {!eventsLoaded ? (
+                <div style={{
+                  padding: "14px 12px",
+                  color: T.textDim,
+                  fontSize: "10px",
+                  fontFamily: "'Share Tech Mono', monospace",
+                }}>
+                  Loading event history...
+                </div>
+              ) : alertEvents.length === 0 ? (
+                <div style={{
+                  padding: "14px 12px",
+                  borderRadius: "4px",
+                  background: "rgba(0,212,255,0.04)",
+                  border: `1px solid ${T.border}`,
+                  color: T.textDim,
+                  fontSize: "10px",
+                  lineHeight: 1.5,
+                  fontFamily: "'Share Tech Mono', monospace",
+                }}>
+                  No system events have been recorded yet.
+                </div>
+              ) : (
+                <EventLog
+                  events={alertEvents}
+                  selectedId={selectedAlert?.id}
+                  onSelect={setSelectedAlert}
+                />
+              )}
+              {selectedAlert?.id && (
+                <AlertDetails
+                  event={selectedAlert}
+                  acknowledged={Boolean(acknowledgedAlerts[selectedAlert.id])}
+                  snoozedUntil={snoozedAlerts[selectedAlert.id]}
+                  suppressedProcess={
+                    typeof selectedAlert.metrics?.memory_forecast_process === "string" &&
+                    suppressedProcesses[selectedAlert.metrics.memory_forecast_process]
+                      ? selectedAlert.metrics.memory_forecast_process
+                      : undefined
+                  }
+                  onAcknowledge={() => acknowledgeAlert(selectedAlert.id!)}
+                  onSnooze={() => snoozeAlert(selectedAlert.id!)}
+                  onUnsnooze={() => unsnoozeAlert(selectedAlert.id!)}
+                  onSuppressProcess={() => {
+                    const processName = selectedAlert.metrics?.memory_forecast_process;
+                    if (typeof processName === "string") suppressProcess(processName);
+                  }}
+                  onUnsuppressProcess={() => {
+                    const processName = selectedAlert.metrics?.memory_forecast_process;
+                    if (typeof processName === "string") unsuppressProcess(processName);
+                  }}
+                  controlError={alertControlError}
+                />
+              )}
             </Section>
           </div>
 

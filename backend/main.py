@@ -20,9 +20,10 @@ import asyncpg
 import threading
 import time
 import os
+import platform
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Literal, Optional, cast
 from collections import deque
 from urllib.parse import urlsplit
 
@@ -56,7 +57,11 @@ from backend.core.alerts.alert_engine    import get_alert_engine, AlertRule
 from backend.chat_routes import router as chat_router
 from backend.core.storage.db import (
     save_alert, save_event, load_alerts, load_events, maybe_save_snapshot,
-    load_snapshots, db_info, close_db,
+    load_snapshots, load_snapshot_rollups, db_info, close_db,
+    snapshot_retention_days, save_incident, load_prediction_accuracy,
+    acknowledge_alert, snooze_alert, unsnooze_alert,
+    save_process_suppression, remove_process_suppression,
+    load_process_suppressions,
 )
 from backend.desktop_settings import read_settings, settings_path, write_settings
 from backend.core.diagnostics.log_analyzer import (
@@ -108,6 +113,309 @@ _event_loop: asyncio.AbstractEventLoop = None
 _collector_stop = threading.Event()
 _collector_thread = None
 _devices: dict = {}
+_collector_started_at = 0.0
+_last_collector_success_at = 0.0
+_last_collector_error = ""
+_collector_iterations = 0
+_collector_gap_count = 0
+_COLLECTOR_WARMUP_S = 30.0
+_process_trend_history: deque = deque(maxlen=3600)
+_memory_usage_history: deque = deque(maxlen=3600)
+_network_io_state = {
+    "timestamp": 0.0,
+    "bytes_sent": 0,
+    "bytes_recv": 0,
+}
+
+
+def _workspace_device_ids(principal: dict) -> set[str] | None:
+    """Return the devices visible to a hosted workspace, or None for operators."""
+    workspace_id = principal.get("workspace_id")
+    if not workspace_id:
+        return None
+    return {
+        device_id
+        for device_id, device in _devices.items()
+        if device.get("workspace_id") == workspace_id
+    }
+
+
+def _require_operator(principal: dict) -> None:
+    """Reject host-global operations for workspace-scoped principals."""
+    if principal.get("workspace_id"):
+        raise HTTPException(
+            status_code=403,
+            detail="This operation is only available to host operators",
+        )
+
+
+def _require_workspace_device(principal: dict, device_id: str) -> None:
+    """Enforce workspace ownership for operator-created device work."""
+    workspace_id = principal.get("workspace_id")
+    if workspace_id and (
+        device_id not in _devices
+        or _devices[device_id].get("workspace_id") != workspace_id
+    ):
+        raise HTTPException(404, "Device is not registered")
+
+
+def _collection_status() -> dict:
+    now = time.time()
+    poll_interval = max(
+        0.1,
+        float(os.environ.get("POLL_INTERVAL_S", "1")),
+    )
+    age = (
+        max(0.0, now - _last_collector_success_at)
+        if _last_collector_success_at
+        else None
+    )
+    thread_alive = bool(_collector_thread and _collector_thread.is_alive())
+    if not thread_alive:
+        state = "stopped"
+    elif _last_collector_success_at == 0:
+        state = "starting"
+    elif age is not None and age > max(10.0, poll_interval * 3):
+        state = "stale"
+    elif _collector_started_at and now - _collector_started_at < _COLLECTOR_WARMUP_S:
+        state = "warming_up"
+    else:
+        state = "healthy"
+
+    return {
+        "state": state,
+        "collector_alive": thread_alive,
+        "last_sample_at": _last_collector_success_at or None,
+        "sample_age_seconds": round(age, 1) if age is not None else None,
+        "poll_interval_seconds": poll_interval,
+        "samples_in_memory": len(feature_buffer),
+        "iterations": _collector_iterations,
+        "gap_count": _collector_gap_count,
+        "psutil_available": PS_OK,
+        "synthetic_metrics": not PS_OK,
+        "last_error": _last_collector_error or None,
+        "snapshot_retention_days": snapshot_retention_days(),
+    }
+
+
+def _system_identity() -> dict:
+    """Return non-sensitive host context used to qualify telemetry."""
+    return {
+        "platform": platform.system() or "unknown",
+        "platform_release": platform.release() or "unknown",
+        "architecture": platform.machine() or "unknown",
+        "logical_cpu_count": os.cpu_count() or 0,
+    }
+
+
+def _collect_process_summary() -> dict:
+    if not PS_OK:
+        return {"top_cpu": [], "top_memory": [], "available": False}
+
+    processes = []
+    try:
+        for process in psutil.process_iter(
+            ["pid", "name", "cpu_percent", "memory_percent", "status"]
+        ):
+            try:
+                info = process.info
+                if info.get("status") == "zombie":
+                    continue
+                processes.append({
+                    "pid": info.get("pid"),
+                    "name": (info.get("name") or "unknown")[:96],
+                    "cpu_percent": round(float(info.get("cpu_percent") or 0), 2),
+                    "memory_percent": round(
+                        float(info.get("memory_percent") or 0), 2
+                    ),
+                    "status": info.get("status") or "unknown",
+                })
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+    except Exception as exc:
+        log.warning("Process telemetry unavailable: %s", exc)
+        return {"top_cpu": [], "top_memory": [], "available": False}
+
+    top_cpu = sorted(
+        processes,
+        key=lambda item: item["cpu_percent"],
+        reverse=True,
+    )[:5]
+    top_memory = sorted(
+        processes,
+        key=lambda item: item["memory_percent"],
+        reverse=True,
+    )[:5]
+    return {
+        "top_cpu": top_cpu,
+        "top_memory": top_memory,
+        "available": True,
+    }
+
+
+def _record_process_trends(summary: dict, collected_at: float) -> None:
+    if not summary.get("available"):
+        return
+    _process_trend_history.append({
+        "timestamp": collected_at,
+        "top_cpu": summary.get("top_cpu", []),
+        "top_memory": summary.get("top_memory", []),
+    })
+
+
+def _rank_process_contributors(incident_time: float) -> list[dict]:
+    """Rank processes whose recent resource pressure increased before an incident."""
+    recent_cutoff = incident_time - 15 * 60
+    baseline_cutoff = incident_time - 30 * 60
+    recent: dict[tuple[object, str], list[tuple[float, float]]] = {}
+    baseline: dict[tuple[object, str], list[tuple[float, float]]] = {}
+
+    for sample in list(_process_trend_history):
+        timestamp = sample.get("timestamp", 0)
+        if timestamp < baseline_cutoff or timestamp > incident_time:
+            continue
+        target = recent if timestamp >= recent_cutoff else baseline
+        seen: set[tuple[object, str]] = set()
+        for field in ("top_cpu", "top_memory"):
+            for process in sample.get(field, []):
+                name = str(process.get("name") or "unknown")
+                key = (process.get("pid"), name)
+                if key in seen:
+                    continue
+                seen.add(key)
+                target.setdefault(key, []).append((
+                    float(process.get("cpu_percent") or 0),
+                    float(process.get("memory_percent") or 0),
+                ))
+
+    ranked = []
+    for (pid, name), samples in recent.items():
+        if not samples:
+            continue
+        recent_cpu = sum(item[0] for item in samples) / len(samples)
+        recent_memory = sum(item[1] for item in samples) / len(samples)
+        baseline_samples = baseline.get((pid, name), [])
+        baseline_cpu = (
+            sum(item[0] for item in baseline_samples) / len(baseline_samples)
+            if baseline_samples else 0.0
+        )
+        baseline_memory = (
+            sum(item[1] for item in baseline_samples) / len(baseline_samples)
+            if baseline_samples else 0.0
+        )
+        cpu_growth = max(0.0, recent_cpu - baseline_cpu)
+        memory_growth = max(0.0, recent_memory - baseline_memory)
+        persistence = min(1.0, len(samples) / 3)
+        score = (cpu_growth / 100 + memory_growth / 100) * persistence
+        if score <= 0.03 and recent_cpu < 20 and recent_memory < 5:
+            continue
+        if recent_memory >= 20 or memory_growth >= 10:
+            memory_risk = "high"
+            explanation = "High memory use or rapid memory growth was observed before the incident."
+        elif recent_memory >= 10 or memory_growth >= 5:
+            memory_risk = "elevated"
+            explanation = "Memory use was elevated before the incident, but this is not proof of causation."
+        elif recent_cpu >= 50 or cpu_growth >= 20:
+            memory_risk = "normal"
+            explanation = "CPU pressure increased before the incident; memory pressure was not dominant."
+        else:
+            memory_risk = "normal"
+            explanation = "The process was repeatedly observed among the highest resource consumers."
+        ranked.append({
+            "pid": pid,
+            "name": name,
+            "recent_cpu_percent": round(recent_cpu, 2),
+            "recent_memory_percent": round(recent_memory, 2),
+            "cpu_growth_percent": round(cpu_growth, 2),
+            "memory_growth_percent": round(memory_growth, 2),
+            "observations": len(samples),
+            "memory_risk": memory_risk,
+            "explanation": explanation,
+            "confidence": round(min(0.99, max(0.1, score * 2.5)), 2),
+        })
+
+    return sorted(
+        ranked,
+        key=lambda item: (
+            item["confidence"],
+            cast(float, item["recent_cpu_percent"])
+            + cast(float, item["recent_memory_percent"]),
+        ),
+        reverse=True,
+    )[:3]
+
+
+def _memory_pressure_forecast(now: float) -> dict:
+    """Estimate near-term host memory pressure from recent collection samples."""
+    samples = [
+        sample for sample in list(_memory_usage_history)
+        if now - sample["timestamp"] <= 10 * 60
+    ]
+    if len(samples) < 4:
+        return {
+            "status": "warming_up",
+            "current_percent": None,
+            "rate_percent_per_minute": None,
+            "minutes_to_90_percent": None,
+            "likely_process": None,
+            "explanation": "Collecting enough memory samples for a trend estimate.",
+        }
+
+    midpoint = len(samples) // 2
+    older = samples[:midpoint]
+    newer = samples[midpoint:]
+    older_avg = sum(item["memory"] for item in older) / len(older)
+    newer_avg = sum(item["memory"] for item in newer) / len(newer)
+    elapsed_minutes = max(
+        0.1,
+        (newer[-1]["timestamp"] - older[0]["timestamp"]) / 60,
+    )
+    rate = (newer_avg - older_avg) / elapsed_minutes
+    current = samples[-1]["memory"]
+    minutes_to_90 = (
+        (90.0 - current) / rate
+        if rate > 0 and current < 90
+        else None
+    )
+    if current >= 90:
+        status = "critical"
+    elif current >= 80 or (minutes_to_90 is not None and minutes_to_90 <= 30):
+        status = "elevated"
+    else:
+        status = "normal"
+
+    contributors = _rank_process_contributors(now)
+    memory_driver = max(
+        contributors,
+        key=lambda item: (
+            item["memory_growth_percent"],
+            item["recent_memory_percent"],
+        ),
+        default=None,
+    )
+    if status == "critical":
+        explanation = "Host memory is already critical. Processes shown are candidates for investigation."
+    elif status == "elevated" and memory_driver:
+        explanation = (
+            f"{memory_driver['name']} is the strongest observed memory contributor; "
+            "this is a trend warning, not proof it will crash the system."
+        )
+    elif status == "elevated":
+        explanation = "Host memory is rising and may become critical if the trend continues."
+    else:
+        explanation = "No near-term critical memory trend detected."
+
+    return {
+        "status": status,
+        "current_percent": round(current, 2),
+        "rate_percent_per_minute": round(rate, 3),
+        "minutes_to_90_percent": (
+            round(minutes_to_90, 1) if minutes_to_90 is not None else None
+        ),
+        "likely_process": memory_driver,
+        "explanation": explanation,
+    }
+
 
 async def _restore_registered_devices():
     """Restore registered device identities from Redis into the in-memory registry."""
@@ -137,6 +445,7 @@ async def _restore_registered_devices():
             _devices[device_id] = {
                 "device_id": device_id,
                 "device_name": data.get("device_name", "unknown"),
+                "workspace_id": data.get("workspace_id") or None,
                 "os": data.get("os", "unknown"),
                 "os_version": data.get("os_version", ""),
                 "hostname": data.get("hostname", ""),
@@ -448,7 +757,10 @@ def _container_cpu_percent() -> float:
 
 
 def _build_feature_vector():
+    global _network_io_state
     import math
+    network_sent_rate = 0.0
+    network_recv_rate = 0.0
     if not PS_OK:
         t    = time.time()
         cpu  = 30 + 20 * abs(math.sin(t / 60))
@@ -465,17 +777,44 @@ def _build_feature_vector():
         try:
             n   = psutil.net_io_counters()
             net = min(100, (n.bytes_sent + n.bytes_recv) / 1e8 * 10)
+            now = time.monotonic()
+            previous = _network_io_state
+            elapsed = now - previous["timestamp"] if previous["timestamp"] else 0.0
+            if elapsed >= 0.1:
+                network_sent_rate = max(
+                    0.0,
+                    (n.bytes_sent - previous["bytes_sent"]) / elapsed,
+                )
+                network_recv_rate = max(
+                    0.0,
+                    (n.bytes_recv - previous["bytes_recv"]) / elapsed,
+                )
+            _network_io_state = {
+                "timestamp": now,
+                "bytes_sent": n.bytes_sent,
+                "bytes_recv": n.bytes_recv,
+            }
         except Exception:
             net = 0.0
 
     health = max(0, 100 - max(0, cpu - 70) * 0.35 - max(0, mem - 60) * 0.25)
+    collected_at = time.time()
+    _memory_usage_history.append({
+        "timestamp": collected_at,
+        "memory": float(mem),
+    })
+    process_summary = _collect_process_summary()
+    _record_process_trends(process_summary, collected_at)
     raw = {
         "cpu_percent":     round(float(cpu),    2),
         "memory":          round(float(mem),    2),
         "disk_percent":    round(float(disk),   2),
         "network_percent": round(float(net),    2),
+        "network_sent_bytes_per_sec": round(network_sent_rate, 1),
+        "network_recv_bytes_per_sec": round(network_recv_rate, 1),
         "health_score":    round(float(health), 2),
-        "collected_at":    time.time(),
+        "collected_at":    collected_at,
+        "processes":       process_summary,
     }
     feat = np.array([cpu/100, mem/100, disk/100, net/100, 0.0], dtype=np.float32)
     return feat, raw
@@ -530,7 +869,8 @@ def _record_process_crash(event: dict) -> None:
 
 
 def _collect():
-
+    global _last_collector_success_at, _last_collector_error
+    global _collector_iterations, _collector_gap_count
     engine    = get_engine()
     registry  = get_registry()
     lifecycle_monitor = (
@@ -590,6 +930,15 @@ def _collect():
 
             with _lock:
                 _last_metrics.update(update)
+                if (
+                    _last_collector_success_at
+                    and time.time() - _last_collector_success_at
+                    > max(10.0, float(os.environ.get("POLL_INTERVAL_S", "1")) * 3)
+                ):
+                    _collector_gap_count += 1
+                _last_collector_success_at = time.time()
+                _last_collector_error = ""
+                _collector_iterations += 1
 
             # Guard against closed loop (Windows shutdown race)
             if _event_loop and not _event_loop.is_closed():
@@ -692,13 +1041,14 @@ def _collect():
                 last_save = time.time()
 
         except Exception as e:
+            _last_collector_error = str(e)
             log.error("Collector error: %s", e, exc_info=True)
         _collector_stop.wait(float(os.environ.get("POLL_INTERVAL_S", "1")))
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _event_loop, _collector_thread
+    global _event_loop, _collector_thread, _collector_started_at
     _event_loop = asyncio.get_running_loop()
     await _restore_registered_devices()
 
@@ -835,12 +1185,16 @@ async def lifespan(app: FastAPI):
         )
 
     _collector_stop.clear()
+    _collector_started_at = time.time()
     _collector_thread = threading.Thread(target=_collect, daemon=True, name="cvis-collector")
     _collector_thread.start()
 
     async def _alert_loop():
         ae = get_alert_engine()
         await ae.restore_active_alerts()
+        ae.restore_process_suppressions(
+            await load_process_suppressions(time.time())
+        )
 
         # Preserve the real notification dispatcher before adding
         # Redis-based notification throttling.
@@ -868,8 +1222,28 @@ async def lifespan(app: FastAPI):
 
         while True:
             if _last_metrics:
-                await ae.evaluate(dict(_last_metrics))
-                await cache_metrics(dict(_last_metrics), ttl=3)
+                metrics_for_alerts = dict(_last_metrics)
+                memory_forecast = _memory_pressure_forecast(time.time())
+                metrics_for_alerts.update({
+                    "memory_forecast_level": {
+                        "normal": 0,
+                        "warming_up": 0,
+                        "elevated": 1,
+                        "critical": 2,
+                    }.get(memory_forecast["status"], 0),
+                    "memory_forecast_status": memory_forecast["status"],
+                    "memory_forecast_process": (
+                        (memory_forecast.get("likely_process") or {}).get(
+                            "name",
+                            "unknown",
+                        )
+                    ),
+                    "memory_forecast_minutes_to_90": (
+                        memory_forecast.get("minutes_to_90_percent")
+                    ),
+                })
+                await ae.evaluate(metrics_for_alerts)
+                await cache_metrics(metrics_for_alerts, ttl=3)
 
             await asyncio.sleep(5)
 
@@ -1315,9 +1689,24 @@ async def login(req: LoginRequest, request: Request):
                 identity=req.username,
             )
             raise HTTPException(401, "Invalid credentials")
-        pair = issue_token_pair(personal_user["user_id"], scope="read")
+        pair = issue_token_pair(
+            personal_user["user_id"],
+            scope="read",
+            workspace_id=personal_user["workspace_id"],
+        )
     return {"access_token": pair.access_token, "refresh_token": pair.refresh_token,
             "token_type": "bearer", "expires_in": pair.expires_in}
+
+
+@app.get("/auth/me", tags=["Auth"])
+async def current_account(principal: dict = Depends(require_scope("read"))):
+    return {
+        "subject": principal.get("sub") or principal.get("name"),
+        "scope": principal.get("scope", "read"),
+        "workspace_id": principal.get("workspace_id"),
+        "auth_source": principal.get("_source"),
+    }
+
 
 @app.post("/auth/refresh", tags=["Auth"])
 async def refresh(req: RefreshRequest):
@@ -1354,16 +1743,31 @@ async def os_status(
     principal: dict = Depends(require_scope("read")),
 ):
     cached = await get_cached_metrics()
-    return cached or {**_last_metrics, "ps_available": PS_OK}
+    status = _collection_status()
+    payload = dict(cached or _last_metrics)
+    payload.update({
+        "ps_available": PS_OK,
+        "system_identity": _system_identity(),
+        "collection": status,
+        "memory_pressure_forecast": _memory_pressure_forecast(time.time()),
+        "data_quality": {
+            "status": status["state"],
+            "source": "synthetic" if status["synthetic_metrics"] else "live",
+            "fresh": status["state"] in {"healthy", "warming_up"},
+        },
+    })
+    return payload
 
 @app.get(
     "/os/processes",
     tags=["OS"],
     dependencies=[Depends(require_scope("read"))],
 )
-async def os_processes():
+async def os_processes(principal: dict = Depends(require_scope("read"))):
+    if principal.get("workspace_id"):
+        return {"by_cpu": [], "by_mem": [], "available": False}
     if not PS_OK:
-        return {"by_cpu": [], "by_mem": []}
+        return {"by_cpu": [], "by_mem": [], "available": False}
     procs = []
     for p in psutil.process_iter(["pid", "name", "cpu_percent", "memory_percent", "status"]):
         try:
@@ -1381,7 +1785,23 @@ async def os_processes():
     return {
         "by_cpu": sorted(procs, key=lambda x: x["cpu"], reverse=True)[:10],
         "by_mem": sorted(procs, key=lambda x: x["mem"], reverse=True)[:10],
+        "available": True,
     }
+
+
+@app.get(
+    "/os/process-trends",
+    tags=["OS"],
+    dependencies=[Depends(require_scope("read"))],
+)
+async def os_process_trends(
+    limit: int = 60,
+    principal: dict = Depends(require_scope("read")),
+):
+    if principal.get("workspace_id"):
+        return []
+    bounded_limit = max(1, min(limit, 720))
+    return list(_process_trend_history)[-bounded_limit:]
 
 
 class FeatRequest(BaseModel):
@@ -1446,6 +1866,7 @@ async def save_version(
     req: SaveVersionRequest,
     principal: dict = Depends(require_scope("write")),
 ):
+    _require_operator(principal)
     engine = get_engine()
     m      = engine.metrics
     entry  = get_registry().save_version(
@@ -1458,11 +1879,21 @@ async def save_version(
     return {"version_id": entry.version_id, "saved": True}
 
 @app.get("/models/versions", tags=["Versioning"], dependencies=[Depends(require_scope("read"))])
-async def list_versions(model_name: Optional[str] = None):
+async def list_versions(
+    model_name: Optional[str] = None,
+    principal: dict = Depends(require_scope("read")),
+):
+    if principal.get("workspace_id"):
+        return []
     return get_registry().list_versions(model_name)
 
 @app.post("/models/activate/{model_name}/{version_id}", tags=["Versioning"], dependencies=[Depends(require_scope("admin"))])
-async def activate_version(model_name: str, version_id: str):
+async def activate_version(
+    model_name: str,
+    version_id: str,
+    principal: dict = Depends(require_scope("admin")),
+):
+    _require_operator(principal)
     state = get_registry().activate(model_name, version_id)
     if not state:
         raise HTTPException(404, "Version not found")
@@ -1470,7 +1901,11 @@ async def activate_version(model_name: str, version_id: str):
     return {"activated": version_id}
 
 @app.post("/models/rollback/{model_name}", tags=["Versioning"], dependencies=[Depends(require_scope("admin"))])
-async def rollback(model_name: str):
+async def rollback(
+    model_name: str,
+    principal: dict = Depends(require_scope("admin")),
+):
+    _require_operator(principal)
     result = get_registry().rollback(model_name)
     if not result:
         raise HTTPException(404, "No previous version")
@@ -1479,7 +1914,11 @@ async def rollback(model_name: str):
     return {"rolled_back_to": vid}
 
 @app.post("/models/rollback_best/{model_name}", tags=["Versioning"], dependencies=[Depends(require_scope("admin"))])
-async def rollback_best(model_name: str):
+async def rollback_best(
+    model_name: str,
+    principal: dict = Depends(require_scope("admin")),
+):
+    _require_operator(principal)
     result = get_registry().rollback_to_best(model_name)
     if not result:
         raise HTTPException(404, "No best version recorded")
@@ -1488,13 +1927,20 @@ async def rollback_best(model_name: str):
     return {"rolled_back_to_best": vid}
 
 @app.delete("/models/{model_name}/{version_id}", tags=["Versioning"], dependencies=[Depends(require_scope("admin"))])
-async def delete_version(model_name: str, version_id: str):
+async def delete_version(
+    model_name: str,
+    version_id: str,
+    principal: dict = Depends(require_scope("admin")),
+):
+    _require_operator(principal)
     if not get_registry().delete_version(model_name, version_id):
         raise HTTPException(404, "Version not found or is active")
     return {"deleted": version_id}
 
 @app.get("/models/stats", tags=["Versioning"], dependencies=[Depends(require_scope("read"))])
-async def version_stats():
+async def version_stats(principal: dict = Depends(require_scope("read"))):
+    if principal.get("workspace_id"):
+        return {}
     return get_registry().stats()
 
 
@@ -1520,6 +1966,13 @@ class RuleRequest(BaseModel):
     severity: str = "WARNING"
     cooldown_s: int = 60
     message_tpl: str = "{metric} is {value:.2f} (threshold: {threshold})"
+
+class AlertSnoozeRequest(BaseModel):
+    minutes: int = Field(default=30, ge=1, le=1440)
+
+class ProcessSuppressionRequest(BaseModel):
+    process_name: str = Field(..., min_length=1, max_length=160)
+    minutes: int = Field(default=60, ge=1, le=10080)
 
 @app.post(
     "/alerts/webhooks",
@@ -1562,19 +2015,154 @@ async def configure_email(req: EmailRequest):
     tags=["Alerts"],
     dependencies=[Depends(require_scope("read"))],
 )
-async def alert_history(limit: int = 50, severity: Optional[str] = None):
+async def alert_history(
+    limit: int = 50,
+    severity: Optional[str] = None,
+    principal: dict = Depends(require_scope("read")),
+):
     import re
     if severity and not re.match(r'^[A-Z_]+$', severity):
         raise HTTPException(status_code=422, detail="Invalid severity value")
-    db_rows = await load_alerts(limit=limit, severity=severity)
-    return db_rows if db_rows else get_alert_engine().get_history(limit, severity)
+    device_ids = _workspace_device_ids(principal)
+    db_rows = await load_alerts(
+        limit=limit,
+        severity=severity,
+        device_ids=device_ids,
+    )
+    if db_rows or device_ids is not None:
+        return db_rows
+    return get_alert_engine().get_history(limit, severity)
+
+@app.post(
+    "/alerts/{alert_id}/acknowledge",
+    tags=["Alerts"],
+    dependencies=[Depends(require_scope("write"))],
+)
+async def acknowledge_alert_route(
+    alert_id: str,
+    principal: dict = Depends(require_scope("write")),
+):
+    _require_operator(principal)
+    acknowledged_at = time.time()
+    if not await acknowledge_alert(alert_id, acknowledged_at):
+        raise HTTPException(404, "Alert not found")
+    return {"alert_id": alert_id, "acknowledged_at": acknowledged_at}
+
+@app.post(
+    "/alerts/{alert_id}/snooze",
+    tags=["Alerts"],
+    dependencies=[Depends(require_scope("write"))],
+)
+async def snooze_alert_route(
+    alert_id: str,
+    request: AlertSnoozeRequest,
+    principal: dict = Depends(require_scope("write")),
+):
+    _require_operator(principal)
+    snoozed_until = time.time() + request.minutes * 60
+    if not await snooze_alert(alert_id, snoozed_until):
+        raise HTTPException(404, "Alert not found")
+    get_alert_engine().snooze_alert_notifications(alert_id, snoozed_until)
+    return {"alert_id": alert_id, "snoozed_until": snoozed_until}
+
+@app.delete(
+    "/alerts/{alert_id}/snooze",
+    tags=["Alerts"],
+    dependencies=[Depends(require_scope("write"))],
+)
+async def unsnooze_alert_route(
+    alert_id: str,
+    principal: dict = Depends(require_scope("write")),
+):
+    _require_operator(principal)
+    if not await unsnooze_alert(alert_id):
+        raise HTTPException(404, "Alert not found")
+    get_alert_engine().unsnooze_alert_notifications(alert_id)
+    return {"alert_id": alert_id, "snoozed_until": None}
+
+@app.post(
+    "/alerts/process-suppressions",
+    tags=["Alerts"],
+    dependencies=[Depends(require_scope("write"))],
+)
+async def suppress_alert_process(
+    request: ProcessSuppressionRequest,
+    principal: dict = Depends(require_scope("write")),
+):
+    _require_operator(principal)
+    suppressed_until = time.time() + request.minutes * 60
+    if not await save_process_suppression(request.process_name, suppressed_until):
+        raise HTTPException(503, "Alert suppression persistence is unavailable")
+    get_alert_engine().set_process_suppression(
+        request.process_name,
+        suppressed_until,
+    )
+    return {
+        "process_name": request.process_name,
+        "suppressed_until": suppressed_until,
+    }
+
+@app.delete(
+    "/alerts/process-suppressions/{process_name}",
+    tags=["Alerts"],
+    dependencies=[Depends(require_scope("write"))],
+)
+async def unsuppress_alert_process(
+    process_name: str,
+    principal: dict = Depends(require_scope("write")),
+):
+    _require_operator(principal)
+    if not await remove_process_suppression(process_name):
+        raise HTTPException(404, "Process suppression not found")
+    get_alert_engine().remove_process_suppression(process_name)
+    return {"process_name": process_name, "suppressed": False}
+
+@app.get(
+    "/alerts/process-suppressions",
+    tags=["Alerts"],
+    dependencies=[Depends(require_scope("read"))],
+)
+async def list_alert_process_suppressions(
+    principal: dict = Depends(require_scope("read")),
+):
+    _require_operator(principal)
+    suppressions = await load_process_suppressions(time.time())
+    return [
+        {"process_name": process_name, "suppressed_until": suppressed_until}
+        for process_name, suppressed_until in suppressions.items()
+    ]
 
 @app.get(
     "/alerts/stats",
     tags=["Alerts"],
     dependencies=[Depends(require_scope("read"))],
 )
-async def alert_stats():
+async def alert_stats(principal: dict = Depends(require_scope("read"))):
+    device_ids = _workspace_device_ids(principal)
+    if device_ids is not None:
+        scoped_alerts = await load_alerts(limit=10000, device_ids=device_ids)
+        return {
+            "total_alerts": len(scoped_alerts),
+            "active_alerts": sum(
+                1 for alert in scoped_alerts if alert.get("resolved_at") is None
+            ),
+            "critical": sum(
+                1 for alert in scoped_alerts if alert.get("severity") == "CRITICAL"
+            ),
+            "warning": sum(
+                1
+                for alert in scoped_alerts
+                if alert.get("severity") in ("WARNING", "HIGH")
+            ),
+            "info": sum(
+                1 for alert in scoped_alerts if alert.get("severity") == "INFO"
+            ),
+            "redis_total": len(scoped_alerts),
+            "webhooks_configured": 0,
+            "email_configured": False,
+            "alert_email": False,
+            "rules_active": 0,
+        }
     total = 0
     from backend.core.storage.redis_store import get_client
     c = await get_client()
@@ -1592,7 +2180,9 @@ async def alert_stats():
     tags=["Alerts"],
     dependencies=[Depends(require_scope("read"))],
 )
-async def list_rules():
+async def list_rules(principal: dict = Depends(require_scope("read"))):
+    if principal.get("workspace_id"):
+        return []
     return [vars(r) for r in get_alert_engine().rules.values()]
 
 @app.post(
@@ -1600,7 +2190,11 @@ async def list_rules():
     tags=["Alerts"],
     dependencies=[Depends(require_scope("admin"))],
 )
-async def add_rule(req: RuleRequest):
+async def add_rule(
+    req: RuleRequest,
+    principal: dict = Depends(require_scope("admin")),
+):
+    _require_operator(principal)
     import uuid as _u
     rule = AlertRule(rule_id=_u.uuid4().hex[:8], **req.dict())
     get_alert_engine().add_rule(rule)
@@ -1611,7 +2205,11 @@ async def add_rule(req: RuleRequest):
     tags=["Alerts"],
     dependencies=[Depends(require_scope("admin"))],
 )
-async def delete_rule(rule_id: str):
+async def delete_rule(
+    rule_id: str,
+    principal: dict = Depends(require_scope("admin")),
+):
+    _require_operator(principal)
     if not get_alert_engine().delete_rule(rule_id):
         raise HTTPException(404, "Not found")
     return {"deleted": rule_id}
@@ -1625,7 +2223,9 @@ async def patch_rule(
     rule_id:   str,
     enabled:   Optional[bool]  = None,
     threshold: Optional[float] = None,
+    principal: dict = Depends(require_scope("admin")),
 ):
+    _require_operator(principal)
     kw: dict = {}
     if enabled is not None:
         kw["enabled"] = enabled
@@ -1699,6 +2299,7 @@ async def health():
         "reason":       ex["reason"],
         "severity":     ex["severity"],
         "actions":      ex["actions"],
+        "collection":   _collection_status(),
     }
 
 @app.get("/health/full", tags=["System"], dependencies=[Depends(require_scope("read"))])
@@ -1714,15 +2315,46 @@ async def health_full():
     tags=["System"],
     dependencies=[Depends(require_scope("read"))],
 )
-async def get_snapshots(hours: float = 1.0):
-    return await load_snapshots(hours=min(hours, 24.0))
+async def get_snapshots(
+    hours: float = 1.0,
+    principal: dict = Depends(require_scope("read")),
+):
+    if hours <= 0:
+        raise HTTPException(422, "hours must be greater than zero")
+    return await load_snapshots(
+        hours=min(hours, snapshot_retention_days() * 24),
+        device_ids=_workspace_device_ids(principal),
+    )
+
+
+@app.get(
+    "/db/snapshots/rollups",
+    tags=["System"],
+    dependencies=[Depends(require_scope("read"))],
+)
+async def get_snapshot_rollups(
+    hours: float = 24.0,
+    principal: dict = Depends(require_scope("read")),
+):
+    if hours <= 0:
+        raise HTTPException(422, "hours must be greater than zero")
+    return await load_snapshot_rollups(
+        hours=min(hours, snapshot_retention_days() * 24),
+        device_ids=_workspace_device_ids(principal),
+    )
+
 
 @app.get(
     "/db/events",
     tags=["System"],
     dependencies=[Depends(require_scope("read"))],
 )
-async def get_events(limit: int = 60):
+async def get_events(
+    limit: int = 60,
+    principal: dict = Depends(require_scope("read")),
+):
+    if principal.get("workspace_id"):
+        return []
     return await load_events(limit=limit) or []
 
 
@@ -1835,7 +2467,11 @@ async def cognitive_forecast():
     tags=["Cognitive"],
     dependencies=[Depends(require_scope("read"))],
 )
-async def cognitive_predictions():
+async def cognitive_predictions(
+    principal: dict = Depends(require_scope("read")),
+):
+    if principal.get("workspace_id"):
+        return []
     if not COGNITIVE_OK:
         return []
     dna     = get_dna_engine()
@@ -1861,6 +2497,23 @@ async def cognitive_predictions():
         }
         for p in preds
     ]
+
+
+@app.get(
+    "/cognitive/predictions/accuracy",
+    tags=["Cognitive"],
+    dependencies=[Depends(require_scope("read"))],
+)
+async def cognitive_prediction_accuracy(
+    principal: dict = Depends(require_scope("read")),
+):
+    if principal.get("workspace_id"):
+        return {
+            "available": False,
+            "reason": "Prediction accuracy is only available to host operators",
+        }
+    return await load_prediction_accuracy()
+
 
 @app.get(
     "/cognitive/debug/matcher",
@@ -1969,7 +2622,11 @@ async def cognitive_debug_matcher():
     tags=["Cognitive"],
     dependencies=[Depends(require_scope("write"))],
 )
-async def acknowledge_prediction(pred_id: str):
+async def acknowledge_prediction(
+    pred_id: str,
+    principal: dict = Depends(require_scope("write")),
+):
+    _require_operator(principal)
     if not COGNITIVE_OK:
         raise HTTPException(
             status_code=503,
@@ -2024,7 +2681,12 @@ async def acknowledge_prediction(pred_id: str):
     tags=["Cognitive"],
     dependencies=[Depends(require_scope("write"))],
 )
-async def resolve_prediction(pred_id: str, was_correct: bool):
+async def resolve_prediction(
+    pred_id: str,
+    was_correct: bool,
+    principal: dict = Depends(require_scope("write")),
+):
+    _require_operator(principal)
     if not COGNITIVE_OK:
         raise HTTPException(status_code=503, detail="Cognitive layer unavailable")
 
@@ -2216,7 +2878,10 @@ async def cognitive_premortem():
     tags=["Actions"],
     dependencies=[Depends(require_scope("read"))],
 )
-async def remediation_status():
+async def remediation_status(
+    principal: dict = Depends(require_scope("read")),
+):
+    _require_operator(principal)
     return get_ar_engine().get_status()
 
 @app.get(
@@ -2224,7 +2889,11 @@ async def remediation_status():
     tags=["Actions"],
     dependencies=[Depends(require_scope("read"))],
 )
-async def remediation_log(limit: int = 20):
+async def remediation_log(
+    limit: int = 20,
+    principal: dict = Depends(require_scope("read")),
+):
+    _require_operator(principal)
     return get_ar_engine().get_audit_log(limit=limit)
 
 @app.get(
@@ -2243,21 +2912,52 @@ async def cognitive_blackbox():
     tags=["Cognitive"],
     dependencies=[Depends(require_scope("write"))],
 )
-async def mark_incident(incident_type: str, description: str = ""):
+async def mark_incident(
+    incident_type: str,
+    description: str = "",
+    principal: dict = Depends(require_scope("write")),
+):
+    _require_operator(principal)
     if not COGNITIVE_OK:
         return {"error": "Cognitive layer not available"}
     bb          = get_black_box()
     dna         = get_dna_engine()
     incident_id = bb.mark_incident(incident_type, description or incident_type)
     dna.record_failure(incident_type, description or incident_type)
-    return {"incident_id": incident_id, "recorded": True}
+    incident = bb.get_incident(incident_id) or {}
+    likely_contributors = _rank_process_contributors(
+        incident.get("occurred_at", time.time())
+    )
+    incident["likely_contributors"] = likely_contributors
+    await save_incident({
+        "incident_id": incident_id,
+        "failure_type": incident_type,
+        "severity": _last_metrics.get("severity", "UNKNOWN"),
+        "status": "open",
+        "occurred_at": incident.get("occurred_at", time.time()),
+        "evidence": incident.get("plain_timeline"),
+        "metadata": {
+            "description": description or incident_type,
+            "source": "manual",
+            "likely_contributors": likely_contributors,
+        },
+    })
+    return {
+        "incident_id": incident_id,
+        "recorded": True,
+        "likely_contributors": likely_contributors,
+    }
 
 @app.get(
     "/cognitive/incidents",
     tags=["Cognitive"],
     dependencies=[Depends(require_scope("read"))],
 )
-async def list_incidents():
+async def list_incidents(
+    principal: dict = Depends(require_scope("read")),
+):
+    if principal.get("workspace_id"):
+        return []
     if not COGNITIVE_OK:
         return []
     return get_black_box().get_incidents()
@@ -2267,7 +2967,12 @@ async def list_incidents():
     tags=["Cognitive"],
     dependencies=[Depends(require_scope("read"))],
 )
-async def get_incident(incident_id: str):
+async def get_incident(
+    incident_id: str,
+    principal: dict = Depends(require_scope("read")),
+):
+    if principal.get("workspace_id"):
+        raise HTTPException(404, "Incident not found")
     if not COGNITIVE_OK:
         return {"error": "not available"}
     incident = get_black_box().get_incident(incident_id)
@@ -2281,7 +2986,12 @@ async def get_incident(incident_id: str):
     tags=["Cognitive"],
     dependencies=[Depends(require_scope("read"))],
 )
-async def get_postmortem(event_id: str):
+async def get_postmortem(
+    event_id: str,
+    principal: dict = Depends(require_scope("read")),
+):
+    if principal.get("workspace_id"):
+        raise HTTPException(404, "Postmortem not found")
     if not COGNITIVE_OK:
         return {"error": "not available"}
     bb       = get_black_box()
@@ -2296,7 +3006,11 @@ async def get_postmortem(event_id: str):
     tags=["Cognitive"],
     dependencies=[Depends(require_scope("read"))],
 )
-async def notification_history():
+async def notification_history(
+    principal: dict = Depends(require_scope("read")),
+):
+    if principal.get("workspace_id"):
+        return []
     if not COGNITIVE_OK:
         return []
     return get_notifier().get_history()
@@ -2306,7 +3020,12 @@ async def notification_history():
     tags=["Cognitive"],
     dependencies=[Depends(require_scope("admin"))],
 )
-async def configure_notifications(enabled: bool = True, min_severity: str = "MEDIUM"):
+async def configure_notifications(
+    enabled: bool = True,
+    min_severity: str = "MEDIUM",
+    principal: dict = Depends(require_scope("admin")),
+):
+    _require_operator(principal)
     if COGNITIVE_OK:
         n = get_notifier()
         n.set_enabled(enabled)
@@ -2341,6 +3060,7 @@ class DeviceRegistrationPayload(BaseModel):
     os_version: str = ""
     hostname: str = ""
     capabilities: list[str] = []
+    workspace_id: str | None = None
 
 
 @app.post("/devices/register", tags=["Devices"])
@@ -2361,6 +3081,13 @@ async def register_device(
 
     if not payload.os.strip():
         raise HTTPException(400, "os is required")
+
+    workspace_id = payload.workspace_id.strip() if payload.workspace_id else None
+    principal_workspace_id = principal.get("workspace_id")
+    if principal_workspace_id:
+        if workspace_id and workspace_id != principal_workspace_id:
+            raise HTTPException(403, "Device is not assigned to this workspace")
+        workspace_id = principal_workspace_id
 
     redis = await get_redis()
 
@@ -2395,6 +3122,7 @@ async def register_device(
         "os_version": payload.os_version.strip(),
         "hostname": payload.hostname.strip(),
         "capabilities": list(dict.fromkeys(payload.capabilities)),
+        "workspace_id": workspace_id,
         "registered_at": time.time(),
         "status": "registered",
     }
@@ -2409,6 +3137,7 @@ async def register_device(
                     "os_version": registration["os_version"],
                     "hostname": registration["hostname"],
                     "capabilities": _json.dumps(registration["capabilities"]),
+                    "workspace_id": registration["workspace_id"] or "",
                     "registered_at": str(registration["registered_at"]),
                     "status": registration["status"],
                 },
@@ -2461,6 +3190,7 @@ async def register_device(
         "credential": api_key,
         "credential_scope": "write",
         "credential_device_id": device_id,
+        "workspace_id": workspace_id,
     }
 
 
@@ -2483,6 +3213,7 @@ async def create_process_approval_request(
     principal: dict = Depends(require_scope("admin")),
 ):
     """Create a pending process-termination approval request."""
+    _require_workspace_device(principal, device_id)
     if device_id not in _devices:
         raise HTTPException(404, "Device is not registered")
 
@@ -2645,6 +3376,7 @@ async def create_device_command(
     principal: dict = Depends(require_scope("admin")),
 ):
     """Create and durably enqueue an allowlisted command for a device."""
+    _require_workspace_device(principal, device_id)
     if device_id not in _devices:
         raise HTTPException(404, "Device is not registered")
 
@@ -2729,6 +3461,7 @@ async def get_device_command(
     principal: dict = Depends(require_scope("read")),
 ):
     """Return command state, enforcing device binding for device credentials."""
+    _require_workspace_device(principal, device_id)
     redis = await get_redis()
     if redis is None:
         raise HTTPException(503, "Command persistence unavailable")
@@ -2979,6 +3712,12 @@ async def receive_device_metrics(
     if not await _accept_telemetry_timestamp(device_id, payload.timestamp):
         raise HTTPException(409, "Telemetry timestamp is out of order or replayed")
 
+    await maybe_save_snapshot(
+        payload.metrics,
+        interval_s=10,
+        device_id=device_id,
+    )
+
     # Store the complete remote-device telemetry payload.
     device = {
         **payload.dict(),
@@ -3037,9 +3776,10 @@ async def receive_device_metrics(
         "ml": device["ml"],
     }
 
-@app.get("/devices", tags=["Devices"], dependencies=[Depends(require_scope("read"))])
-async def list_devices():
+@app.get("/devices", tags=["Devices"])
+async def list_devices(principal: dict = Depends(require_scope("read"))):
     now = time.time()
+    workspace_id = principal.get("workspace_id")
     return [
         {
             "device_id":   did,
@@ -3052,13 +3792,20 @@ async def list_devices():
             "processes":   d.get("processes", []),
         }
         for did, d in _devices.items()
+        if not workspace_id or d.get("workspace_id") == workspace_id
     ]
 
-@app.get("/devices/{device_id}", tags=["Devices"], dependencies=[Depends(require_scope("read"))])
-async def get_device(device_id: str):
+@app.get("/devices/{device_id}", tags=["Devices"])
+async def get_device(
+    device_id: str,
+    principal: dict = Depends(require_scope("read")),
+):
     if device_id not in _devices:
         raise HTTPException(404, "Device not found")
     dev = _devices[device_id]
+    workspace_id = principal.get("workspace_id")
+    if workspace_id and dev.get("workspace_id") != workspace_id:
+        raise HTTPException(404, "Device not found")
     age = time.time() - dev.get("last_seen", 0)
     return {**dev, "status": "online" if age < 30 else "offline", "last_seen_s": round(age, 1)}
 
@@ -3074,13 +3821,22 @@ except Exception as _ae:
     ACTIONS_OK = False
 
 @app.get("/actions/available", tags=["Actions"])
-async def list_available_actions(failure_type: Optional[str] = None):
+async def list_available_actions(
+    failure_type: Optional[str] = None,
+    principal: dict = Depends(require_scope("read")),
+):
+    if principal.get("workspace_id"):
+        return []
     if not ACTIONS_OK:
         return []
     return _get_actions(failure_type)
 
 @app.post("/actions/execute", tags=["Actions"], dependencies=[Depends(require_scope("admin"))])
-async def run_action(action_id: str):
+async def run_action(
+    action_id: str,
+    principal: dict = Depends(require_scope("admin")),
+):
+    _require_operator(principal)
     if not ACTIONS_OK:
         return {"success": False, "error": "Action executor not available"}
     result = await asyncio.get_event_loop().run_in_executor(None, _execute_action, action_id)
@@ -3092,6 +3848,7 @@ async def resolve_action_escalation(
     action_id: str,
     principal: dict = Depends(require_scope("admin")),
 ):
+    _require_operator(principal)
     from judgment.lifecycle import resolve_escalation
     from judgment.recovery import reconcile_escalation_resolution_audits
 
@@ -3108,9 +3865,49 @@ async def resolve_action_escalation(
     return result
 
 
-@app.get("/report/weekly", tags=["Reports"], dependencies=[Depends(require_scope("read"))])
-async def weekly_health_report():
+@app.get("/report/weekly", tags=["Reports"])
+async def weekly_health_report(
+    principal: dict = Depends(require_scope("read")),
+):
     from datetime import datetime
+    workspace_device_ids = _workspace_device_ids(principal)
+    if workspace_device_ids is not None:
+        snapshots = await load_snapshots(
+            hours=24 * 7,
+            device_ids=workspace_device_ids,
+        )
+        alerts = await load_alerts(
+            limit=10000,
+            device_ids=workspace_device_ids,
+        )
+        latest = snapshots[-1] if snapshots else {}
+        score = round(
+            sum(float(item.get("health", 0) or 0) for item in snapshots)
+            / len(snapshots)
+        ) if snapshots else 0
+        critical = sum(
+            1 for alert in alerts if alert.get("severity") == "CRITICAL"
+        )
+        warning = sum(
+            1
+            for alert in alerts
+            if alert.get("severity") in ("WARNING", "HIGH")
+        )
+        return {
+            "report": (
+                f"Workspace weekly report\n"
+                f"Devices monitored: {len(workspace_device_ids)}\n"
+                f"Telemetry samples: {len(snapshots)}\n"
+                f"Average health: {score}/100\n"
+                f"Critical alerts: {critical}\n"
+                f"Warning alerts: {warning}"
+            ),
+            "generated_at": time.time(),
+            "format": "plain_text",
+            "workspace_id": principal.get("workspace_id"),
+            "devices_monitored": len(workspace_device_ids),
+            "latest_metrics": latest,
+        }
     m     = dict(_last_metrics)
     score = m.get("health_credit_score") or 0
     if score == 0 and COGNITIVE_OK:
@@ -3175,7 +3972,10 @@ from backend.core.settings import settings_manager as _sm
     tags=["Settings"],
     dependencies=[Depends(require_scope("admin"))],
 )
-async def get_settings():
+async def get_settings(
+    principal: dict = Depends(require_scope("admin")),
+):
+    _require_operator(principal)
     return _sm.get_all()
 
 @app.post(
@@ -3183,7 +3983,11 @@ async def get_settings():
     tags=["Settings"],
     dependencies=[Depends(require_scope("admin"))],
 )
-async def save_settings(request: Request):
+async def save_settings(
+    request: Request,
+    principal: dict = Depends(require_scope("admin")),
+):
+    _require_operator(principal)
     body = await request.json()
     result = _sm.save(body)
     # Apply thresholds to live alert engine immediately
@@ -3198,7 +4002,10 @@ async def save_settings(request: Request):
     tags=["Settings"],
     dependencies=[Depends(require_scope("admin"))],
 )
-async def reset_settings():
+async def reset_settings(
+    principal: dict = Depends(require_scope("admin")),
+):
+    _require_operator(principal)
     return _sm.reset()
 
 @app.post(
@@ -3206,7 +4013,10 @@ async def reset_settings():
     tags=["Settings"],
     dependencies=[Depends(require_scope("admin"))],
 )
-async def settings_test_email():
+async def settings_test_email(
+    principal: dict = Depends(require_scope("admin")),
+):
+    _require_operator(principal)
     try:
         from backend.core.reports.weekly_report import send_alert_email
         send_alert_email(
@@ -3229,7 +4039,10 @@ async def settings_test_email():
     tags=["Settings"],
     dependencies=[Depends(require_scope("admin"))],
 )
-async def settings_send_report():
+async def settings_send_report(
+    principal: dict = Depends(require_scope("admin")),
+):
+    _require_operator(principal)
     try:
         from backend.core.reports.weekly_report import send_weekly_report_email
         to = _sm.get("alert_email") or os.environ.get("ALERT_EMAIL", "")

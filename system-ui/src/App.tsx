@@ -100,7 +100,11 @@ function App() {
     <Dashboard
       onLogout={access === "authenticated"
         ? () => {
-            void logout().finally(() => setAccess("login"));
+            void logout()
+              .catch((error) => {
+                console.error("[CVIS] Server-side logout could not be confirmed:", error);
+              })
+              .finally(() => setAccess("login"));
           }
         : undefined}
     />

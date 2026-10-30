@@ -83,7 +83,7 @@ def test_personal_registration_sends_verification_link_and_stores_only_password_
 
 
 def test_personal_account_requires_single_use_email_verification_before_login(
-    client, account_environment
+    client, account_environment, monkeypatch
 ):
     _, sent_emails = account_environment
     assert client.post("/auth/register", json=_registration_payload()).status_code == 202
@@ -109,6 +109,129 @@ def test_personal_account_requires_single_use_email_verification_before_login(
     )
     assert claims["scope"] == "read"
     assert claims["type"] == "access"
+    assert claims["workspace_id"]
+
+    account = client.get(
+        "/auth/me",
+        headers={"Authorization": f"Bearer {login.json()['access_token']}"},
+    )
+    assert account.status_code == 200
+    assert account.json()["workspace_id"] == claims["workspace_id"]
+    assert account.json()["subject"] == claims["sub"]
+
+    monkeypatch.setattr(main, "_devices", {
+        "owned-device": {
+            "device_id": "owned-device",
+            "workspace_id": claims["workspace_id"],
+            "device_name": "Owned",
+            "last_seen": None,
+            "metrics": {},
+            "processes": [],
+        },
+        "other-device": {
+            "device_id": "other-device",
+            "workspace_id": "other-workspace",
+            "device_name": "Other",
+            "last_seen": None,
+            "metrics": {},
+            "processes": [],
+        },
+    })
+    devices = client.get(
+        "/devices",
+        headers={"Authorization": f"Bearer {login.json()['access_token']}"},
+    )
+    assert devices.status_code == 200
+    assert [device["device_id"] for device in devices.json()] == ["owned-device"]
+    assert client.get(
+        "/devices/other-device",
+        headers={"Authorization": f"Bearer {login.json()['access_token']}"},
+    ).status_code == 404
+
+    async def scoped_alerts(**kwargs):
+        assert kwargs["device_ids"] == {"owned-device"}
+        return [
+            {
+                "device_id": "owned-device",
+                "severity": "WARNING",
+                "resolved_at": None,
+            }
+        ]
+
+    monkeypatch.setattr(main, "load_alerts", scoped_alerts)
+    alerts = client.get(
+        "/alerts/history",
+        headers={"Authorization": f"Bearer {login.json()['access_token']}"},
+    )
+    assert alerts.status_code == 200
+    assert alerts.json()[0]["device_id"] == "owned-device"
+    stats = client.get(
+        "/alerts/stats",
+        headers={"Authorization": f"Bearer {login.json()['access_token']}"},
+    )
+    assert stats.status_code == 200
+    assert stats.json()["total_alerts"] == 1
+
+    async def scoped_snapshots(**kwargs):
+        assert kwargs["device_ids"] == {"owned-device"}
+        return [{"device_id": "owned-device", "health": 88}]
+
+    monkeypatch.setattr(main, "load_snapshots", scoped_snapshots)
+    snapshots = client.get(
+        "/db/snapshots",
+        headers={"Authorization": f"Bearer {login.json()['access_token']}"},
+    )
+    assert snapshots.status_code == 200
+    assert snapshots.json()[0]["device_id"] == "owned-device"
+    events = client.get(
+        "/db/events",
+        headers={"Authorization": f"Bearer {login.json()['access_token']}"},
+    )
+    assert events.status_code == 200
+    assert events.json() == []
+    report = client.get(
+        "/report/weekly",
+        headers={"Authorization": f"Bearer {login.json()['access_token']}"},
+    )
+    assert report.status_code == 200
+    assert report.json()["workspace_id"] == claims["workspace_id"]
+
+    for path in (
+        "/cognitive/predictions",
+        "/cognitive/incidents",
+        "/cognitive/notifications",
+        "/alerts/rules",
+        "/models/versions",
+        "/actions/available",
+    ):
+        scoped_response = client.get(
+            path,
+            headers={"Authorization": f"Bearer {login.json()['access_token']}"},
+        )
+        assert scoped_response.status_code == 200
+        assert scoped_response.json() == []
+
+    model_stats = client.get(
+        "/models/stats",
+        headers={"Authorization": f"Bearer {login.json()['access_token']}"},
+    )
+    assert model_stats.status_code == 200
+    assert model_stats.json() == {}
+    prediction_accuracy = client.get(
+        "/cognitive/predictions/accuracy",
+        headers={"Authorization": f"Bearer {login.json()['access_token']}"},
+    )
+    assert prediction_accuracy.status_code == 200
+    assert prediction_accuracy.json()["available"] is False
+    settings = client.get(
+        "/settings",
+        headers={"Authorization": f"Bearer {login.json()['access_token']}"},
+    )
+    assert settings.status_code == 403
+    assert client.get(
+        "/cognitive/remediation/status",
+        headers={"Authorization": f"Bearer {login.json()['access_token']}"},
+    ).status_code == 403
 
     reused_token = client.post("/auth/verify-email", json={"token": token})
     assert reused_token.status_code == 400
@@ -298,6 +421,23 @@ def test_password_reset_request_does_not_reveal_unknown_email(
     assert response.status_code == 202
     assert "If an account exists" in response.json()["message"]
     reset_email.assert_not_called()
+
+
+def test_logout_route_revokes_submitted_tokens(client, monkeypatch):
+    revoked_tokens = []
+
+    async def revoke_token(token):
+        revoked_tokens.append(token)
+
+    monkeypatch.setattr(main, "revoke_token", revoke_token)
+
+    response = client.post(
+        "/auth/logout",
+        json={"refresh_token": "refresh-token", "access_token": "access-token"},
+    )
+
+    assert response.status_code == 200
+    assert revoked_tokens == ["refresh-token", "access-token"]
 
 
 def test_production_requires_postgres_for_personal_account_routes(
