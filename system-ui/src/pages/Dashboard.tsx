@@ -905,7 +905,25 @@ function alertRecommendation(event: SystemEvent): string {
   return "Review the evidence and confirm whether this condition is expected before taking action.";
 }
 
-const AlertDetails = ({ event }: { event: SystemEvent }) => {
+interface AlertDetailsProps {
+  event: SystemEvent;
+  acknowledged: boolean;
+  snoozedUntil?: number;
+  suppressedProcess?: string;
+  onAcknowledge: () => void;
+  onSnooze: () => void;
+  onSuppressProcess: () => void;
+}
+
+const AlertDetails = ({
+  event,
+  acknowledged,
+  snoozedUntil,
+  suppressedProcess,
+  onAcknowledge,
+  onSnooze,
+  onSuppressProcess,
+}: AlertDetailsProps) => {
   const metrics = event.metrics ?? {};
   const process = metrics.memory_forecast_process;
   const currentMemory = metrics.memory;
@@ -934,6 +952,22 @@ const AlertDetails = ({ event }: { event: SystemEvent }) => {
       )}
       <div style={{ color: T.textDim, fontSize: 9, lineHeight: 1.5, marginTop: 8 }}>
         Recommended next step: {alertRecommendation(event)}
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 10 }}>
+        <button type="button" onClick={onAcknowledge} disabled={acknowledged} style={{ border: `1px solid ${T.border}`, borderRadius: 3, background: acknowledged ? "rgba(0,255,157,0.08)" : "transparent", color: acknowledged ? T.success : T.textMuted, cursor: acknowledged ? "default" : "pointer", padding: "5px 8px", fontSize: 9, fontFamily: "'Share Tech Mono', monospace" }}>
+          {acknowledged ? "ACKNOWLEDGED" : "ACKNOWLEDGE"}
+        </button>
+        <button type="button" onClick={onSnooze} style={{ border: `1px solid ${T.border}`, borderRadius: 3, background: "transparent", color: T.textMuted, cursor: "pointer", padding: "5px 8px", fontSize: 9, fontFamily: "'Share Tech Mono', monospace" }}>
+          {snoozedUntil ? "SNOOZED 30M" : "SNOOZE 30M"}
+        </button>
+        {typeof process === "string" && (
+          <button type="button" onClick={onSuppressProcess} style={{ border: `1px solid ${T.border}`, borderRadius: 3, background: suppressedProcess === process ? "rgba(255,176,32,0.08)" : "transparent", color: suppressedProcess === process ? T.warning : T.textMuted, cursor: "pointer", padding: "5px 8px", fontSize: 9, fontFamily: "'Share Tech Mono', monospace" }}>
+            {suppressedProcess === process ? `SUPPRESSED: ${process}` : `SUPPRESS ${process}`}
+          </button>
+        )}
+      </div>
+      <div style={{ color: T.textDim, fontSize: 8, marginTop: 7 }}>
+        Controls apply to this browser view only. They do not stop or terminate the process.
       </div>
     </div>
   );
@@ -1278,6 +1312,9 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   const [forecast, setForecast] = useState<ForecastData>({});
   const [alertEvents, setAlertEvents] = useState<SystemEvent[]>([]);
   const [selectedAlert, setSelectedAlert] = useState<SystemEvent | null>(null);
+  const [acknowledgedAlerts, setAcknowledgedAlerts] = useState<Record<string, boolean>>({});
+  const [snoozedAlerts, setSnoozedAlerts] = useState<Record<string, number>>({});
+  const [suppressedProcesses, setSuppressedProcesses] = useState<Record<string, boolean>>({});
   const [eventsLoaded, setEventsLoaded] = useState(false);
   const [dna, setDna] = useState<DnaData>({});
   const [pipeline, setPipeline] = useState<PipelineData>({});
@@ -1290,6 +1327,40 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionResult, setActionResult] = useState<BackendActionResult | null>(null);
   const prevLevel = useRef("OPTIMAL");
+
+  useEffect(() => {
+    try {
+      setAcknowledgedAlerts(JSON.parse(window.localStorage.getItem("cvis:acknowledged-alerts") || "{}"));
+      setSnoozedAlerts(JSON.parse(window.localStorage.getItem("cvis:snoozed-alerts") || "{}"));
+      setSuppressedProcesses(JSON.parse(window.localStorage.getItem("cvis:suppressed-processes") || "{}"));
+    } catch (error) {
+      console.error("Could not restore alert controls:", error);
+    }
+  }, []);
+
+  const acknowledgeAlert = useCallback((alertId: string) => {
+    setAcknowledgedAlerts((current) => {
+      const next = { ...current, [alertId]: true };
+      window.localStorage.setItem("cvis:acknowledged-alerts", JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const snoozeAlert = useCallback((alertId: string) => {
+    setSnoozedAlerts((current) => {
+      const next = { ...current, [alertId]: Date.now() + 30 * 60 * 1000 };
+      window.localStorage.setItem("cvis:snoozed-alerts", JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const suppressProcess = useCallback((processName: string) => {
+    setSuppressedProcesses((current) => {
+      const next = { ...current, [processName]: true };
+      window.localStorage.setItem("cvis:suppressed-processes", JSON.stringify(next));
+      return next;
+    });
+  }, []);
 
   const quitCvis = useCallback(async () => {
     if (!window.confirm("Quit CVIS and stop all monitoring and system-data collection?")) {
@@ -2833,7 +2904,25 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                   onSelect={setSelectedAlert}
                 />
               )}
-              {selectedAlert && <AlertDetails event={selectedAlert} />}
+              {selectedAlert?.id && (
+                <AlertDetails
+                  event={selectedAlert}
+                  acknowledged={Boolean(acknowledgedAlerts[selectedAlert.id])}
+                  snoozedUntil={snoozedAlerts[selectedAlert.id]}
+                  suppressedProcess={
+                    typeof selectedAlert.metrics?.memory_forecast_process === "string" &&
+                    suppressedProcesses[selectedAlert.metrics.memory_forecast_process]
+                      ? selectedAlert.metrics.memory_forecast_process
+                      : undefined
+                  }
+                  onAcknowledge={() => acknowledgeAlert(selectedAlert.id!)}
+                  onSnooze={() => snoozeAlert(selectedAlert.id!)}
+                  onSuppressProcess={() => {
+                    const processName = selectedAlert.metrics?.memory_forecast_process;
+                    if (typeof processName === "string") suppressProcess(processName);
+                  }}
+                />
+              )}
             </Section>
           </div>
 
