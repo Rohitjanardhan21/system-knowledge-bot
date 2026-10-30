@@ -188,7 +188,7 @@ export async function fetchAlertProcessSuppressions() {
   const { data } = await api.get<
     Array<{ process_name: string; suppressed_until: number }>
   >("/alerts/process-suppressions");
-  return data ?? [];
+  return Array.isArray(data) ? data : [];
 }
 
 export interface CognitiveIncidentTimelineEntry {
