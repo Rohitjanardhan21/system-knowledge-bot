@@ -88,6 +88,22 @@ CREATE TABLE IF NOT EXISTS metric_snapshots (
     ts          REAL    NOT NULL DEFAULT (unixepoch('now', 'subsec'))
 );
 CREATE INDEX IF NOT EXISTS idx_snapshots_ts ON metric_snapshots(ts DESC);
+
+CREATE TABLE IF NOT EXISTS metric_snapshot_hourly (
+    device_id   TEXT NOT NULL DEFAULT '',
+    bucket_ts   INTEGER NOT NULL,
+    samples     INTEGER NOT NULL DEFAULT 0,
+    cpu_avg     REAL NOT NULL DEFAULT 0,
+    mem_avg     REAL NOT NULL DEFAULT 0,
+    disk_avg    REAL NOT NULL DEFAULT 0,
+    net_avg     REAL NOT NULL DEFAULT 0,
+    anomaly_avg REAL NOT NULL DEFAULT 0,
+    health_avg  REAL NOT NULL DEFAULT 0,
+    PRIMARY KEY (device_id, bucket_ts)
+);
+CREATE INDEX IF NOT EXISTS idx_snapshot_hourly_ts
+ON metric_snapshot_hourly(bucket_ts DESC);
+
 CREATE TABLE IF NOT EXISTS incidents (
     incident_id      TEXT PRIMARY KEY,
     device_id        TEXT,
@@ -562,25 +578,83 @@ async def maybe_save_snapshot(
     if not db:
         return False
     try:
+        numeric_metrics = {
+            "cpu": float(metrics.get("cpu_percent", 0) or 0),
+            "mem": float(metrics.get("memory", 0) or 0),
+            "disk": float(metrics.get("disk_percent", 0) or 0),
+            "net": float(metrics.get("network_percent", 0) or 0),
+            "anomaly": float(metrics.get("anomaly_score", 0) or 0),
+            "health": float(metrics.get("health_score", 100) or 100),
+        }
         await db.execute(
             "INSERT INTO metric_snapshots "
             "(device_id,cpu,mem,disk,net,anomaly,health,ensemble,ts) "
             "VALUES (?,?,?,?,?,?,?,?,?)",
             (
                 device_id,
-                metrics.get("cpu_percent",    0),
-                metrics.get("memory",         0),
-                metrics.get("disk_percent",   0),
-                metrics.get("network_percent",0),
-                metrics.get("anomaly_score",  0),
-                metrics.get("health_score",   100),
-                metrics.get("anomaly_score",  0),
+                numeric_metrics["cpu"],
+                numeric_metrics["mem"],
+                numeric_metrics["disk"],
+                numeric_metrics["net"],
+                numeric_metrics["anomaly"],
+                numeric_metrics["health"],
+                numeric_metrics["anomaly"],
                 now,
             )
         )
         await db.commit()
+        bucket_ts = int(now // 3600) * 3600
+        rollup_device_id = device_id or ""
+        await db.execute(
+            """
+            INSERT INTO metric_snapshot_hourly (
+                device_id, bucket_ts, samples, cpu_avg, mem_avg,
+                disk_avg, net_avg, anomaly_avg, health_avg
+            ) VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(device_id, bucket_ts) DO UPDATE SET
+                cpu_avg = (
+                    metric_snapshot_hourly.cpu_avg
+                    * metric_snapshot_hourly.samples + excluded.cpu_avg
+                ) / (metric_snapshot_hourly.samples + 1),
+                mem_avg = (
+                    metric_snapshot_hourly.mem_avg
+                    * metric_snapshot_hourly.samples + excluded.mem_avg
+                ) / (metric_snapshot_hourly.samples + 1),
+                disk_avg = (
+                    metric_snapshot_hourly.disk_avg
+                    * metric_snapshot_hourly.samples + excluded.disk_avg
+                ) / (metric_snapshot_hourly.samples + 1),
+                net_avg = (
+                    metric_snapshot_hourly.net_avg
+                    * metric_snapshot_hourly.samples + excluded.net_avg
+                ) / (metric_snapshot_hourly.samples + 1),
+                anomaly_avg = (
+                    metric_snapshot_hourly.anomaly_avg
+                    * metric_snapshot_hourly.samples + excluded.anomaly_avg
+                ) / (metric_snapshot_hourly.samples + 1),
+                health_avg = (
+                    metric_snapshot_hourly.health_avg
+                    * metric_snapshot_hourly.samples + excluded.health_avg
+                ) / (metric_snapshot_hourly.samples + 1),
+                samples = metric_snapshot_hourly.samples + 1
+            """,
+            (
+                rollup_device_id,
+                bucket_ts,
+                numeric_metrics["cpu"],
+                numeric_metrics["mem"],
+                numeric_metrics["disk"],
+                numeric_metrics["net"],
+                numeric_metrics["anomaly"],
+                numeric_metrics["health"],
+            ),
+        )
         await db.execute(
             "DELETE FROM metric_snapshots WHERE ts < ?",
+            (now - snapshot_retention_days() * 86400,),
+        )
+        await db.execute(
+            "DELETE FROM metric_snapshot_hourly WHERE bucket_ts < ?",
             (now - snapshot_retention_days() * 86400,),
         )
         await db.commit()
@@ -610,6 +684,44 @@ async def load_snapshots(
         async with db.execute(query, params) as cur:
             return [dict(r) for r in await cur.fetchall()]
     except Exception:
+        return []
+
+
+async def load_snapshot_rollups(
+    hours: float = 24.0,
+    device_ids: set[str] | None = None,
+) -> list[dict]:
+    db = await get_db()
+    if not db:
+        return []
+    if device_ids is not None and not device_ids:
+        return []
+    try:
+        since = int(time.time() - hours * 3600)
+        query = """
+            SELECT
+                NULLIF(device_id, '') AS device_id,
+                bucket_ts,
+                samples,
+                cpu_avg,
+                mem_avg,
+                disk_avg,
+                net_avg,
+                anomaly_avg,
+                health_avg
+            FROM metric_snapshot_hourly
+            WHERE bucket_ts > ?
+        """
+        params: list[object] = [since]
+        if device_ids is not None:
+            placeholders = ",".join("?" for _ in device_ids)
+            query += f" AND device_id IN ({placeholders})"
+            params.extend(sorted(device_ids))
+        query += " ORDER BY bucket_ts ASC"
+        async with db.execute(query, params) as cur:
+            return [dict(r) for r in await cur.fetchall()]
+    except Exception as e:
+        log.error("load_snapshot_rollups: %s", e)
         return []
 
 # ─────────────────────────────────────────────────────────
