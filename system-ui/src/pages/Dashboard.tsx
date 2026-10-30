@@ -1033,6 +1033,7 @@ interface SystemStatus {
     state?: string;
     sample_age_seconds?: number | null;
     samples_in_memory?: number;
+    gap_count?: number;
     synthetic_metrics?: boolean;
     last_error?: string | null;
   };
@@ -1042,6 +1043,18 @@ interface SystemStatus {
     fresh?: boolean;
   };
   [key: string]: unknown;
+}
+
+interface SnapshotRollup {
+  device_id?: string | null;
+  bucket_ts: number;
+  samples: number;
+  cpu_avg: number;
+  mem_avg: number;
+  disk_avg: number;
+  net_avg: number;
+  anomaly_avg: number;
+  health_avg: number;
 }
 
 interface CognitivePattern {
@@ -1156,6 +1169,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   const [dna, setDna] = useState<DnaData>({});
   const [pipeline, setPipeline] = useState<PipelineData>({});
   const [availableActions, setAvailableActions] = useState<BackendAction[]>([]);
+  const [snapshotRollups, setSnapshotRollups] = useState<SnapshotRollup[]>([]);
   const [manualAction, setManualAction] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -1363,12 +1377,26 @@ export default function Dashboard({ onLogout }: DashboardProps) {
       }
     };
 
+    const fetchSnapshotRollups = async () => {
+      try {
+        const response = await api.get<SnapshotRollup[]>(
+          "/db/snapshots/rollups?hours=168"
+        );
+        if (cancelled) return;
+        setSnapshotRollups(Array.isArray(response.data) ? response.data : []);
+      } catch (error) {
+        if (cancelled) return;
+        console.error("Telemetry rollup fetch failed:", error);
+      }
+    };
+
     // Initial load.
     fetchTelemetry();
     fetchPipeline();
     fetchForecast();
     fetchAlertHistory();
     fetchDna();
+    fetchSnapshotRollups();
 
     // Telemetry is lightweight and remains responsive.
     const telemetryId = setInterval(fetchTelemetry, 500);
@@ -1380,6 +1408,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     const forecastId = setInterval(fetchForecast, 10000);
     const alertId = setInterval(fetchAlertHistory, 5000);
     const dnaId = setInterval(fetchDna, 30000);
+    const rollupId = setInterval(fetchSnapshotRollups, 60000);
 
     return () => {
       cancelled = true;
@@ -1388,6 +1417,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
       clearInterval(forecastId);
       clearInterval(alertId);
       clearInterval(dnaId);
+      clearInterval(rollupId);
     };
   }, []);
 
@@ -1527,6 +1557,24 @@ export default function Dashboard({ onLogout }: DashboardProps) {
 
   // Sparkline history slices
   const anomalySpark = history.slice(-20).map(h => h.anomaly);
+  const rollupSamples = snapshotRollups.reduce(
+    (total, point) => total + (point.samples || 0),
+    0
+  );
+  const rollupHealth = rollupSamples
+    ? snapshotRollups.reduce(
+        (total, point) => total + point.health_avg * point.samples,
+        0
+      ) / rollupSamples
+    : null;
+  const rollupAnomaly = rollupSamples
+    ? snapshotRollups.reduce(
+        (total, point) => total + point.anomaly_avg * point.samples,
+        0
+      ) / rollupSamples
+    : null;
+  const rollupStart = snapshotRollups[0]?.bucket_ts;
+  const rollupEnd = snapshotRollups[snapshotRollups.length - 1]?.bucket_ts;
 
   return (
     <>
@@ -1669,6 +1717,47 @@ export default function Dashboard({ onLogout }: DashboardProps) {
             tooltip="Latest autonomous action by cognitive engine"
           />
         </div>
+
+        <Section
+          title="Long-Term Telemetry"
+          subtitle="Hourly rollups · last 7 days"
+        >
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 }}>
+            <MetricCard
+              label="Samples Covered"
+              value={rollupSamples ? rollupSamples.toLocaleString() : "—"}
+              subtitle={rollupStart && rollupEnd
+                ? `${new Date(rollupStart * 1000).toLocaleDateString()} – ${new Date(rollupEnd * 1000).toLocaleDateString()}`
+                : "Waiting for telemetry"}
+              icon="◷"
+              tooltip="Number of raw samples represented by hourly rollups"
+            />
+            <MetricCard
+              label="7-Day Avg Health"
+              value={rollupHealth == null ? "—" : `${rollupHealth.toFixed(1)}%`}
+              subtitle="Weighted by sample count"
+              icon="♥"
+              tooltip="Average health across available hourly telemetry"
+              alert={rollupHealth != null && rollupHealth < 80}
+            />
+            <MetricCard
+              label="7-Day Avg Anomaly"
+              value={rollupAnomaly == null ? "—" : rollupAnomaly.toFixed(3)}
+              subtitle="Weighted by sample count"
+              icon="⚠"
+              tooltip="Average anomaly score across available hourly telemetry"
+              alert={rollupAnomaly != null && rollupAnomaly > 0.5}
+            />
+            <MetricCard
+              label="Coverage"
+              value={data.collection?.gap_count?.toString() ?? "0"}
+              subtitle="Collection gaps detected"
+              icon="⌁"
+              tooltip="Number of gaps longer than three polling intervals"
+              alert={(data.collection?.gap_count ?? 0) > 0}
+            />
+          </div>
+        </Section>
 
         {/* MAIN GRID */}
         <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr) 380px", gap: "20px", alignItems: "start" }}>
