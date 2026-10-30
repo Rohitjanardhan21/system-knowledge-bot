@@ -100,6 +100,26 @@ export async function fetchCognitivePredictions(): Promise<CognitivePrediction[]
   return data ?? [];
 }
 
+export interface PredictionAccuracy {
+  available: boolean;
+  reason?: string;
+  resolved_predictions?: number;
+  active_predictions?: number;
+  correct_predictions?: number;
+  incorrect_predictions?: number;
+  false_positives?: number;
+  false_negatives?: number;
+  accuracy?: number | null;
+  average_lead_time_seconds?: number | null;
+}
+
+export async function fetchPredictionAccuracy(): Promise<PredictionAccuracy> {
+  const { data } = await api.get<PredictionAccuracy>(
+    "/cognitive/predictions/accuracy"
+  );
+  return data;
+}
+
 export async function acknowledgeCognitivePrediction(id: string) {
   const { data } = await api.post(
     `/cognitive/predictions/${encodeURIComponent(id)}/acknowledge`

@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback, type CSSProperties, type ReactNode } from "react";
-import { api, fetchDesktopSettings, fetchCognitivePredictions, acknowledgeCognitivePrediction, resolveCognitivePrediction, quitDesktopApp, type CognitivePrediction } from "../services/api";
+import { api, fetchDesktopSettings, fetchCognitivePredictions, fetchPredictionAccuracy, acknowledgeCognitivePrediction, resolveCognitivePrediction, quitDesktopApp, type CognitivePrediction, type PredictionAccuracy } from "../services/api";
 import ErrorLogAnalyzer from "../components/ErrorLogAnalyzer";
 import DesktopSettings from "../components/DesktopSettings";
 import {
@@ -1160,6 +1160,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   const [quitPending, setQuitPending] = useState(false);
   const [quitError, setQuitError] = useState("");
   const [cognitivePredictions, setCognitivePredictions] = useState<CognitivePrediction[]>([]);
+  const [predictionAccuracy, setPredictionAccuracy] = useState<PredictionAccuracy | null>(null);
   const [predictionBusy, setPredictionBusy] = useState<string | null>(null);
 
   const [data, setData] = useState<SystemStatus>({});
@@ -1390,6 +1391,17 @@ export default function Dashboard({ onLogout }: DashboardProps) {
       }
     };
 
+    const fetchPredictionAccuracySummary = async () => {
+      try {
+        const result = await fetchPredictionAccuracy();
+        if (cancelled) return;
+        setPredictionAccuracy(result);
+      } catch (error) {
+        if (cancelled) return;
+        console.error("Prediction accuracy fetch failed:", error);
+      }
+    };
+
     // Initial load.
     fetchTelemetry();
     fetchPipeline();
@@ -1397,6 +1409,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     fetchAlertHistory();
     fetchDna();
     fetchSnapshotRollups();
+    fetchPredictionAccuracySummary();
 
     // Telemetry is lightweight and remains responsive.
     const telemetryId = setInterval(fetchTelemetry, 500);
@@ -1409,6 +1422,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     const alertId = setInterval(fetchAlertHistory, 5000);
     const dnaId = setInterval(fetchDna, 30000);
     const rollupId = setInterval(fetchSnapshotRollups, 60000);
+    const accuracyId = setInterval(fetchPredictionAccuracySummary, 60000);
 
     return () => {
       cancelled = true;
@@ -1418,6 +1432,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
       clearInterval(alertId);
       clearInterval(dnaId);
       clearInterval(rollupId);
+      clearInterval(accuracyId);
     };
   }, []);
 
@@ -1575,6 +1590,14 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     : null;
   const rollupStart = snapshotRollups[0]?.bucket_ts;
   const rollupEnd = snapshotRollups[snapshotRollups.length - 1]?.bucket_ts;
+  const accuracyPercent =
+    predictionAccuracy?.accuracy == null
+      ? null
+      : predictionAccuracy.accuracy * 100;
+  const leadTimeMinutes =
+    predictionAccuracy?.average_lead_time_seconds == null
+      ? null
+      : predictionAccuracy.average_lead_time_seconds / 60;
 
   return (
     <>
@@ -1758,6 +1781,60 @@ export default function Dashboard({ onLogout }: DashboardProps) {
             />
           </div>
         </Section>
+
+        {predictionAccuracy?.available && (
+          <Section
+            title="Prediction Performance"
+            subtitle="Measured against recorded outcomes"
+            accentColor={T.primary}
+          >
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 14, alignItems: "stretch" }}>
+              <div style={{
+                position: "relative",
+                overflow: "hidden",
+                padding: "18px 20px",
+                borderRadius: 6,
+                border: `1px solid ${accuracyPercent != null && accuracyPercent >= 80 ? T.success : T.primary}40`,
+                background: "linear-gradient(135deg, rgba(74,127,255,0.16), rgba(0,212,255,0.04))",
+              }}>
+                <div style={{ color: T.textMuted, fontSize: 10, letterSpacing: "0.12em", fontFamily: "'Share Tech Mono', monospace" }}>
+                  VERIFIED ACCURACY
+                </div>
+                <div style={{ color: accuracyPercent != null && accuracyPercent >= 80 ? T.success : T.text, fontSize: 36, fontWeight: 700, fontFamily: "'Rajdhani', sans-serif", margin: "8px 0 2px" }}>
+                  {accuracyPercent == null ? "—" : `${accuracyPercent.toFixed(1)}%`}
+                </div>
+                <div style={{ color: T.textDim, fontSize: 10, fontFamily: "'Share Tech Mono', monospace" }}>
+                  {predictionAccuracy.resolved_predictions ?? 0} outcomes measured
+                </div>
+                <div style={{ height: 4, marginTop: 14, borderRadius: 4, background: "rgba(255,255,255,0.08)" }}>
+                  <div style={{ height: "100%", width: `${Math.min(100, Math.max(0, accuracyPercent ?? 0))}%`, borderRadius: 4, background: accuracyPercent != null && accuracyPercent >= 80 ? T.success : T.primary, transition: "width 0.5s ease" }} />
+                </div>
+              </div>
+              <MetricCard
+                label="Lead Time"
+                value={leadTimeMinutes == null ? "—" : `${leadTimeMinutes.toFixed(1)}m`}
+                subtitle="Average warning"
+                icon="◷"
+                tooltip="Average time between a prediction and its recorded outcome"
+              />
+              <MetricCard
+                label="False Alarms"
+                value={String(predictionAccuracy.false_positives ?? 0)}
+                subtitle={`${predictionAccuracy.incorrect_predictions ?? 0} incorrect outcomes`}
+                icon="⚠"
+                tooltip="Predictions marked incorrect by an operator"
+                alert={(predictionAccuracy.false_positives ?? 0) > 0}
+              />
+              <MetricCard
+                label="Still Tracking"
+                value={String(predictionAccuracy.active_predictions ?? 0)}
+                subtitle="Active predictions"
+                icon="◎"
+                tooltip="Predictions waiting for an outcome"
+              />
+            </div>
+          </Section>
+        )}
 
         {/* MAIN GRID */}
         <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr) 380px", gap: "20px", alignItems: "start" }}>
