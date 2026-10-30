@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useState, useRef, useCallback, useMemo, type CSSProperties, type ReactNode } from "react";
 import { api, fetchDesktopSettings, fetchCognitivePredictions, fetchPredictionAccuracy, fetchCognitiveIncidents, fetchAlertProcessSuppressions, acknowledgeCognitivePrediction, resolveCognitivePrediction, acknowledgeAlert as acknowledgeHostedAlert, snoozeAlert as snoozeHostedAlert, suppressAlertProcess, quitDesktopApp, type CognitivePrediction, type PredictionAccuracy, type CognitiveIncident } from "../services/api";
 import ErrorLogAnalyzer from "../components/ErrorLogAnalyzer";
 import DesktopSettings from "../components/DesktopSettings";
@@ -1323,6 +1323,10 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   const [alertEvents, setAlertEvents] = useState<SystemEvent[]>([]);
   const [alertSuppressions, setAlertSuppressions] = useState<AlertSuppression[]>([]);
   const [selectedAlert, setSelectedAlert] = useState<SystemEvent | null>(null);
+  const [alertSeverityFilter, setAlertSeverityFilter] = useState("ALL");
+  const [alertStatusFilter, setAlertStatusFilter] = useState("ACTIVE");
+  const [alertProcessFilter, setAlertProcessFilter] = useState("");
+  const [alertTimeFilter, setAlertTimeFilter] = useState("24h");
   const [acknowledgedAlerts, setAcknowledgedAlerts] = useState<Record<string, boolean>>({});
   const [snoozedAlerts, setSnoozedAlerts] = useState<Record<string, number>>({});
   const [suppressedProcesses, setSuppressedProcesses] = useState<Record<string, boolean>>({});
@@ -1883,7 +1887,31 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   const latestProcessSample = processTrends[processTrends.length - 1];
   const topCpuProcesses = latestProcessSample?.top_cpu ?? [];
   const topMemoryProcesses = latestProcessSample?.top_memory ?? [];
-  const activeAlerts = alertEvents.filter((event) => !event.resolved_at);
+  const filteredAlerts = useMemo(() => {
+    const now = Date.now();
+    const timeWindowMs = alertTimeFilter === "ALL"
+      ? null
+      : Number(alertTimeFilter.replace("h", "")) * 60 * 60 * 1000;
+
+    return alertEvents.filter((event) => {
+      const eventProcess = typeof event.metrics?.memory_forecast_process === "string"
+        ? event.metrics.memory_forecast_process
+        : "";
+      const eventTime = typeof event.fired_at === "number"
+        ? event.fired_at * 1000
+        : typeof event.timestamp === "number"
+          ? event.timestamp * 1000
+          : Date.parse(String(event.timestamp ?? ""));
+
+      return (
+        (alertSeverityFilter === "ALL" || event.severity === alertSeverityFilter) &&
+        (alertStatusFilter === "ALL" ||
+          (alertStatusFilter === "ACTIVE" ? !event.resolved_at : Boolean(event.resolved_at))) &&
+        (!alertProcessFilter || eventProcess.toLowerCase().includes(alertProcessFilter.toLowerCase())) &&
+        (timeWindowMs === null || (Number.isFinite(eventTime) && now - eventTime <= timeWindowMs))
+      );
+    });
+  }, [alertEvents, alertProcessFilter, alertSeverityFilter, alertStatusFilter, alertTimeFilter]);
 
   return (
     <>
@@ -2935,13 +2963,55 @@ export default function Dashboard({ onLogout }: DashboardProps) {
             </Section>
 
             <Section title="Alert Management" subtitle="Active conditions and notification controls">
-              {activeAlerts.length === 0 && alertSuppressions.length === 0 ? (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 6, marginBottom: 10 }}>
+                <select
+                  aria-label="Alert severity filter"
+                  value={alertSeverityFilter}
+                  onChange={(event) => setAlertSeverityFilter(event.target.value)}
+                  style={{ background: T.bg, color: T.text, border: `1px solid ${T.border}`, borderRadius: 3, padding: "6px 5px", fontSize: 9, fontFamily: "'Share Tech Mono', monospace" }}
+                >
+                  <option value="ALL">ALL SEVERITIES</option>
+                  <option value="CRITICAL">CRITICAL</option>
+                  <option value="HIGH">HIGH</option>
+                  <option value="WARNING">WARNING</option>
+                  <option value="INFO">INFO</option>
+                </select>
+                <select
+                  aria-label="Alert status filter"
+                  value={alertStatusFilter}
+                  onChange={(event) => setAlertStatusFilter(event.target.value)}
+                  style={{ background: T.bg, color: T.text, border: `1px solid ${T.border}`, borderRadius: 3, padding: "6px 5px", fontSize: 9, fontFamily: "'Share Tech Mono', monospace" }}
+                >
+                  <option value="ACTIVE">ACTIVE</option>
+                  <option value="RESOLVED">RESOLVED</option>
+                  <option value="ALL">ALL STATUSES</option>
+                </select>
+                <select
+                  aria-label="Alert time range filter"
+                  value={alertTimeFilter}
+                  onChange={(event) => setAlertTimeFilter(event.target.value)}
+                  style={{ background: T.bg, color: T.text, border: `1px solid ${T.border}`, borderRadius: 3, padding: "6px 5px", fontSize: 9, fontFamily: "'Share Tech Mono', monospace" }}
+                >
+                  <option value="1h">LAST HOUR</option>
+                  <option value="24h">LAST 24 HOURS</option>
+                  <option value="168h">LAST 7 DAYS</option>
+                  <option value="ALL">ALL TIME</option>
+                </select>
+                <input
+                  aria-label="Alert process filter"
+                  value={alertProcessFilter}
+                  onChange={(event) => setAlertProcessFilter(event.target.value)}
+                  placeholder="PROCESS"
+                  style={{ minWidth: 0, background: T.bg, color: T.text, border: `1px solid ${T.border}`, borderRadius: 3, padding: "6px 7px", fontSize: 9, fontFamily: "'Share Tech Mono', monospace" }}
+                />
+              </div>
+              {filteredAlerts.length === 0 && alertSuppressions.length === 0 ? (
                 <div style={{ color: T.textDim, fontSize: 10, fontFamily: "'Share Tech Mono', monospace" }}>
-                  No active alerts or process suppressions.
+                  No alerts match the selected filters.
                 </div>
               ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {activeAlerts.map((alert, index) => {
+                  {filteredAlerts.map((alert, index) => {
                     const alertColor = alert.severity === "CRITICAL" ? T.danger : T.warning;
                     return (
                       <button
