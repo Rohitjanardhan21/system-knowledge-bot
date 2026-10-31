@@ -164,8 +164,8 @@ def _stored_incident_response(row: dict) -> dict:
     metadata = row.get("metadata")
     if isinstance(metadata, str):
         try:
-            metadata = json.loads(metadata)
-        except json.JSONDecodeError:
+            metadata = _json.loads(metadata)
+        except _json.JSONDecodeError:
             metadata = {}
     metadata = metadata if isinstance(metadata, dict) else {}
     occurred_at = row.get("occurred_at") or row.get("detected_at")
