@@ -970,20 +970,54 @@ async def load_active_predictions() -> list[dict]:
         return []
 
 
-async def load_incidents(limit: int = 100) -> list[dict]:
+async def load_incidents(
+    limit: int = 100,
+    device_ids: set[str] | None = None,
+) -> list[dict]:
     db = await get_db()
     if not db:
         return []
     try:
-        async with db.execute("""
-            SELECT * FROM incidents
-            ORDER BY occurred_at DESC
-            LIMIT ?
-        """, (limit,)) as cur:
+        query = "SELECT * FROM incidents"
+        params: list[object] = []
+        if device_ids is not None:
+            if not device_ids:
+                return []
+            placeholders = ",".join("?" for _ in device_ids)
+            query += f" WHERE device_id IN ({placeholders})"
+            params.extend(sorted(device_ids))
+        query += " ORDER BY occurred_at DESC LIMIT ?"
+        params.append(limit)
+        async with db.execute(query, params) as cur:
             return [dict(r) for r in await cur.fetchall()]
     except Exception as e:
         log.error("load_incidents: %s", e)
         return []
+
+
+async def load_incident(
+    incident_id: str,
+    device_ids: set[str] | None = None,
+) -> dict | None:
+    db = await get_db()
+    if not db:
+        return None
+    try:
+        query = "SELECT * FROM incidents WHERE incident_id = ?"
+        params: list[object] = [incident_id]
+        if device_ids is not None:
+            if not device_ids:
+                return None
+            placeholders = ",".join("?" for _ in device_ids)
+            query += f" AND device_id IN ({placeholders})"
+            params.extend(sorted(device_ids))
+        query += " LIMIT 1"
+        async with db.execute(query, params) as cur:
+            row = await cur.fetchone()
+        return dict(row) if row else None
+    except Exception as e:
+        log.error("load_incident: %s", e)
+        return None
 
 
 async def load_prediction_accuracy() -> dict:

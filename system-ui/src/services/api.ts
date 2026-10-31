@@ -161,6 +161,32 @@ export async function fetchCognitiveIncidents() {
   return data ?? [];
 }
 
+export interface CognitiveIncidentReplay {
+  incident?: CognitiveIncident;
+  timeline?: CognitiveIncidentTimelineEntry[];
+  replay?: {
+    evidence_count?: number;
+    reconstruction?: "recorded" | "reconstructed";
+    evidence_text?: string | null;
+    outcome?: {
+      status?: string;
+      verified?: boolean;
+      note?: string;
+    };
+    counterfactual?: {
+      status?: string;
+      note?: string;
+    };
+  };
+}
+
+export async function fetchCognitiveIncidentReplay(incidentId: string) {
+  const { data } = await api.get<CognitiveIncidentReplay>(
+    `/cognitive/incidents/${encodeURIComponent(incidentId)}/replay`,
+  );
+  return data;
+}
+
 export async function acknowledgeAlert(alertId: string) {
   const { data } = await api.post(
     `/alerts/${encodeURIComponent(alertId)}/acknowledge`
