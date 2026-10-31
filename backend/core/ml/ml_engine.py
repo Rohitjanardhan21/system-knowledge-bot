@@ -271,7 +271,8 @@ class MLEngine:
             self._if_fitted = False
 
         # Replay buffers
-        self.feature_buf: deque = deque(maxlen=REPLAY_SIZE)   # raw np arrays
+        self.history_buf: deque = deque(maxlen=REPLAY_SIZE)
+        self.feature_buf: deque = deque(maxlen=REPLAY_SIZE)   # clean training samples
         self.seq_buf:     deque = deque(maxlen=REPLAY_SIZE)   # (seq, target) pairs
         self.metrics = TrainingMetrics()
 
@@ -283,8 +284,12 @@ class MLEngine:
 
     # ── ingest + train ────────────────────────────────────
     @_synchronized
-    def ingest(self, feat: np.ndarray):
-        """Called every tick with a normalised [0,1] feature vector."""
+    def ingest(self, feat: np.ndarray, train: bool = True):
+        """Record a sample and optionally use it for model training."""
+        self.history_buf.append(feat.copy())
+        if not train:
+            return
+
         self.feature_buf.append(feat.copy())
         self._tick += 1
 
@@ -423,10 +428,10 @@ class MLEngine:
             self.metrics.feat_errors = self.vae_net.feature_errors(feat)
 
         # LSTM score
-        if TORCH_OK and self.metrics.steps_lstm > 20 and len(self.feature_buf) >= SEQ_LEN:
+        if TORCH_OK and self.metrics.steps_lstm > 20 and len(self.history_buf) >= SEQ_LEN:
             self.lstm_net.eval()
             seq = torch.tensor(
-                np.stack(list(self.feature_buf)[-SEQ_LEN:]),
+                np.stack(list(self.history_buf)[-SEQ_LEN:]),
                 dtype=torch.float32
             ).unsqueeze(0)
             with torch.no_grad():

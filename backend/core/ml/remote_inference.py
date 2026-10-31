@@ -65,7 +65,9 @@ class RemoteInferenceManager:
         cpu = float(metrics.get("cpu_percent", 0.0))
         mem = float(metrics.get("memory", metrics.get("memory_percent", 0.0)))
         disk = float(metrics.get("disk_percent", 0.0))
-        net = float(metrics.get("network_percent", 0.0))
+        sent_rate = float(metrics.get("network_sent_bytes_per_sec", 0.0))
+        recv_rate = float(metrics.get("network_recv_bytes_per_sec", 0.0))
+        net = min(100.0, (sent_rate + recv_rate) / 1e7)
         ano = float(metrics.get("anomaly_score", 0.0))
 
         values = np.array(

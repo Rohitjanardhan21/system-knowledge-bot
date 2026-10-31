@@ -849,7 +849,16 @@ def _build_feature_vector():
         "collected_at":    collected_at,
         "processes":       process_summary,
     }
-    feat = np.array([cpu/100, mem/100, disk/100, net/100, 0.0], dtype=np.float32)
+    # Keep the public network_percent field stable, but use transfer rate for
+    # ML so cumulative host counters cannot masquerade as current activity.
+    network_rate = min(
+        100.0,
+        (network_sent_rate + network_recv_rate) / 1e7,
+    )
+    feat = np.array(
+        [cpu / 100, mem / 100, disk / 100, network_rate / 100, 0.0],
+        dtype=np.float32,
+    )
     return feat, raw
 
 
@@ -927,8 +936,13 @@ def _collect():
                 feature_buffer.append(feat)
                 _last_metrics.update(raw)
 
-            engine.ingest(feat)
             scores = engine.score(feat)
+            history_samples = len(engine.history_buf)
+            train_sample = (
+                history_samples < 60
+                or scores.ensemble_score < 0.65
+            )
+            engine.ingest(feat, train=train_sample)
 
             update = {
                 "anomaly_score":  scores.ensemble_score,
