@@ -2439,12 +2439,15 @@ async def cognitive_health_score():
     tags=["Cognitive"],
     dependencies=[Depends(require_scope("read"))],
 )
-async def cognitive_pipeline():
+async def cognitive_pipeline(
+    principal: dict = Depends(require_scope("read")),
+):
     try:
         from backend.intelligence_pipeline import run_intelligence_pipeline
         return run_intelligence_pipeline(
             allow_execution=False,
             live_metrics=dict(_last_metrics),
+            workspace_id=principal.get("workspace_id", "global"),
         )
     except Exception as e:
         return {

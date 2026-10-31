@@ -46,6 +46,38 @@ def test_learning_route_requires_write_scope():
     assert response.status_code == 403
 
 
+def test_learning_status_requires_read_scope_and_reports_action_stats(monkeypatch):
+    client = _client()
+    status_engine = Mock()
+    status_engine.get_action_stats.side_effect = lambda action: {
+        "successes": 1,
+        "partials": 0,
+        "failures": 0,
+        "samples": 1,
+        "weight": 0.67,
+        "last_outcome": "success",
+    }
+    monkeypatch.setattr(learning_routes, "engine", status_engine)
+
+    response = client.get("/api/learning/status")
+    assert response.status_code == 401
+
+    read_key = _create_key("learning-status-read", "read")
+    try:
+        response = client.get(
+            "/api/learning/status",
+            headers={"X-API-Key": read_key},
+        )
+    finally:
+        _remove_key(read_key)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["workspace_id"] == "global"
+    assert body["actions"]["monitor"]["samples"] == 1
+    status_engine.get_action_stats.assert_called()
+
+
 def test_learning_route_rejects_success_claim_and_invalid_actions():
     client = _client()
     write_key = _create_key("learning-feedback-validation", "write")
