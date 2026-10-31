@@ -300,7 +300,11 @@ def compute_risk(cpu, memory):
 # 🔥 MAIN PIPELINE
 # -----------------------------------------
 
-def run_intelligence_pipeline(allow_execution=True, live_metrics=None):
+def run_intelligence_pipeline(
+    allow_execution=True,
+    live_metrics=None,
+    workspace_id="global",
+):
 
     raw_current = load_json(CURRENT_FILE)
     nodes = load_nodes()
@@ -393,6 +397,7 @@ def run_intelligence_pipeline(allow_execution=True, live_metrics=None):
             )
         },
         combined_anomalies,
+        workspace_id=workspace_id,
         forecast=forecast,
         deviations=deviations,
         nodes=nodes

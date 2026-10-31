@@ -58,6 +58,15 @@ def test_score_and_ingest_can_run_concurrently():
     assert not errors, f"Concurrent ML engine errors: {errors}"
 
 
+def test_anomalous_samples_can_be_kept_out_of_training_buffer():
+    engine = MLEngine()
+
+    engine.ingest(FEAT, train=False)
+
+    assert len(engine.history_buf) == 1
+    assert len(engine.feature_buf) == 0
+
+
 def test_score_and_load_state_dict_can_run_concurrently():
     """
     Stress scoring while the live model parameters are repeatedly replaced.

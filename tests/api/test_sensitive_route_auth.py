@@ -67,6 +67,7 @@ SENSITIVE_ROUTES = [
     }),
     ("GET", "/cognitive/incidents", {}),
     ("GET", "/cognitive/incidents/test-id", {}),
+    ("GET", "/cognitive/incidents/test-id/replay", {}),
     ("GET", "/cognitive/postmortem/test-id", {}),
     ("GET", "/cognitive/notifications", {}),
     ("POST", "/cognitive/notifications/config", {}),

@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback, useMemo, type CSSProperties, type ReactNode } from "react";
-import { api, fetchDesktopSettings, fetchCognitivePredictions, fetchPredictionAccuracy, fetchCognitiveIncidents, fetchAlertProcessSuppressions, acknowledgeCognitivePrediction, resolveCognitivePrediction, acknowledgeAlert as acknowledgeHostedAlert, snoozeAlert as snoozeHostedAlert, unsnoozeAlert as unsnoozeHostedAlert, suppressAlertProcess, unsuppressAlertProcess, quitDesktopApp, type CognitivePrediction, type PredictionAccuracy, type CognitiveIncident } from "../services/api";
+import { api, fetchDesktopSettings, fetchCognitivePredictions, fetchPredictionAccuracy, fetchCognitiveIncidents, fetchCognitiveIncidentReplay, fetchAlertProcessSuppressions, acknowledgeCognitivePrediction, resolveCognitivePrediction, acknowledgeAlert as acknowledgeHostedAlert, snoozeAlert as snoozeHostedAlert, unsnoozeAlert as unsnoozeHostedAlert, suppressAlertProcess, unsuppressAlertProcess, quitDesktopApp, type CognitivePrediction, type PredictionAccuracy, type CognitiveIncident, type CognitiveIncidentReplay } from "../services/api";
 import ErrorLogAnalyzer from "../components/ErrorLogAnalyzer";
 import DesktopSettings from "../components/DesktopSettings";
 import {
@@ -58,6 +58,19 @@ const STYLES = `
   @keyframes warningGlow { 0%,100%{box-shadow:0 0 20px rgba(255,170,0,0.3);} 50%{box-shadow:0 0 50px rgba(255,170,0,0.6);} }
   @keyframes tickerSlide { 0%{transform:translateX(0);} 100%{transform:translateX(-50%);} }
   * { box-sizing: border-box; }
+  .cvis-shell { display:flex; min-height:100vh; position:relative; z-index:1; }
+  .cvis-sidebar { flex:0 0 220px; transition: flex-basis 0.2s ease; }
+  .cvis-sidebar.is-collapsed { flex-basis:64px; }
+  .cvis-main { flex:1; min-width:0; }
+  .cvis-sidebar-label { transition: opacity 0.15s ease; }
+  .cvis-sidebar.is-collapsed .cvis-sidebar-label { opacity:0; width:0; overflow:hidden; }
+  @media (max-width: 760px) {
+    .cvis-sidebar { position:fixed; inset:0 auto 0 0; width:220px; z-index:10; transform:translateX(-100%); transition:transform 0.2s ease; }
+    .cvis-sidebar.is-open { transform:translateX(0); }
+    .cvis-sidebar.is-collapsed { flex-basis:0; }
+    .cvis-sidebar-toggle { display:block !important; }
+    .cvis-main { width:100%; }
+  }
   ::-webkit-scrollbar { width: 4px; }
   ::-webkit-scrollbar-track { background: rgba(0,0,0,0.3); }
   ::-webkit-scrollbar-thumb { background: rgba(0,212,255,0.3); border-radius: 2px; }
@@ -1338,6 +1351,8 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   const [cognitivePredictions, setCognitivePredictions] = useState<CognitivePrediction[]>([]);
   const [predictionAccuracy, setPredictionAccuracy] = useState<PredictionAccuracy | null>(null);
   const [cognitiveIncidents, setCognitiveIncidents] = useState<CognitiveIncident[]>([]);
+  const [incidentReplay, setIncidentReplay] = useState<CognitiveIncidentReplay | null>(null);
+  const [incidentReplayBusy, setIncidentReplayBusy] = useState<string | null>(null);
   const [predictionBusy, setPredictionBusy] = useState<string | null>(null);
 
   const [data, setData] = useState<SystemStatus>({});
@@ -1365,7 +1380,26 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionResult, setActionResult] = useState<BackendActionResult | null>(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try {
+      return window.localStorage.getItem("cvis:sidebar-collapsed") === "true";
+    } catch {
+      return false;
+    }
+  });
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const prevLevel = useRef("OPTIMAL");
+
+  const openIncidentReplay = useCallback(async (incidentId: string) => {
+    setIncidentReplayBusy(incidentId);
+    try {
+      setIncidentReplay(await fetchCognitiveIncidentReplay(incidentId));
+    } catch (error) {
+      console.error("Incident replay fetch failed:", error);
+    } finally {
+      setIncidentReplayBusy(null);
+    }
+  }, []);
 
   useEffect(() => {
     try {
@@ -1375,6 +1409,23 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     } catch (error) {
       console.error("Could not restore alert controls:", error);
     }
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("cvis:sidebar-collapsed", String(sidebarCollapsed));
+    } catch (error) {
+      console.error("Could not persist sidebar preference:", error);
+    }
+  }, [sidebarCollapsed]);
+
+  const navigateSidebar = useCallback((target: "overview" | "settings") => {
+    if (target === "settings") {
+      setShowDesktopSettings(true);
+    } else {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+    setSidebarOpen(false);
   }, []);
 
   const acknowledgeAlert = useCallback(async (alertId: string) => {
@@ -1987,12 +2038,49 @@ export default function Dashboard({ onLogout }: DashboardProps) {
         animation: "scanline 6s linear infinite",
       }} />
 
-      <div style={{
-        position: "relative", zIndex: 1, minHeight: "100vh", padding: "28px 32px",
-        color: T.text, fontFamily: "'Rajdhani', sans-serif",
-        filter: isCritical ? "brightness(1.06)" : "brightness(1)",
-        transition: "filter 0.5s ease",
-      }}>
+      <div className="cvis-shell">
+        <aside className={`cvis-sidebar ${sidebarCollapsed ? "is-collapsed" : ""} ${sidebarOpen ? "is-open" : ""}`} style={{
+          background: "rgba(5, 9, 22, 0.94)",
+          borderRight: `1px solid ${T.border}`,
+          padding: "18px 10px",
+          color: T.text,
+          fontFamily: "'Share Tech Mono', monospace",
+        }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 }}>
+            <span className="cvis-sidebar-label" style={{ color: T.accent, fontSize: 12, letterSpacing: "0.08em" }}>CVIS</span>
+            <button
+              type="button"
+              aria-label={sidebarCollapsed ? "Expand navigation" : "Collapse navigation"}
+              onClick={() => setSidebarCollapsed((value) => !value)}
+              style={{ ...headerActionStyle, padding: "6px 8px" }}
+            >
+              {sidebarCollapsed ? ">" : "<"}
+            </button>
+          </div>
+          <nav aria-label="Primary navigation" style={{ display: "grid", gap: 8 }}>
+            <button type="button" onClick={() => navigateSidebar("overview")} style={{ ...headerActionStyle, textAlign: "left", whiteSpace: "nowrap" }}>
+              <span aria-hidden="true">[]</span> <span className="cvis-sidebar-label">Overview</span>
+            </button>
+            <button type="button" onClick={() => navigateSidebar("settings")} style={{ ...headerActionStyle, textAlign: "left", whiteSpace: "nowrap" }}>
+              <span aria-hidden="true">[]</span> <span className="cvis-sidebar-label">Settings</span>
+            </button>
+          </nav>
+        </aside>
+        <button
+          type="button"
+          className="cvis-sidebar-toggle"
+          aria-label="Open navigation"
+          onClick={() => setSidebarOpen(true)}
+          style={{ ...headerActionStyle, display: "none", position: "fixed", top: 12, left: 12, zIndex: 11 }}
+        >
+          Menu
+        </button>
+        <div className="cvis-main" style={{
+          position: "relative", minHeight: "100vh", padding: "28px 32px",
+          color: T.text, fontFamily: "'Rajdhani', sans-serif",
+          filter: isCritical ? "brightness(1.06)" : "brightness(1)",
+          transition: "filter 0.5s ease",
+        }}>
 
         {/* HEADER */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px", animation: "slideIn 0.4s ease-out" }}>
@@ -2005,6 +2093,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
               marginBottom: "3px",
             }}>
               ◈ COGNITIVE AIOPS ENGINE
+              </div>
             </div>
             <div style={{ fontSize: "11px", color: T.textDim, fontFamily: "'Share Tech Mono', monospace", letterSpacing: "0.08em" }}>
               REAL-TIME AUTONOMOUS SYSTEM INTELLIGENCE v2.4.1
@@ -2240,6 +2329,16 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                       {incident.occurred_str ?? "TIME UNKNOWN"}
                     </div>
                   </div>
+                  {incident.incident_id && (
+                    <button
+                      type="button"
+                      onClick={() => void openIncidentReplay(incident.incident_id!)}
+                      disabled={incidentReplayBusy === incident.incident_id}
+                      style={{ ...headerActionStyle, marginBottom: 12 }}
+                    >
+                      {incidentReplayBusy === incident.incident_id ? "Loading replay..." : "Open evidence replay"}
+                    </button>
+                  )}
                     {incident.likely_contributors && incident.likely_contributors.length > 0 && (
                       <div style={{ marginBottom: 12, padding: "10px 12px", borderRadius: 4, background: "rgba(255,176,32,0.08)", border: `1px solid ${T.warning}35` }}>
                         <div style={{ color: T.warning, fontSize: 9, letterSpacing: "0.12em", fontFamily: "'Share Tech Mono', monospace", marginBottom: 7 }}>
@@ -2283,6 +2382,46 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                   )}
                 </div>
               ))}
+            </div>
+          </Section>
+        )}
+
+        {incidentReplay && (
+          <Section
+            title="Evidence Replay"
+            subtitle={`${incidentReplay.replay?.reconstruction ?? "recorded"} incident evidence`}
+            accentColor={T.accent}
+          >
+            <div style={{ display: "grid", gap: 12 }}>
+              <div style={{ color: T.text, fontSize: 12 }}>
+                {incidentReplay.replay?.evidence_count ?? incidentReplay.timeline?.length ?? 0} evidence points reconstructed.
+              </div>
+              {incidentReplay.replay?.evidence_text && (
+                <pre style={{ margin: 0, padding: 12, whiteSpace: "pre-wrap", color: T.textMuted, background: "rgba(0,0,0,0.2)", borderRadius: 4, fontSize: 10, fontFamily: "'Share Tech Mono', monospace" }}>
+                  {incidentReplay.replay.evidence_text}
+                </pre>
+              )}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
+                <div style={{ padding: 12, border: `1px solid ${T.warning}35`, borderRadius: 4 }}>
+                  <div style={{ color: T.warning, fontSize: 10, fontFamily: "'Share Tech Mono', monospace" }}>INTERVENTION OUTCOME</div>
+                  <div style={{ color: T.text, marginTop: 6 }}>{incidentReplay.replay?.outcome?.status ?? "unrecorded"}</div>
+                  <div style={{ color: T.textMuted, fontSize: 10, marginTop: 4 }}>{incidentReplay.replay?.outcome?.note}</div>
+                </div>
+                <div style={{ padding: 12, border: `1px solid ${T.primary}35`, borderRadius: 4 }}>
+                  <div style={{ color: T.primary, fontSize: 10, fontFamily: "'Share Tech Mono', monospace" }}>COUNTERFACTUAL</div>
+                  <div style={{ color: T.text, marginTop: 6 }}>{incidentReplay.replay?.counterfactual?.status ?? "unavailable"}</div>
+                  <div style={{ color: T.textMuted, fontSize: 10, marginTop: 4 }}>{incidentReplay.replay?.counterfactual?.note}</div>
+                </div>
+              </div>
+              <div style={{ display: "grid", gap: 7 }}>
+                {(incidentReplay.timeline ?? []).map((entry, index) => (
+                  <div key={`${entry.time_str}-${entry.event}-${index}`} style={{ display: "grid", gridTemplateColumns: "72px 10px minmax(0, 1fr)", gap: 8, alignItems: "center", fontSize: 10, fontFamily: "'Share Tech Mono', monospace" }}>
+                    <span style={{ color: T.textDim, textAlign: "right" }}>{entry.t_minus_mins == null ? "—" : entry.t_minus_mins === 0 ? "NOW" : `-${entry.t_minus_mins}m`}</span>
+                    <span style={{ width: 7, height: 7, borderRadius: "50%", background: entry.significance === "incident" ? T.danger : T.accent }} />
+                    <span style={{ color: entry.significance === "incident" ? T.danger : T.text }}>{entry.event ?? "Signal recorded"}</span>
+                  </div>
+                ))}
+              </div>
             </div>
           </Section>
         )}

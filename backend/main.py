@@ -58,7 +58,8 @@ from backend.chat_routes import router as chat_router
 from backend.core.storage.db import (
     save_alert, save_event, load_alerts, load_events, maybe_save_snapshot,
     load_snapshots, load_snapshot_rollups, db_info, close_db,
-    snapshot_retention_days, save_incident, load_prediction_accuracy,
+    snapshot_retention_days, save_incident, load_incidents, load_incident,
+    load_prediction_accuracy,
     acknowledge_alert, snooze_alert, unsnooze_alert,
     save_process_suppression, remove_process_suppression,
     load_process_suppressions,
@@ -157,6 +158,38 @@ def _require_workspace_device(principal: dict, device_id: str) -> None:
         or _devices[device_id].get("workspace_id") != workspace_id
     ):
         raise HTTPException(404, "Device is not registered")
+
+
+def _stored_incident_response(row: dict) -> dict:
+    metadata = row.get("metadata")
+    if isinstance(metadata, str):
+        try:
+            metadata = _json.loads(metadata)
+        except _json.JSONDecodeError:
+            metadata = {}
+    metadata = metadata if isinstance(metadata, dict) else {}
+    occurred_at = row.get("occurred_at") or row.get("detected_at")
+    return {
+        "incident_id": row.get("incident_id"),
+        "type": row.get("failure_type") or "SYSTEM INCIDENT",
+        "description": (
+            metadata.get("description")
+            or row.get("evidence")
+            or "Recorded system incident"
+        ),
+        "occurred_at": occurred_at,
+        "occurred_str": (
+            time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(occurred_at))
+            if occurred_at
+            else "TIME UNKNOWN"
+        ),
+        "timeline": [],
+        "plain_timeline": row.get("evidence"),
+        "likely_contributors": metadata.get("likely_contributors", []),
+        "status": row.get("status"),
+        "severity": row.get("severity"),
+        "device_id": row.get("device_id"),
+    }
 
 
 def _collection_status() -> dict:
@@ -816,7 +849,16 @@ def _build_feature_vector():
         "collected_at":    collected_at,
         "processes":       process_summary,
     }
-    feat = np.array([cpu/100, mem/100, disk/100, net/100, 0.0], dtype=np.float32)
+    # Keep the public network_percent field stable, but use transfer rate for
+    # ML so cumulative host counters cannot masquerade as current activity.
+    network_rate = min(
+        100.0,
+        (network_sent_rate + network_recv_rate) / 1e7,
+    )
+    feat = np.array(
+        [cpu / 100, mem / 100, disk / 100, network_rate / 100, 0.0],
+        dtype=np.float32,
+    )
     return feat, raw
 
 
@@ -894,8 +936,13 @@ def _collect():
                 feature_buffer.append(feat)
                 _last_metrics.update(raw)
 
-            engine.ingest(feat)
             scores = engine.score(feat)
+            history_samples = len(engine.history_buf)
+            train_sample = (
+                history_samples < 60
+                or scores.ensemble_score < 0.65
+            )
+            engine.ingest(feat, train=train_sample)
 
             update = {
                 "anomaly_score":  scores.ensemble_score,
@@ -2439,12 +2486,15 @@ async def cognitive_health_score():
     tags=["Cognitive"],
     dependencies=[Depends(require_scope("read"))],
 )
-async def cognitive_pipeline():
+async def cognitive_pipeline(
+    principal: dict = Depends(require_scope("read")),
+):
     try:
         from backend.intelligence_pipeline import run_intelligence_pipeline
         return run_intelligence_pipeline(
             allow_execution=False,
             live_metrics=dict(_last_metrics),
+            workspace_id=principal.get("workspace_id", "global"),
         )
     except Exception as e:
         return {
@@ -2957,7 +3007,10 @@ async def list_incidents(
     principal: dict = Depends(require_scope("read")),
 ):
     if principal.get("workspace_id"):
-        return []
+        rows = await load_incidents(
+            device_ids=_workspace_device_ids(principal),
+        )
+        return [_stored_incident_response(row) for row in rows]
     if not COGNITIVE_OK:
         return []
     return get_black_box().get_incidents()
@@ -2972,7 +3025,13 @@ async def get_incident(
     principal: dict = Depends(require_scope("read")),
 ):
     if principal.get("workspace_id"):
-        raise HTTPException(404, "Incident not found")
+        incident = await load_incident(
+            incident_id,
+            device_ids=_workspace_device_ids(principal),
+        )
+        if not incident:
+            raise HTTPException(404, "Incident not found")
+        return _stored_incident_response(incident)
     if not COGNITIVE_OK:
         return {"error": "not available"}
     incident = get_black_box().get_incident(incident_id)
@@ -2980,6 +3039,73 @@ async def get_incident(
         raise HTTPException(404, "Incident not found")
     postmortem = get_dna_engine().generate_postmortem(incident_id)
     return {**incident, "postmortem": postmortem}
+
+@app.get(
+    "/cognitive/incidents/{incident_id}/replay",
+    tags=["Cognitive"],
+    dependencies=[Depends(require_scope("read"))],
+)
+async def replay_incident(
+    incident_id: str,
+    principal: dict = Depends(require_scope("read")),
+):
+    if principal.get("workspace_id"):
+        incident = await load_incident(
+            incident_id,
+            device_ids=_workspace_device_ids(principal),
+        )
+        if not incident:
+            raise HTTPException(404, "Incident not found")
+        response = _stored_incident_response(incident)
+        return {
+            "incident": response,
+            "timeline": [],
+            "replay": {
+                "evidence_count": 0,
+                "reconstruction": "recorded",
+                "evidence_text": response.get("plain_timeline"),
+                "outcome": {
+                    "status": "unrecorded",
+                    "verified": False,
+                    "note": "No verified intervention outcome is linked to this incident yet.",
+                },
+                "counterfactual": {
+                    "status": "unavailable",
+                    "note": "A counterfactual requires a verified intervention outcome.",
+                },
+            },
+        }
+    if not COGNITIVE_OK:
+        raise HTTPException(503, "Cognitive layer not available")
+
+    black_box = get_black_box()
+    incident = black_box.get_incident(incident_id)
+    if not incident:
+        raise HTTPException(404, "Incident not found")
+
+    timeline_data = black_box.get_timeline_for_incident(incident_id)
+    timeline = timeline_data.get("timeline", [])
+    return {
+        "incident": incident,
+        "timeline": timeline,
+        "replay": {
+            "evidence_count": len(timeline),
+            "reconstruction": (
+                "reconstructed"
+                if timeline_data.get("note")
+                else "recorded"
+            ),
+            "outcome": {
+                "status": "unrecorded",
+                "verified": False,
+                "note": "No verified intervention outcome is linked to this incident yet.",
+            },
+            "counterfactual": {
+                "status": "unavailable",
+                "note": "A counterfactual requires a verified intervention outcome.",
+            },
+        },
+    }
 
 @app.get(
     "/cognitive/postmortem/{event_id}",

@@ -1,4 +1,5 @@
 import re
+import time
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, StrictStr
@@ -19,6 +20,30 @@ class LearningFeedback(BaseModel):
 
     action: StrictStr
     experience_id: StrictStr
+
+
+@router.get(
+    "/api/learning/status",
+    dependencies=[Depends(require_scope("read"))],
+)
+async def learning_status(
+    principal: dict = Depends(require_scope("read")),
+):
+    workspace_id = principal.get("workspace_id") or "global"
+    learner = (
+        engine
+        if workspace_id == "global"
+        else get_learning_engine(workspace_id)
+    )
+    actions = {
+        action: learner.get_action_stats(action)
+        for action in sorted(SUPPORTED_FEEDBACK_ACTIONS)
+    }
+    return {
+        "workspace_id": workspace_id,
+        "actions": actions,
+        "generated_at": time.time(),
+    }
 
 
 @router.post(

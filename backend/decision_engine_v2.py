@@ -12,6 +12,7 @@ from backend.core.actions.action_executor import (
     ACTIONS,
     AUTONOMOUS_ALLOWED_ACTIONS,
 )
+from backend.core.learning_engine import get_learning_engine
 
 
 class DecisionEngineV2:
@@ -64,7 +65,7 @@ class DecisionEngineV2:
         }
 
     # -------------------------------------------------
-    def decide(self, metrics, anomalies, **kwargs):
+    def decide(self, metrics, anomalies, workspace_id="global", **kwargs):
 
         cpu = metrics.get("cpu", 0)
         memory = metrics.get("memory", 0)
@@ -295,6 +296,14 @@ class DecisionEngineV2:
                 final_action = causal_recommendation
                 reason = f"{reason} → advisory recommendation"
 
+        learning_engine = get_learning_engine(workspace_id)
+        learning_weight = learning_engine.get_action_weight(final_action)
+        confidence = max(
+            0.1,
+            min(0.95, confidence + (learning_weight - 0.5) * 0.1),
+        )
+        learning_stats = learning_engine.get_action_stats(final_action)
+
         # -------------------------------------------------
         # 🔥 AUTO EXECUTION (SAFE)
         # -------------------------------------------------
@@ -312,6 +321,9 @@ class DecisionEngineV2:
             "kill_high_cpu_process",
         }:
             auto_execute = False
+        if learning_weight < 0.35:
+            auto_execute = False
+            reason = f"{reason} → low learned reliability requires confirmation"
 
         # -------------------------------------------------
         # 🧠 BUILD DECISION
@@ -334,6 +346,9 @@ class DecisionEngineV2:
                 "causal_action": mapped_causal_action,
                 "causal_action_mode": causal_action_mode,
                 "policy_action": policy_action,
+                "workspace_id": workspace_id,
+                "learning_weight": learning_weight,
+                "learning": learning_stats,
                 "caused_by": primary_cause.get("caused_by"),
                 "impact_chain": primary_cause.get("impact_chain", []),
                 "application_attribution": application_attribution
