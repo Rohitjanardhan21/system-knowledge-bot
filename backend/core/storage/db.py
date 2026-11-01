@@ -1020,6 +1020,63 @@ async def load_incident(
         return None
 
 
+async def update_incident_workflow(
+    incident_id: str,
+    *,
+    status: str | None = None,
+    assignee: str | None = None,
+    note: str | None = None,
+    device_ids: set[str] | None = None,
+) -> dict | None:
+    db = await get_db()
+    if not db:
+        return None
+    try:
+        incident = await load_incident(incident_id, device_ids=device_ids)
+        if not incident:
+            return None
+
+        metadata = incident.get("metadata")
+        if isinstance(metadata, str):
+            try:
+                metadata = json.loads(metadata)
+            except json.JSONDecodeError:
+                metadata = {}
+        metadata = metadata if isinstance(metadata, dict) else {}
+        workflow = metadata.get("workflow")
+        workflow = workflow if isinstance(workflow, dict) else {}
+
+        if status is not None:
+            workflow["status"] = status
+        if assignee is not None:
+            workflow["assignee"] = assignee.strip()
+        if note is not None:
+            notes = workflow.get("notes")
+            notes = notes if isinstance(notes, list) else []
+            notes.append({"text": note.strip(), "created_at": time.time()})
+            workflow["notes"] = notes[-50:]
+
+        metadata["workflow"] = workflow
+        resolved_at = time.time() if status == "resolved" else (
+            None if status in {"open", "investigating"} else incident.get("resolved_at")
+        )
+        next_status = status or incident.get("status") or "open"
+
+        await db.execute(
+            """
+            UPDATE incidents
+            SET status = ?, resolved_at = ?, metadata = ?
+            WHERE incident_id = ?
+            """,
+            (next_status, resolved_at, json.dumps(metadata), incident_id),
+        )
+        await db.commit()
+        return await load_incident(incident_id, device_ids=device_ids)
+    except Exception as e:
+        log.error("update_incident_workflow: %s", e)
+        return None
+
+
 async def load_prediction_accuracy() -> dict:
     db = await get_db()
     if not db:

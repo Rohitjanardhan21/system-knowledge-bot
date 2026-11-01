@@ -1,7 +1,9 @@
 import { useEffect, useState, useRef, useCallback, useMemo, type CSSProperties, type ReactNode } from "react";
-import { api, fetchDesktopSettings, fetchCognitivePredictions, fetchPredictionAccuracy, fetchCognitiveIncidents, fetchCognitiveIncidentReplay, fetchAlertProcessSuppressions, acknowledgeCognitivePrediction, resolveCognitivePrediction, acknowledgeAlert as acknowledgeHostedAlert, snoozeAlert as snoozeHostedAlert, unsnoozeAlert as unsnoozeHostedAlert, suppressAlertProcess, unsuppressAlertProcess, quitDesktopApp, type CognitivePrediction, type PredictionAccuracy, type CognitiveIncident, type CognitiveIncidentReplay } from "../services/api";
+import { api, fetchDesktopSettings, fetchCognitivePredictions, fetchPredictionAccuracy, fetchCognitiveIncidents, fetchCognitiveIncidentReplay, fetchAlertProcessSuppressions, acknowledgeCognitivePrediction, resolveCognitivePrediction, updateCognitiveIncidentWorkflow, acknowledgeAlert as acknowledgeHostedAlert, snoozeAlert as snoozeHostedAlert, unsnoozeAlert as unsnoozeHostedAlert, suppressAlertProcess, unsuppressAlertProcess, quitDesktopApp, type CognitivePrediction, type PredictionAccuracy, type CognitiveIncident, type CognitiveIncidentReplay } from "../services/api";
 import ErrorLogAnalyzer from "../components/ErrorLogAnalyzer";
 import DesktopSettings from "../components/DesktopSettings";
+import DeviceManagement from "../components/DeviceManagement";
+import NotificationPreferences from "../components/NotificationPreferences";
 import {
   AreaChart, Area, CartesianGrid, ResponsiveContainer, RadarChart,
   PolarGrid, PolarAngleAxis, Radar, XAxis, YAxis, Tooltip
@@ -43,6 +45,22 @@ const quitActionStyle: CSSProperties = {
   borderColor: "rgba(255, 51, 102, 0.55)",
 };
 
+function downloadCsv(filename: string, rows: Array<Record<string, string | number | null | undefined>>) {
+  if (rows.length === 0) return;
+  const columns = Array.from(new Set(rows.flatMap((row) => Object.keys(row))));
+  const escape = (value: string | number | null | undefined) => `"${String(value ?? "").replaceAll('"', '""')}"`;
+  const csv = [
+    columns.map(escape).join(","),
+    ...rows.map((row) => columns.map((column) => escape(row[column])).join(",")),
+  ].join("\r\n");
+  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 /* ── KEYFRAMES ────────────────────────────────────────────── */
 const STYLES = `
   @keyframes float { 0%,100%{transform:translate(0,0) scale(1);} 50%{transform:translate(20px,-20px) scale(1.05);} }
@@ -59,17 +77,37 @@ const STYLES = `
   @keyframes tickerSlide { 0%{transform:translateX(0);} 100%{transform:translateX(-50%);} }
   * { box-sizing: border-box; }
   .cvis-shell { display:flex; min-height:100vh; position:relative; z-index:1; }
-  .cvis-sidebar { flex:0 0 220px; transition: flex-basis 0.2s ease; }
+  .cvis-sidebar { flex:0 0 220px; height:100vh; position:sticky; top:0; overflow-y:auto; transition: flex-basis 0.2s ease, width 0.2s ease; }
   .cvis-sidebar.is-collapsed { flex-basis:64px; }
   .cvis-main { flex:1; min-width:0; }
+  .cvis-header { display:flex; justify-content:space-between; align-items:flex-start; gap:24px; flex-wrap:wrap; }
+  .cvis-header-title { flex:1 1 320px; min-width:0; }
+  .cvis-header-actions { display:flex; align-items:center; justify-content:flex-end; gap:10px; flex:1 1 520px; flex-wrap:wrap; }
+  .cvis-dashboard-grid { display:grid; grid-template-columns:minmax(0, 1fr) minmax(0, 1fr) 320px; gap:20px; align-items:start; }
   .cvis-sidebar-label { transition: opacity 0.15s ease; }
   .cvis-sidebar.is-collapsed .cvis-sidebar-label { opacity:0; width:0; overflow:hidden; }
+  .cvis-sidebar-item { width:100%; display:flex; align-items:center; gap:10px; }
+  .cvis-sidebar.is-collapsed .cvis-sidebar-item { justify-content:center; gap:0; padding-left:8px; padding-right:8px; }
+  .cvis-sidebar-icon { width:18px; flex:0 0 18px; text-align:center; }
+  .cvis-sidebar-close { display:none; }
+  .cvis-sidebar-backdrop { display:none; }
   @media (max-width: 760px) {
-    .cvis-sidebar { position:fixed; inset:0 auto 0 0; width:220px; z-index:10; transform:translateX(-100%); transition:transform 0.2s ease; }
+    .cvis-sidebar { position:fixed; inset:0 auto 0 0; width:240px; height:100vh; z-index:12; transform:translateX(-100%); transition:transform 0.2s ease; }
     .cvis-sidebar.is-open { transform:translateX(0); }
     .cvis-sidebar.is-collapsed { flex-basis:0; }
+    .cvis-sidebar.is-collapsed .cvis-sidebar-label { opacity:1; width:auto; overflow:visible; }
+    .cvis-sidebar.is-collapsed .cvis-sidebar-item { justify-content:flex-start; gap:10px; padding-left:10px; padding-right:10px; }
+    .cvis-sidebar-close { display:block; }
+    .cvis-sidebar-backdrop { display:block; position:fixed; inset:0; z-index:11; background:rgba(0,0,0,0.58); backdrop-filter:blur(2px); }
     .cvis-sidebar-toggle { display:block !important; }
     .cvis-main { width:100%; }
+    .cvis-header { padding-top:34px; }
+    .cvis-header-actions { justify-content:flex-start; }
+    .cvis-dashboard-grid { grid-template-columns:1fr !important; }
+  }
+  @media (min-width: 761px) and (max-width: 1250px) {
+    .cvis-dashboard-grid { grid-template-columns:minmax(0, 1fr) minmax(0, 1fr); }
+    .cvis-dashboard-grid > :last-child { grid-column:1 / -1; }
   }
   ::-webkit-scrollbar { width: 4px; }
   ::-webkit-scrollbar-track { background: rgba(0,0,0,0.3); }
@@ -593,6 +631,7 @@ interface SectionProps {
   children: ReactNode;
   alert?: boolean;
   accentColor?: string;
+  id?: string;
 }
 
 const Section = ({
@@ -601,8 +640,9 @@ const Section = ({
   children,
   alert = false,
   accentColor = T.accent,
+  id,
 }: SectionProps) => (
-  <div style={{
+  <div id={id} style={{
     backdropFilter: "blur(20px)",
     background: T.surface,
     padding: "22px",
@@ -1353,6 +1393,11 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   const [cognitiveIncidents, setCognitiveIncidents] = useState<CognitiveIncident[]>([]);
   const [incidentReplay, setIncidentReplay] = useState<CognitiveIncidentReplay | null>(null);
   const [incidentReplayBusy, setIncidentReplayBusy] = useState<string | null>(null);
+  const [incidentWorkflowBusy, setIncidentWorkflowBusy] = useState<string | null>(null);
+  const [incidentNoteDrafts, setIncidentNoteDrafts] = useState<Record<string, string>>({});
+  const [incidentAssigneeDrafts, setIncidentAssigneeDrafts] = useState<Record<string, string>>({});
+  const notificationSeen = useRef<Set<string>>(new Set());
+  const notificationInitialized = useRef(false);
   const [predictionBusy, setPredictionBusy] = useState<string | null>(null);
 
   const [data, setData] = useState<SystemStatus>({});
@@ -1380,6 +1425,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionResult, setActionResult] = useState<BackendActionResult | null>(null);
+  const [dashboardQuery, setDashboardQuery] = useState("");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     try {
       return window.localStorage.getItem("cvis:sidebar-collapsed") === "true";
@@ -1401,6 +1447,26 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     }
   }, []);
 
+  const updateIncidentWorkflow = useCallback(async (
+    incidentId: string,
+    payload: { status?: "open" | "investigating" | "resolved"; assignee?: string; note?: string },
+  ) => {
+    setIncidentWorkflowBusy(incidentId);
+    try {
+      const updated = await updateCognitiveIncidentWorkflow(incidentId, payload);
+      setCognitiveIncidents((current) => current.map((incident) => (
+        incident.incident_id === incidentId ? { ...incident, ...updated } : incident
+      )));
+      if (payload.note) {
+        setIncidentNoteDrafts((current) => ({ ...current, [incidentId]: "" }));
+      }
+    } catch (error) {
+      console.error("Incident workflow update failed:", error);
+    } finally {
+      setIncidentWorkflowBusy(null);
+    }
+  }, []);
+
   useEffect(() => {
     try {
       setAcknowledgedAlerts(JSON.parse(window.localStorage.getItem("cvis:acknowledged-alerts") || "{}"));
@@ -1412,6 +1478,30 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   }, []);
 
   useEffect(() => {
+    const ids = alertEvents
+      .map((event) => event.id)
+      .filter((id): id is string => Boolean(id));
+    if (!notificationInitialized.current) {
+      ids.forEach((id) => notificationSeen.current.add(id));
+      notificationInitialized.current = true;
+      return;
+    }
+    if (window.localStorage.getItem("cvis:browser-notifications") !== "true" || !("Notification" in window) || Notification.permission !== "granted") {
+      ids.forEach((id) => notificationSeen.current.add(id));
+      return;
+    }
+    alertEvents.forEach((event) => {
+      if (!event.id || notificationSeen.current.has(event.id)) return;
+      notificationSeen.current.add(event.id);
+      if (["CRITICAL", "HIGH"].includes(String(event.severity).toUpperCase())) {
+        new Notification(`CVIS ${event.severity ?? "HIGH"} alert`, {
+          body: event.message ?? "A new high-severity system event requires attention.",
+        });
+      }
+    });
+  }, [alertEvents]);
+
+  useEffect(() => {
     try {
       window.localStorage.setItem("cvis:sidebar-collapsed", String(sidebarCollapsed));
     } catch (error) {
@@ -1419,11 +1509,20 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     }
   }, [sidebarCollapsed]);
 
-  const navigateSidebar = useCallback((target: "overview" | "settings") => {
+  useEffect(() => {
+    if (!sidebarOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setSidebarOpen(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [sidebarOpen]);
+
+  const navigateSidebar = useCallback((target: "overview" | "devices" | "telemetry" | "incidents" | "decisions" | "replay" | "actions" | "settings") => {
     if (target === "settings") {
       setShowDesktopSettings(true);
     } else {
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      document.getElementById(target)?.scrollIntoView({ behavior: "smooth", block: "start" });
     }
     setSidebarOpen(false);
   }, []);
@@ -2024,6 +2123,51 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     });
   }, [alertEvents, alertProcessFilter, alertSeverityFilter, alertStatusFilter, alertTimeFilter]);
 
+  const normalizedDashboardQuery = dashboardQuery.trim().toLowerCase();
+  const visibleIncidents = useMemo(
+    () => cognitiveIncidents.filter((incident) => !normalizedDashboardQuery || [
+      incident.incident_id,
+      incident.type,
+      incident.description,
+      incident.status,
+      incident.assignee,
+      incident.device_id,
+    ].some((value) => String(value ?? "").toLowerCase().includes(normalizedDashboardQuery))),
+    [cognitiveIncidents, normalizedDashboardQuery],
+  );
+  const visiblePredictions = useMemo(
+    () => cognitivePredictions.filter((prediction) => !normalizedDashboardQuery || [
+      prediction.id,
+      prediction.type,
+      prediction.message,
+      prediction.action,
+      prediction.severity,
+    ].some((value) => String(value ?? "").toLowerCase().includes(normalizedDashboardQuery))),
+    [cognitivePredictions, normalizedDashboardQuery],
+  );
+
+  const exportDashboardData = useCallback(() => {
+    downloadCsv("cvis-dashboard-export.csv", [
+      ...filteredAlerts.map((alert) => ({
+        record_type: "alert",
+        id: alert.id,
+        severity: alert.severity,
+        message: alert.message,
+        timestamp: alert.timestamp,
+        status: alert.resolved_at ? "resolved" : "active",
+      })),
+      ...cognitiveIncidents.map((incident) => ({
+        record_type: "incident",
+        id: incident.incident_id,
+        severity: incident.severity,
+        message: incident.description,
+        timestamp: incident.occurred_at,
+        status: incident.status,
+        assignee: incident.assignee,
+      })),
+    ]);
+  }, [cognitiveIncidents, filteredAlerts]);
+
   return (
     <>
       <style>{STYLES}</style>
@@ -2039,6 +2183,14 @@ export default function Dashboard({ onLogout }: DashboardProps) {
       }} />
 
       <div className="cvis-shell">
+        {sidebarOpen && (
+          <button
+            type="button"
+            className="cvis-sidebar-backdrop"
+            aria-label="Close navigation"
+            onClick={() => setSidebarOpen(false)}
+          />
+        )}
         <aside className={`cvis-sidebar ${sidebarCollapsed ? "is-collapsed" : ""} ${sidebarOpen ? "is-open" : ""}`} style={{
           background: "rgba(5, 9, 22, 0.94)",
           borderRight: `1px solid ${T.border}`,
@@ -2048,22 +2200,49 @@ export default function Dashboard({ onLogout }: DashboardProps) {
         }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 }}>
             <span className="cvis-sidebar-label" style={{ color: T.accent, fontSize: 12, letterSpacing: "0.08em" }}>CVIS</span>
-            <button
-              type="button"
-              aria-label={sidebarCollapsed ? "Expand navigation" : "Collapse navigation"}
-              onClick={() => setSidebarCollapsed((value) => !value)}
-              style={{ ...headerActionStyle, padding: "6px 8px" }}
-            >
-              {sidebarCollapsed ? ">" : "<"}
-            </button>
+            <div style={{ display: "flex", gap: 6 }}>
+              <button
+                type="button"
+                className="cvis-sidebar-close"
+                aria-label="Close navigation"
+                onClick={() => setSidebarOpen(false)}
+                style={{ ...headerActionStyle, padding: "6px 8px" }}
+              >
+                ×
+              </button>
+              <button
+                type="button"
+                aria-label={sidebarCollapsed ? "Expand navigation" : "Collapse navigation"}
+                onClick={() => setSidebarCollapsed((value) => !value)}
+                style={{ ...headerActionStyle, padding: "6px 8px" }}
+              >
+                {sidebarCollapsed ? "»" : "«"}
+              </button>
+            </div>
           </div>
           <nav aria-label="Primary navigation" style={{ display: "grid", gap: 8 }}>
-            <button type="button" onClick={() => navigateSidebar("overview")} style={{ ...headerActionStyle, textAlign: "left", whiteSpace: "nowrap" }}>
-              <span aria-hidden="true">[]</span> <span className="cvis-sidebar-label">Overview</span>
-            </button>
-            <button type="button" onClick={() => navigateSidebar("settings")} style={{ ...headerActionStyle, textAlign: "left", whiteSpace: "nowrap" }}>
-              <span aria-hidden="true">[]</span> <span className="cvis-sidebar-label">Settings</span>
-            </button>
+            {([
+              ["overview", "◈", "Overview"],
+              ["devices", "▣", "Devices"],
+              ["telemetry", "⌁", "Telemetry"],
+              ["incidents", "!", "Incidents"],
+              ["decisions", "◇", "AI Decisions"],
+              ["replay", "↺", "Replay Lab"],
+              ["actions", "▶", "Operator Actions"],
+              ["settings", "⚙", "Settings"],
+            ] as const).map(([target, icon, label]) => (
+              <button
+                key={target}
+                type="button"
+                className="cvis-sidebar-item"
+                title={sidebarCollapsed ? label : undefined}
+                onClick={() => navigateSidebar(target)}
+                style={{ ...headerActionStyle, textAlign: "left", whiteSpace: "nowrap", padding: "9px 10px" }}
+              >
+                <span className="cvis-sidebar-icon" aria-hidden="true">{icon}</span>
+                <span className="cvis-sidebar-label">{label}</span>
+              </button>
+            ))}
           </nav>
         </aside>
         <button
@@ -2083,8 +2262,8 @@ export default function Dashboard({ onLogout }: DashboardProps) {
         }}>
 
         {/* HEADER */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px", animation: "slideIn 0.4s ease-out" }}>
-          <div>
+        <div className="cvis-header" style={{ marginBottom: "14px", animation: "slideIn 0.4s ease-out" }}>
+          <div className="cvis-header-title">
             <div style={{
               fontSize: "26px", fontWeight: 700, letterSpacing: "0.06em",
               fontFamily: "'Rajdhani', sans-serif",
@@ -2093,13 +2272,25 @@ export default function Dashboard({ onLogout }: DashboardProps) {
               marginBottom: "3px",
             }}>
               ◈ COGNITIVE AIOPS ENGINE
-              </div>
             </div>
             <div style={{ fontSize: "11px", color: T.textDim, fontFamily: "'Share Tech Mono', monospace", letterSpacing: "0.08em" }}>
               REAL-TIME AUTONOMOUS SYSTEM INTELLIGENCE v2.4.1
             </div>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: "20px" }}>
+          <div className="cvis-header-actions">
+            <label style={{ display: "flex", alignItems: "center", gap: 6, color: T.textMuted, fontSize: 10, fontFamily: "'Share Tech Mono', monospace" }}>
+              <span className="cvis-sidebar-label">SEARCH</span>
+              <input
+                aria-label="Search dashboard data"
+                value={dashboardQuery}
+                onChange={(event) => setDashboardQuery(event.target.value)}
+                placeholder="incidents, alerts, devices"
+                style={{ width: 180, maxWidth: "32vw", padding: "8px 9px", color: T.text, background: T.bg, border: `1px solid ${T.borderActive}`, borderRadius: 4, fontFamily: "'Share Tech Mono', monospace", fontSize: 10 }}
+              />
+            </label>
+            <button type="button" onClick={exportDashboardData} style={headerActionStyle}>
+              Export CSV
+            </button>
             <button type="button" onClick={() => setShowLogAnalyzer(true)} style={headerActionStyle}>
               Analyze Error Logs
             </button>
@@ -2204,9 +2395,13 @@ export default function Dashboard({ onLogout }: DashboardProps) {
           />
         </div>
 
+        <DeviceManagement />
+        <NotificationPreferences />
+
         <Section
           title="Long-Term Telemetry"
           subtitle="Hourly rollups · last 7 days"
+          id="telemetry"
         >
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 }}>
             <MetricCard
@@ -2299,14 +2494,15 @@ export default function Dashboard({ onLogout }: DashboardProps) {
           </Section>
         )}
 
-        {cognitiveIncidents.length > 0 && (
+        {visibleIncidents.length > 0 && (
           <Section
             title="Incident Timeline"
             subtitle="Evidence reconstructed from the monitoring window"
             accentColor={T.danger}
+            id="incidents"
           >
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              {cognitiveIncidents.slice(0, 3).map((incident) => (
+              {visibleIncidents.slice(0, 3).map((incident) => (
                 <div
                   key={incident.incident_id ?? `${incident.type}-${incident.occurred_at}`}
                   style={{
@@ -2330,14 +2526,69 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                     </div>
                   </div>
                   {incident.incident_id && (
-                    <button
-                      type="button"
-                      onClick={() => void openIncidentReplay(incident.incident_id!)}
-                      disabled={incidentReplayBusy === incident.incident_id}
-                      style={{ ...headerActionStyle, marginBottom: 12 }}
-                    >
-                      {incidentReplayBusy === incident.incident_id ? "Loading replay..." : "Open evidence replay"}
-                    </button>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 12 }}>
+                      <button
+                        type="button"
+                        onClick={() => void openIncidentReplay(incident.incident_id!)}
+                        disabled={incidentReplayBusy === incident.incident_id}
+                        style={headerActionStyle}
+                      >
+                        {incidentReplayBusy === incident.incident_id ? "Loading replay..." : "Open evidence replay"}
+                      </button>
+                      <select
+                        aria-label={`Status for incident ${incident.incident_id}`}
+                        value={incident.status ?? "open"}
+                        onChange={(event) => void updateIncidentWorkflow(incident.incident_id!, { status: event.target.value as "open" | "investigating" | "resolved" })}
+                        disabled={incidentWorkflowBusy === incident.incident_id}
+                        style={{ ...headerActionStyle, padding: "8px 7px", background: T.bg }}
+                      >
+                        <option value="open">OPEN</option>
+                        <option value="investigating">INVESTIGATING</option>
+                        <option value="resolved">RESOLVED</option>
+                      </select>
+                      <input
+                        aria-label={`Assignee for incident ${incident.incident_id}`}
+                        value={incidentAssigneeDrafts[incident.incident_id] ?? incident.assignee ?? ""}
+                        onChange={(event) => setIncidentAssigneeDrafts((current) => ({ ...current, [incident.incident_id!]: event.target.value }))}
+                        onBlur={() => {
+                          const assignee = incidentAssigneeDrafts[incident.incident_id!];
+                          if (assignee !== undefined && assignee !== (incident.assignee ?? "")) {
+                            void updateIncidentWorkflow(incident.incident_id!, { assignee });
+                          }
+                        }}
+                        placeholder="ASSIGNEE"
+                        style={{ ...headerActionStyle, width: 120, padding: "8px 7px", color: T.text, background: T.bg }}
+                      />
+                    </div>
+                  )}
+                  {incident.incident_id && (
+                    <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+                      <input
+                        aria-label={`Add note to incident ${incident.incident_id}`}
+                        value={incidentNoteDrafts[incident.incident_id!] ?? ""}
+                        onChange={(event) => setIncidentNoteDrafts((current) => ({ ...current, [incident.incident_id!]: event.target.value }))}
+                        placeholder="ADD OPERATOR NOTE"
+                        maxLength={2000}
+                        style={{ ...headerActionStyle, flex: 1, minWidth: 0, color: T.text, background: T.bg }}
+                      />
+                      <button
+                        type="button"
+                        disabled={incidentWorkflowBusy === incident.incident_id || !(incidentNoteDrafts[incident.incident_id!] ?? "").trim()}
+                        onClick={() => void updateIncidentWorkflow(incident.incident_id!, { note: incidentNoteDrafts[incident.incident_id!].trim() })}
+                        style={{ ...headerActionStyle, color: T.success }}
+                      >
+                        ADD NOTE
+                      </button>
+                    </div>
+                  )}
+                  {incident.notes && incident.notes.length > 0 && (
+                    <div style={{ marginBottom: 12, color: T.textMuted, fontSize: 10, fontFamily: "'Share Tech Mono', monospace" }}>
+                      {incident.notes.slice(-3).map((note, index) => (
+                        <div key={`${note.created_at}-${index}`} style={{ padding: "5px 0", borderBottom: `1px solid ${T.border}` }}>
+                          {note.text}
+                        </div>
+                      ))}
+                    </div>
                   )}
                     {incident.likely_contributors && incident.likely_contributors.length > 0 && (
                       <div style={{ marginBottom: 12, padding: "10px 12px", borderRadius: 4, background: "rgba(255,176,32,0.08)", border: `1px solid ${T.warning}35` }}>
@@ -2391,6 +2642,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
             title="Evidence Replay"
             subtitle={`${incidentReplay.replay?.reconstruction ?? "recorded"} incident evidence`}
             accentColor={T.accent}
+            id="replay"
           >
             <div style={{ display: "grid", gap: 12 }}>
               <div style={{ color: T.text, fontSize: 12 }}>
@@ -2427,7 +2679,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
         )}
 
         {/* MAIN GRID */}
-        <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr) 380px", gap: "20px", alignItems: "start" }}>
+        <div id="overview" className="cvis-dashboard-grid">
 
           {/* LEFT COLUMN */}
           <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
@@ -2540,10 +2792,10 @@ export default function Dashboard({ onLogout }: DashboardProps) {
             <Section
               title="Predicted Events"
               subtitle="Live cognitive failure forecast"
-              alert={cognitivePredictions.some((p) => String(p.severity).toUpperCase() === "CRITICAL")}
+              alert={visiblePredictions.some((p) => String(p.severity).toUpperCase() === "CRITICAL")}
               accentColor={T.accent}
             >
-              {cognitivePredictions.length === 0 ? (
+              {visiblePredictions.length === 0 ? (
                 <div style={{
                   padding: "14px",
                   borderRadius: "4px",
@@ -2562,7 +2814,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                   gap: "8px",
                   fontFamily: "'Share Tech Mono', monospace",
                 }}>
-                  {cognitivePredictions.map((prediction) => {
+                  {visiblePredictions.map((prediction) => {
                     const severity = String(prediction.severity || "LOW").toUpperCase();
                     const severityColor =
                       severity === "CRITICAL" ? T.danger :
@@ -2885,7 +3137,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
             </Section>
 
             {/* AI Reasoning */}
-            <Section title="AI Reasoning Engine" subtitle="Autonomous decision core" alert={risk > 0.7} accentColor={color}>
+            <Section id="decisions" title="AI Reasoning Engine" subtitle="Autonomous decision core" alert={risk > 0.7} accentColor={color}>
               <div style={{ background: "rgba(0,0,0,0.35)", padding: "14px", borderRadius: "4px", marginBottom: "14px", border: `1px solid ${T.border}` }}>
                 <div style={{ fontSize: "10px", color: T.textDim, fontFamily: "'Share Tech Mono', monospace", marginBottom: "6px" }}>ACTIVE DECISION</div>
                 <div style={{ fontSize: "22px", fontWeight: 700, color: T.accent, marginBottom: "10px", fontFamily: "'Rajdhani', sans-serif", letterSpacing: "0.05em" }}>
@@ -3010,7 +3262,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
             </Section>
 
             {/* Operator Actions */}
-            <Section title="Operator Actions" subtitle="Authenticated backend actions">
+            <Section id="actions" title="Operator Actions" subtitle="Authenticated backend actions">
               <div style={{ display: "flex", flexDirection: "column", gap: "9px" }}>
                 {availableActions.map((action) => (
                   <button
@@ -3311,6 +3563,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
             <AIChat />
           </div>
         </div>
+      </div>
       </div>
     </>
   );

@@ -78,6 +78,51 @@ export async function fetchSystemStatus() {
   return response.data;
 }
 
+export interface ManagedDevice {
+  device_id: string;
+  device_name: string;
+  os: string;
+  os_version?: string;
+  hostname?: string;
+  status: "online" | "offline" | string;
+  last_seen_s?: number | null;
+  metrics?: Record<string, unknown>;
+  processes?: unknown[];
+}
+
+export interface RegisterDeviceRequest {
+  device_id: string;
+  device_name: string;
+  os: string;
+  os_version?: string;
+  hostname?: string;
+  capabilities?: string[];
+}
+
+export interface RegisterDeviceResponse {
+  registered: boolean;
+  device_id: string;
+  credential: string;
+  credential_scope: string;
+  credential_device_id: string;
+  workspace_id?: string | null;
+}
+
+export async function fetchDevices(): Promise<ManagedDevice[]> {
+  const { data } = await api.get<ManagedDevice[]>("/devices");
+  return Array.isArray(data) ? data : [];
+}
+
+export async function registerDevice(
+  payload: RegisterDeviceRequest,
+): Promise<RegisterDeviceResponse> {
+  const { data } = await api.post<RegisterDeviceResponse>(
+    "/devices/register",
+    payload,
+  );
+  return data;
+}
+
 
 // ==================== COGNITIVE API ====================
 
@@ -263,6 +308,22 @@ export interface CognitiveIncident {
   timeline?: CognitiveIncidentTimelineEntry[];
   plain_timeline?: string;
   likely_contributors?: CognitiveIncidentContributor[];
+  severity?: string;
+  device_id?: string;
+  status?: "open" | "investigating" | "resolved" | string;
+  assignee?: string;
+  notes?: Array<{ text?: string; created_at?: number }>;
+}
+
+export async function updateCognitiveIncidentWorkflow(
+  incidentId: string,
+  payload: { status?: "open" | "investigating" | "resolved"; assignee?: string; note?: string },
+) {
+  const { data } = await api.patch<CognitiveIncident>(
+    `/cognitive/incidents/${encodeURIComponent(incidentId)}/workflow`,
+    payload,
+  );
+  return data;
 }
 
 export async function fetchCognitiveNotifications() {

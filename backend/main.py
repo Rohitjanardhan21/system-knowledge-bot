@@ -59,6 +59,7 @@ from backend.core.storage.db import (
     save_alert, save_event, load_alerts, load_events, maybe_save_snapshot,
     load_snapshots, load_snapshot_rollups, db_info, close_db,
     snapshot_retention_days, save_incident, load_incidents, load_incident,
+    update_incident_workflow,
     load_prediction_accuracy,
     acknowledge_alert, snooze_alert, unsnooze_alert,
     save_process_suppression, remove_process_suppression,
@@ -168,6 +169,8 @@ def _stored_incident_response(row: dict) -> dict:
         except _json.JSONDecodeError:
             metadata = {}
     metadata = metadata if isinstance(metadata, dict) else {}
+    workflow = metadata.get("workflow")
+    workflow = workflow if isinstance(workflow, dict) else {}
     occurred_at = row.get("occurred_at") or row.get("detected_at")
     return {
         "incident_id": row.get("incident_id"),
@@ -186,7 +189,9 @@ def _stored_incident_response(row: dict) -> dict:
         "timeline": [],
         "plain_timeline": row.get("evidence"),
         "likely_contributors": metadata.get("likely_contributors", []),
-        "status": row.get("status"),
+        "status": workflow.get("status") or row.get("status"),
+        "assignee": workflow.get("assignee") or "",
+        "notes": workflow.get("notes") if isinstance(workflow.get("notes"), list) else [],
         "severity": row.get("severity"),
         "device_id": row.get("device_id"),
     }
@@ -1407,11 +1412,17 @@ app.include_router(
 )
 
 _ALLOWED_ORIGIN = os.environ.get("ALLOWED_ORIGIN", "")
-_origins = (
-    [o.strip() for o in _ALLOWED_ORIGIN.split(",")]
-    if _ALLOWED_ORIGIN != "*"
-    else ["*"]
-)
+if _ALLOWED_ORIGIN == "*":
+    _origins = ["*"]
+elif _ALLOWED_ORIGIN.strip():
+    _origins = [o.strip() for o in _ALLOWED_ORIGIN.split(",") if o.strip()]
+elif os.environ.get("ENV", "").strip().lower() in {"dev", "development"}:
+    _origins = [
+        "http://127.0.0.1:5173",
+        "http://localhost:5173",
+    ]
+else:
+    _origins = []
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_origins,
@@ -3106,6 +3117,52 @@ async def replay_incident(
             },
         },
     }
+
+
+class IncidentWorkflowUpdate(BaseModel):
+    status: str | None = None
+    assignee: str | None = None
+    note: str | None = None
+
+
+@app.patch(
+    "/cognitive/incidents/{incident_id}/workflow",
+    tags=["Cognitive"],
+    dependencies=[Depends(require_scope("write"))],
+)
+async def update_incident_workflow_route(
+    incident_id: str,
+    payload: IncidentWorkflowUpdate,
+    principal: dict = Depends(require_scope("write")),
+):
+    if payload.status is None and payload.assignee is None and payload.note is None:
+        raise HTTPException(422, "At least one workflow field is required")
+    if payload.status is not None and payload.status not in {"open", "investigating", "resolved"}:
+        raise HTTPException(422, "Unsupported incident status")
+    if payload.assignee is not None and len(payload.assignee.strip()) > 160:
+        raise HTTPException(422, "Assignee is too long")
+    if payload.note is not None and not payload.note.strip():
+        raise HTTPException(422, "Note cannot be empty")
+    if payload.note is not None and len(payload.note) > 2000:
+        raise HTTPException(422, "Note is too long")
+
+    device_ids = _workspace_device_ids(principal)
+    if device_ids is None:
+        raise HTTPException(
+            409,
+            "Incident workflow updates are available for persisted workspace incidents",
+        )
+
+    updated = await update_incident_workflow(
+        incident_id,
+        status=payload.status,
+        assignee=payload.assignee,
+        note=payload.note,
+        device_ids=device_ids,
+    )
+    if not updated:
+        raise HTTPException(404, "Incident not found")
+    return _stored_incident_response(updated)
 
 @app.get(
     "/cognitive/postmortem/{event_id}",
