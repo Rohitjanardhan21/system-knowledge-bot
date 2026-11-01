@@ -47,6 +47,10 @@ test("login loads authenticated telemetry and alerts", async ({ page }) => {
   await expect(page.getByText("Authentication required")).toHaveCount(0);
   expect(pageErrors).toEqual([]);
 
+  const closeSetupWizard = page.getByRole("button", { name: "Close setup wizard" });
+  if (await closeSetupWizard.isVisible().catch(() => false)) {
+    await closeSetupWizard.click();
+  }
   await expect(page.getByRole("button", { name: "Log out" })).toBeVisible();
   await page.getByRole("button", { name: "Log out" }).click();
   await expect(page.getByRole("heading", { name: "CVIS System UI" })).toBeVisible();
