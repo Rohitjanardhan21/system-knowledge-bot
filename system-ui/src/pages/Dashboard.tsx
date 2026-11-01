@@ -4,6 +4,7 @@ import ErrorLogAnalyzer from "../components/ErrorLogAnalyzer";
 import DesktopSettings from "../components/DesktopSettings";
 import DeviceManagement from "../components/DeviceManagement";
 import NotificationPreferences from "../components/NotificationPreferences";
+import SetupWizard from "../components/SetupWizard";
 import {
   AreaChart, Area, CartesianGrid, ResponsiveContainer, RadarChart,
   PolarGrid, PolarAngleAxis, Radar, XAxis, YAxis, Tooltip
@@ -1384,6 +1385,13 @@ export default function Dashboard({ onLogout }: DashboardProps) {
 
   const [showLogAnalyzer, setShowLogAnalyzer] = useState(false);
   const [showDesktopSettings, setShowDesktopSettings] = useState(false);
+  const [showSetupWizard, setShowSetupWizard] = useState(() => {
+    try {
+      return window.localStorage.getItem("cvis:setup-complete") !== "true";
+    } catch {
+      return true;
+    }
+  });
   const [showMemoryDetails, setShowMemoryDetails] = useState(false);
   const [desktopSettingsAvailable, setDesktopSettingsAvailable] = useState(false);
   const [quitPending, setQuitPending] = useState(false);
@@ -1518,9 +1526,11 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     return () => window.removeEventListener("keydown", closeOnEscape);
   }, [sidebarOpen]);
 
-  const navigateSidebar = useCallback((target: "overview" | "devices" | "telemetry" | "incidents" | "decisions" | "replay" | "actions" | "settings") => {
+  const navigateSidebar = useCallback((target: "overview" | "devices" | "telemetry" | "incidents" | "decisions" | "replay" | "actions" | "setup" | "settings") => {
     if (target === "settings") {
       setShowDesktopSettings(true);
+    } else if (target === "setup") {
+      setShowSetupWizard(true);
     } else {
       document.getElementById(target)?.scrollIntoView({ behavior: "smooth", block: "start" });
     }
@@ -2174,6 +2184,12 @@ export default function Dashboard({ onLogout }: DashboardProps) {
       <CircuitBg isCritical={isCritical} isWarning={isWarning} />
       {showLogAnalyzer && <ErrorLogAnalyzer onClose={() => setShowLogAnalyzer(false)} />}
       {showDesktopSettings && <DesktopSettings onClose={() => setShowDesktopSettings(false)} />}
+      {showSetupWizard && (
+        <SetupWizard
+          onClose={() => setShowSetupWizard(false)}
+          onComplete={() => setShowSetupWizard(false)}
+        />
+      )}
 
       {/* CRT scanline sweep */}
       <div style={{
@@ -2229,6 +2245,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
               ["decisions", "◇", "AI Decisions"],
               ["replay", "↺", "Replay Lab"],
               ["actions", "▶", "Operator Actions"],
+              ["setup", "✦", "Setup Wizard"],
               ["settings", "⚙", "Settings"],
             ] as const).map(([target, icon, label]) => (
               <button
@@ -2293,6 +2310,9 @@ export default function Dashboard({ onLogout }: DashboardProps) {
             </button>
             <button type="button" onClick={() => setShowLogAnalyzer(true)} style={headerActionStyle}>
               Analyze Error Logs
+            </button>
+            <button type="button" onClick={() => setShowSetupWizard(true)} style={headerActionStyle}>
+              Setup Wizard
             </button>
             {desktopSettingsAvailable && (
               <button type="button" onClick={() => setShowDesktopSettings(true)} style={headerActionStyle}>
